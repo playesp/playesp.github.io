@@ -45,7 +45,7 @@ export const PREDEFINED_AVATARS: PredefinedAvatar[] = [
     id: 'krishna-divine',
     name: 'Shri Krishna Celestial',
     category: 'Divine',
-    url: '/assets/aistudio/Screenshot_2026-10-21-07-12-08-923_lockscreen_b87ed8b4.jpg',
+    url: 'https://api.dicebear.com/7.x/bottts/svg?seed=KrishnaDivineESP',
     tag: '🪈 Divine',
   },
   {

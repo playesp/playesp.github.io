@@ -22,6 +22,48 @@ import type {
   NwiTreeRecord,
   PlanUpgradeRequest,
 } from '../types/index.ts';
+import { handleStaticApiRequest } from './staticFallback.ts';
+
+const API_BASE_URL =
+  ((import.meta as any).env?.VITE_API_BASE_URL ||
+    (typeof window !== 'undefined' ? localStorage.getItem('esp_api_base_url') : '') ||
+    '')
+    .toString()
+    .replace(/\/+$/, '');
+
+let staticModeDetected =
+  typeof window !== 'undefined' &&
+  !API_BASE_URL &&
+  window.location.hostname.endsWith('.github.io');
+
+function makeJsonResponse(data: any, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  if (staticModeDetected) {
+    return makeJsonResponse(handleStaticApiRequest(input, init));
+  }
+  const targetUrl = input.startsWith('/') && API_BASE_URL ? `${API_BASE_URL}${input}` : input;
+  try {
+    const res = await window.fetch(targetUrl, init);
+    const ct = res.headers.get('content-type') || '';
+    if ((res.status === 404 || res.status === 405) && !ct.includes('application/json')) {
+      staticModeDetected = true;
+      return makeJsonResponse(handleStaticApiRequest(input, init));
+    }
+    return res;
+  } catch {
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('.github.io')) {
+      staticModeDetected = true;
+      return makeJsonResponse(handleStaticApiRequest(input, init));
+    }
+    throw new Error('Network error');
+  }
+}
 
 const SESSION_USER_KEY = 'esp_session_user';
 const SESSION_TOKEN_KEY = 'esp_session_token';
@@ -113,7 +155,7 @@ export const api = {
 
   async getSettings(): Promise<PlatformSettings> {
     try {
-      const res = await fetch('/api/settings');
+      const res = await apiFetch('/api/settings');
       const data = await res.json();
       if (data.success) return data.settings;
     } catch (e) {
@@ -138,7 +180,7 @@ export const api = {
   },
 
   async updateSettings(settings: Partial<PlatformSettings>, adminPassword: string): Promise<PlatformSettings> {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...settings, adminPassword }),
@@ -150,7 +192,7 @@ export const api = {
 
   async getServices(): Promise<ServiceItem[]> {
     try {
-      const res = await fetch('/api/services');
+      const res = await apiFetch('/api/services');
       const data = await res.json();
       if (data.success && data.services) return data.services;
     } catch (e) {
@@ -160,7 +202,7 @@ export const api = {
   },
 
   async addService(newService: Partial<ServiceItem>, adminPassword: string) {
-    const res = await fetch('/api/services', {
+    const res = await apiFetch('/api/services', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ newService, adminPassword }),
@@ -171,7 +213,7 @@ export const api = {
   },
 
   async deleteService(id: string, adminPassword: string) {
-    const res = await fetch(`/api/services/${id}`, {
+    const res = await apiFetch(`/api/services/${id}`, {
       method: 'DELETE',
       headers: { 'x-admin-password': adminPassword },
     });
@@ -181,13 +223,13 @@ export const api = {
   },
 
   async checkSponsor(sponsorId: string) {
-    const res = await fetch(`/api/sponsor/check?id=${encodeURIComponent(sponsorId)}`);
+    const res = await apiFetch(`/api/sponsor/check?id=${encodeURIComponent(sponsorId)}`);
     return await res.json();
   },
 
   async register(formData: any) {
     const deviceInfo = detectClientDevice();
-    const res = await fetch('/api/auth/register', {
+    const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...formData, deviceInfo }),
@@ -202,7 +244,7 @@ export const api = {
 
   async login(identifier: string, password: string): Promise<UserProfile> {
     const deviceInfo = detectClientDevice();
-    const res = await fetch('/api/auth/login', {
+    const res = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, password, deviceInfo }),
@@ -221,7 +263,7 @@ export const api = {
     accountType: string;
     chosenServiceCode: string;
   }> {
-    const res = await fetch('/api/auth/forget-id', {
+    const res = await apiFetch('/api/auth/forget-id', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneOrEmail }),
@@ -237,7 +279,7 @@ export const api = {
     fullName: string;
     message: string;
   }> {
-    const res = await fetch('/api/auth/forget-password', {
+    const res = await apiFetch('/api/auth/forget-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, verifyPhone, newPassword }),
@@ -253,7 +295,7 @@ export const api = {
     if (sessionToken) query.set('token', sessionToken);
     if (userId) query.set('userId', userId);
 
-    const res = await fetch(`/api/auth/verify-session?${query.toString()}`, {
+    const res = await apiFetch(`/api/auth/verify-session?${query.toString()}`, {
       headers: { 'x-session-token': sessionToken },
     });
     const data = await res.json();
@@ -271,7 +313,7 @@ export const api = {
     payouts: PayoutRequest[];
   }> {
     const sessionToken = this.getStoredSessionToken();
-    const res = await fetch(`/api/user/${userId}`, {
+    const res = await apiFetch(`/api/user/${userId}`, {
       headers: { 'x-session-token': sessionToken },
     });
     const data = await res.json();
@@ -284,7 +326,7 @@ export const api = {
 
   async updateUserProfile(userId: string, updates: Partial<UserProfile>) {
     const sessionToken = this.getStoredSessionToken();
-    const res = await fetch(`/api/user/${userId}`, {
+    const res = await apiFetch(`/api/user/${userId}`, {
       method: 'PUT',
       headers: { 
         'Content-Type': 'application/json',
@@ -302,7 +344,7 @@ export const api = {
 
   async terminateSession(userId: string, sessionId?: string, terminateAllOthers = false) {
     const sessionToken = this.getStoredSessionToken();
-    const res = await fetch(`/api/user/${userId}/terminate-session`, {
+    const res = await apiFetch(`/api/user/${userId}/terminate-session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -317,7 +359,7 @@ export const api = {
   },
 
   async requestWithdrawal(userId: string, amount: number, payoutAddress: string) {
-    const res = await fetch(`/api/user/${userId}/withdraw`, {
+    const res = await apiFetch(`/api/user/${userId}/withdraw`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount, payoutAddress }),
@@ -328,7 +370,7 @@ export const api = {
   },
 
   async chatWithAi(message: string): Promise<{ reply: string; options: string[]; time: string }> {
-    const res = await fetch('/api/chat', {
+    const res = await apiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
@@ -338,7 +380,7 @@ export const api = {
   },
 
   async getAdminOverview(adminPassword: string) {
-    const res = await fetch('/api/admin/overview', {
+    const res = await apiFetch('/api/admin/overview', {
       headers: { 'x-admin-password': adminPassword },
     });
     const data = await res.json();
@@ -347,7 +389,7 @@ export const api = {
   },
 
   async getUserFullAudit(userId: string, adminPassword: string) {
-    const res = await fetch(`/api/admin/user/${userId}/full-audit`, {
+    const res = await apiFetch(`/api/admin/user/${userId}/full-audit`, {
       headers: { 'x-admin-password': adminPassword },
     });
     const data = await res.json();
@@ -356,7 +398,7 @@ export const api = {
   },
 
   async updateUserStatus(userId: string, status: string, adminPassword: string) {
-    const res = await fetch(`/api/admin/users/${userId}/status`, {
+    const res = await apiFetch(`/api/admin/users/${userId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminPassword }),
@@ -367,7 +409,7 @@ export const api = {
   },
 
   async approvePayout(payoutId: string, transactionRef: string, adminPassword: string) {
-    const res = await fetch(`/api/admin/payouts/${payoutId}/approve`, {
+    const res = await apiFetch(`/api/admin/payouts/${payoutId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ transactionRef, adminPassword }),
@@ -380,7 +422,7 @@ export const api = {
   // Daily Moments
   async getMoments(): Promise<Moment[]> {
     try {
-      const res = await fetch('/api/moments');
+      const res = await apiFetch('/api/moments');
       const data = await res.json();
       return data.moments || [];
     } catch {
@@ -389,7 +431,7 @@ export const api = {
   },
 
   async postMoment(momentData: Partial<Moment>): Promise<Moment> {
-    const res = await fetch('/api/moments', {
+    const res = await apiFetch('/api/moments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(momentData),
@@ -400,7 +442,7 @@ export const api = {
   },
 
   async likeMoment(momentId: string, userId: string) {
-    const res = await fetch(`/api/moments/${momentId}/like`, {
+    const res = await apiFetch(`/api/moments/${momentId}/like`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
@@ -409,7 +451,7 @@ export const api = {
   },
 
   async commentMoment(momentId: string, commentData: { userId: string; userName: string; userRollNumber: string; userAvatar?: string; text: string }) {
-    const res = await fetch(`/api/moments/${momentId}/comment`, {
+    const res = await apiFetch(`/api/moments/${momentId}/comment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(commentData),
@@ -418,14 +460,14 @@ export const api = {
   },
 
   async shareMoment(momentId: string) {
-    const res = await fetch(`/api/moments/${momentId}/share`, { method: 'POST' });
+    const res = await apiFetch(`/api/moments/${momentId}/share`, { method: 'POST' });
     return res.json();
   },
 
   // WhatsApp-style Chatting Club
   async getChatRooms(): Promise<ChatRoom[]> {
     try {
-      const res = await fetch('/api/chat/rooms');
+      const res = await apiFetch('/api/chat/rooms');
       const data = await res.json();
       return data.rooms || [];
     } catch {
@@ -434,7 +476,7 @@ export const api = {
   },
 
   async createChatRoom(roomData: { name: string; hindiName?: string; description?: string; category?: string; createdById?: string }): Promise<ChatRoom> {
-    const res = await fetch('/api/chat/rooms', {
+    const res = await apiFetch('/api/chat/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(roomData),
@@ -446,7 +488,7 @@ export const api = {
 
   async getChatMessages(roomId: string): Promise<ClubChatMessage[]> {
     try {
-      const res = await fetch(`/api/chat/messages/${roomId}`);
+      const res = await apiFetch(`/api/chat/messages/${roomId}`);
       const data = await res.json();
       return data.messages || [];
     } catch {
@@ -455,7 +497,7 @@ export const api = {
   },
 
   async sendChatMessage(msgData: Partial<ClubChatMessage>): Promise<ClubChatMessage> {
-    const res = await fetch('/api/chat/messages', {
+    const res = await apiFetch('/api/chat/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(msgData),
@@ -467,7 +509,7 @@ export const api = {
 
   async getUserContacts(userId: string): Promise<UserContact[]> {
     try {
-      const res = await fetch(`/api/chat/contacts/${userId}`);
+      const res = await apiFetch(`/api/chat/contacts/${userId}`);
       const data = await res.json();
       return data.contacts || [];
     } catch {
@@ -476,7 +518,7 @@ export const api = {
   },
 
   async saveUserContact(contactData: { userId: string; contactRollNumber: string; contactName: string; contactPhone?: string; notes?: string }): Promise<UserContact> {
-    const res = await fetch('/api/chat/contacts', {
+    const res = await apiFetch('/api/chat/contacts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(contactData),
@@ -487,7 +529,7 @@ export const api = {
   },
 
   async getUserAudits(adminPassword: string) {
-    const res = await fetch('/api/admin/user-audits', {
+    const res = await apiFetch('/api/admin/user-audits', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword }),
@@ -499,7 +541,7 @@ export const api = {
 
   // ESP Gaming Room APIs
   async playCoinGame(userId: string, gameName: string, betAmount: number, choice?: string) {
-    const res = await fetch('/api/game/play', {
+    const res = await apiFetch('/api/game/play', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, gameName, betAmount, choice }),
@@ -511,7 +553,7 @@ export const api = {
   },
 
   async playCoinsGame(userId: string, gameName: string, betAmount: number) {
-    const res = await fetch('/api/game/play', {
+    const res = await apiFetch('/api/game/play', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, gameName, betAmount, choice: 'direct' }),
@@ -523,7 +565,7 @@ export const api = {
   },
 
   async claimGameWin(userId: string, gameName: string, winAmount: number) {
-    const res = await fetch('/api/game/claim-win', {
+    const res = await apiFetch('/api/game/claim-win', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, gameName, winAmount }),
@@ -535,7 +577,7 @@ export const api = {
   },
 
   async dailyLuckySpin(userId: string, targetSectorIndex?: number) {
-    const res = await fetch('/api/game/daily-lucky-spin', {
+    const res = await apiFetch('/api/game/daily-lucky-spin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, targetSectorIndex }),
@@ -547,7 +589,7 @@ export const api = {
   },
 
   async rechargeCoins(userId: string, coins: number, amount: number, paymentUtr?: string, bonusCoins = 0, packId = 'pack') {
-    const res = await fetch('/api/game/recharge', {
+    const res = await apiFetch('/api/game/recharge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, coins, amount, paymentUtr, bonusCoins, packId }),
@@ -559,7 +601,7 @@ export const api = {
   },
 
   async convertCoins(userId: string, coinsAmount: number) {
-    const res = await fetch('/api/game/convert', {
+    const res = await apiFetch('/api/game/convert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, coinsAmount }),
@@ -571,7 +613,7 @@ export const api = {
   },
 
   async claimLoginReward(userId: string, day: number) {
-    const res = await fetch('/api/game/claim-login', {
+    const res = await apiFetch('/api/game/claim-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, day }),
@@ -583,7 +625,7 @@ export const api = {
   },
 
   async sendRoomGift(senderId: string, targetName: string, giftId: string, giftName: string, coinCost: number, charmValue: number) {
-    const res = await fetch('/api/game/send-gift', {
+    const res = await apiFetch('/api/game/send-gift', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ senderId, targetName, giftId, giftName, coinCost, charmValue }),
@@ -595,7 +637,7 @@ export const api = {
   },
 
   async getCoinRecharges(adminPassword: string) {
-    const res = await fetch('/api/admin/coin-recharges', {
+    const res = await apiFetch('/api/admin/coin-recharges', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword }),
@@ -606,7 +648,7 @@ export const api = {
   },
 
   async approveCoinRecharge(rechargeId: string, adminPassword: string) {
-    const res = await fetch(`/api/admin/coin-recharges/${rechargeId}/approve`, {
+    const res = await apiFetch(`/api/admin/coin-recharges/${rechargeId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword }),
@@ -617,7 +659,7 @@ export const api = {
   },
 
   async rejectCoinRecharge(rechargeId: string, reason: string, adminPassword: string) {
-    const res = await fetch(`/api/admin/coin-recharges/${rechargeId}/reject`, {
+    const res = await apiFetch(`/api/admin/coin-recharges/${rechargeId}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, reason }),
@@ -628,19 +670,19 @@ export const api = {
   },
 
   async getUserCoinRecharges(userId: string) {
-    const res = await fetch(`/api/game/user-recharges/${userId}`);
+    const res = await apiFetch(`/api/game/user-recharges/${userId}`);
     const data = await res.json();
     return data.recharges || [];
   },
 
   async getVoiceRooms() {
-    const res = await fetch('/api/game/voice-rooms');
+    const res = await apiFetch('/api/game/voice-rooms');
     return await res.json();
   },
 
   async getVoiceRoomState(roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}` : '/api/game/voice-room';
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     return await res.json();
   },
 
@@ -657,7 +699,7 @@ export const api = {
     hostCharms?: number;
   }) {
     try {
-      const res = await fetch('/api/game/voice-rooms/create', {
+      const res = await apiFetch('/api/game/voice-rooms/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -671,7 +713,7 @@ export const api = {
 
   async takeVoiceSeat(userId: string, seatIndex: number, roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/take-seat` : '/api/game/voice-room/take-seat';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, seatIndex, roomId }),
@@ -681,7 +723,7 @@ export const api = {
 
   async leaveVoiceSeat(userId: string, roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/leave-seat` : '/api/game/voice-room/leave-seat';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, roomId }),
@@ -691,7 +733,7 @@ export const api = {
 
   async sendVoiceRoomChat(userId: string, text: string, isGift = false, roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/chat` : '/api/game/voice-room/chat';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, text, isGift, roomId }),
@@ -707,7 +749,7 @@ export const api = {
     voiceEffect?: { id: string; name: string; icon: string }
   ) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/voice-audio` : '/api/game/voice-room/voice-audio';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, audioDataUrl, durationSec, roomId, voiceEffect }),
@@ -722,7 +764,7 @@ export const api = {
     seatIndex?: number;
     newTopic?: string;
   }) {
-    const res = await fetch(`/api/game/voice-rooms/${encodeURIComponent(payload.roomId)}/host-action`, {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(payload.roomId)}/host-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -731,24 +773,24 @@ export const api = {
   },
 
   async getRealCommunityPlayers() {
-    const res = await fetch('/api/community/real-players');
+    const res = await apiFetch('/api/community/real-players');
     const data = await res.json();
     return data.players || [];
   },
 
   async getPlayerProfile(userId: string) {
-    const res = await fetch(`/api/community/player-profile/${userId}`);
+    const res = await apiFetch(`/api/community/player-profile/${userId}`);
     return await res.json();
   },
 
   async getBots() {
-    const res = await fetch('/api/game/bots');
+    const res = await apiFetch('/api/game/bots');
     return await res.json();
   },
 
   async inviteBotToSeat(botId: string, seatIndex?: number, roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/invite-bot` : '/api/game/voice-room/invite-bot';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ botId, seatIndex, roomId }),
@@ -758,7 +800,7 @@ export const api = {
 
   async summonAllBots(roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/summon-all-bots` : '/api/game/voice-room/summon-all-bots';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomId }),
@@ -768,7 +810,7 @@ export const api = {
 
   async interactWithBot(botCode: string, userId: string, actionType?: string, roomId?: string) {
     const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}/bot-interact` : '/api/game/voice-room/bot-interact';
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ botCode, userId, actionType, roomId }),
@@ -786,7 +828,7 @@ export const api = {
     description: string;
     proofScreenshot?: string;
   }): Promise<{ success: boolean; message: string; complaint?: UserComplaint }> {
-    const res = await fetch('/api/complaints', {
+    const res = await apiFetch('/api/complaints', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -796,7 +838,7 @@ export const api = {
 
   async getUserComplaints(userId: string): Promise<UserComplaint[]> {
     try {
-      const res = await fetch(`/api/complaints/user/${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`/api/complaints/user/${encodeURIComponent(userId)}`);
       const data = await res.json();
       return data.complaints || [];
     } catch {
@@ -807,7 +849,7 @@ export const api = {
   async getAdminComplaints(adminPassword: string, status?: string): Promise<UserComplaint[]> {
     const query = new URLSearchParams({ adminPassword });
     if (status) query.set('status', status);
-    const res = await fetch(`/api/admin/complaints?${query.toString()}`);
+    const res = await apiFetch(`/api/admin/complaints?${query.toString()}`);
     const data = await res.json();
     return data.complaints || [];
   },
@@ -821,7 +863,7 @@ export const api = {
       refundCoins?: number;
     }
   ): Promise<{ success: boolean; message: string; complaint?: UserComplaint }> {
-    const res = await fetch(`/api/admin/complaints/${encodeURIComponent(complaintId)}/respond`, {
+    const res = await apiFetch(`/api/admin/complaints/${encodeURIComponent(complaintId)}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -839,7 +881,7 @@ export const api = {
     durationSeconds?: number;
     details?: string;
   }): Promise<{ success: boolean; user?: UserProfile; record?: GamePlayRecord }> {
-    const res = await fetch('/api/game/record-play', {
+    const res = await apiFetch('/api/game/record-play', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -853,7 +895,7 @@ export const api = {
 
   async getGamePlayHistory(userId: string): Promise<GamePlayRecord[]> {
     try {
-      const res = await fetch(`/api/game/history/${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`/api/game/history/${encodeURIComponent(userId)}`);
       const data = await res.json();
       return data.history || [];
     } catch {
@@ -863,7 +905,7 @@ export const api = {
 
   async getCoinHistory(userId: string): Promise<CoinTransactionRecord[]> {
     try {
-      const res = await fetch(`/api/game/coin-history/${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`/api/game/coin-history/${encodeURIComponent(userId)}`);
       const data = await res.json();
       return data.transactions || [];
     } catch {
@@ -873,7 +915,7 @@ export const api = {
 
   async getProfileHistory(userId: string): Promise<ProfileAuditRecord[]> {
     try {
-      const res = await fetch(`/api/user/${encodeURIComponent(userId)}/profile-history`);
+      const res = await apiFetch(`/api/user/${encodeURIComponent(userId)}/profile-history`);
       const data = await res.json();
       return data.history || [];
     } catch {
@@ -896,7 +938,7 @@ export const api = {
     totalOnlineMinutes: number;
     totalDaysPlayed: number;
   }> {
-    const res = await fetch('/api/user/heartbeat', {
+    const res = await apiFetch('/api/user/heartbeat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -906,7 +948,7 @@ export const api = {
 
   async endSession(userId: string, sessionId?: string): Promise<{ success: boolean }> {
     try {
-      const res = await fetch('/api/user/session-end', {
+      const res = await apiFetch('/api/user/session-end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, sessionId }),
@@ -919,7 +961,7 @@ export const api = {
 
   async getUserSessionHistory(userId: string): Promise<OnlineActivitySession[]> {
     try {
-      const res = await fetch(`/api/user/${encodeURIComponent(userId)}/session-history`);
+      const res = await apiFetch(`/api/user/${encodeURIComponent(userId)}/session-history`);
       const data = await res.json();
       return data.sessions || [];
     } catch {
@@ -934,7 +976,7 @@ export const api = {
     onlineUsers: any[];
     recentSessions: OnlineActivitySession[];
   }> {
-    const res = await fetch(`/api/admin/users/activity-overview?adminPassword=${encodeURIComponent(adminPassword)}`);
+    const res = await apiFetch(`/api/admin/users/activity-overview?adminPassword=${encodeURIComponent(adminPassword)}`);
     return await res.json();
   },
 
@@ -950,7 +992,7 @@ export const api = {
       voiceEffect?: string;
     }
   ): Promise<{ success: boolean; user?: UserProfile }> {
-    const res = await fetch(`/api/user/${encodeURIComponent(userId)}/server-state`, {
+    const res = await apiFetch(`/api/user/${encodeURIComponent(userId)}/server-state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(state),
@@ -965,7 +1007,7 @@ export const api = {
   // ---------------- 7-Photo Home Popup Slider System ----------------
   async getHomeSliderPhotos(): Promise<HomeSliderPhoto[]> {
     try {
-      const res = await fetch('/api/home-slider-photos');
+      const res = await apiFetch('/api/home-slider-photos');
       const data = await res.json();
       return data.photos || [];
     } catch {
@@ -974,7 +1016,7 @@ export const api = {
   },
 
   async saveHomeSliderPhotos(adminPassword: string, photos: Partial<HomeSliderPhoto>[]): Promise<{ success: boolean; message: string; photos: HomeSliderPhoto[] }> {
-    const res = await fetch('/api/admin/home-slider-photos', {
+    const res = await apiFetch('/api/admin/home-slider-photos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, photos }),
@@ -991,7 +1033,7 @@ export const api = {
     subject?: string;
     message: string;
   }): Promise<{ success: boolean; message: string; contactMessage?: ContactMessage }> {
-    const res = await fetch('/api/contact/messages', {
+    const res = await apiFetch('/api/contact/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -1000,13 +1042,13 @@ export const api = {
   },
 
   async getAdminContactMessages(adminPassword: string): Promise<ContactMessage[]> {
-    const res = await fetch(`/api/admin/contact-messages?adminPassword=${encodeURIComponent(adminPassword)}`);
+    const res = await apiFetch(`/api/admin/contact-messages?adminPassword=${encodeURIComponent(adminPassword)}`);
     const data = await res.json();
     return data.messages || [];
   },
 
   async replyContactMessage(id: string, adminPassword: string, adminReply: string, status = 'replied') {
-    const res = await fetch(`/api/admin/contact-messages/${encodeURIComponent(id)}/reply`, {
+    const res = await apiFetch(`/api/admin/contact-messages/${encodeURIComponent(id)}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, adminReply, status }),
@@ -1016,7 +1058,7 @@ export const api = {
 
   // ---------------- Demo User & User Profile Editor in Admin Panel ----------------
   async createDemoUser(adminPassword: string, userData: any): Promise<{ success: boolean; message: string; user: UserProfile }> {
-    const res = await fetch('/api/admin/demo-user', {
+    const res = await apiFetch('/api/admin/demo-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, ...userData }),
@@ -1025,7 +1067,7 @@ export const api = {
   },
 
   async editUserDetails(userId: string, adminPassword: string, updates: any): Promise<{ success: boolean; message: string; user: UserProfile }> {
-    const res = await fetch(`/api/admin/user/${encodeURIComponent(userId)}/edit-details`, {
+    const res = await apiFetch(`/api/admin/user/${encodeURIComponent(userId)}/edit-details`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, ...updates }),
@@ -1058,7 +1100,7 @@ export const api = {
 
   // ---------------- User Self Profile Pic Upload ----------------
   async uploadUserAvatar(userId: string, avatarDataUrl: string): Promise<{ success: boolean; message: string; avatar: string; user: UserProfile }> {
-    const res = await fetch(`/api/user/${encodeURIComponent(userId)}/avatar`, {
+    const res = await apiFetch(`/api/user/${encodeURIComponent(userId)}/avatar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ avatar: avatarDataUrl }),
@@ -1077,7 +1119,7 @@ export const api = {
     onlinePlayers: Array<{ userId: string; fullName: string; avatar?: string; gameLevel: number; clanName: string; lastActive?: string }>;
   }> {
     try {
-      const res = await fetch('/api/community/real-online-count');
+      const res = await apiFetch('/api/community/real-online-count');
       return await res.json();
     } catch {
       return { success: true, realCount: 1, onlinePlayers: [] };
@@ -1092,7 +1134,7 @@ export const api = {
     newBalance: number;
     user: UserProfile;
   }> {
-    const res = await fetch('/api/game/voice-room/seat-reward', {
+    const res = await apiFetch('/api/game/voice-room/seat-reward', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, minutesActive, roomId }),
@@ -1107,7 +1149,7 @@ export const api = {
   // ---------------- Gift Cards & Digital Vouchers ----------------
   async getGiftCards(): Promise<GiftCardVoucher[]> {
     try {
-      const res = await fetch('/api/gift-cards');
+      const res = await apiFetch('/api/gift-cards');
       const data = await res.json();
       return data.vouchers || [];
     } catch {
@@ -1122,7 +1164,7 @@ export const api = {
     newBalance?: number;
     user?: UserProfile;
   }> {
-    const res = await fetch('/api/gift-cards/redeem', {
+    const res = await apiFetch('/api/gift-cards/redeem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, voucherId }),
@@ -1137,7 +1179,7 @@ export const api = {
   // ---------------- NWI 3-Level Auto Tree & Non-Working Income ----------------
   async getNwiTree(userId: string): Promise<{ success: boolean; tree: NwiTreeRecord; message?: string }> {
     try {
-      const res = await fetch(`/api/nwi/tree/${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`/api/nwi/tree/${encodeURIComponent(userId)}`);
       return await res.json();
     } catch (err: any) {
       return { success: false, tree: null as any, message: err?.message || 'Network error' };
@@ -1152,7 +1194,7 @@ export const api = {
     user?: UserProfile;
     tree?: NwiTreeRecord;
   }> {
-    const res = await fetch('/api/nwi/claim-level-reward', {
+    const res = await apiFetch('/api/nwi/claim-level-reward', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
@@ -1170,7 +1212,7 @@ export const api = {
     tree?: NwiTreeRecord;
     user?: UserProfile;
   }> {
-    const res = await fetch('/api/nwi/activate', {
+    const res = await apiFetch('/api/nwi/activate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, tierFee }),
@@ -1188,7 +1230,7 @@ export const api = {
     message: string;
     user?: UserProfile;
   }> {
-    const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/share-swi-app`, {
+    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/share-swi-app`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ swiAppLink, swiAppNote, adminPassword }),
@@ -1203,7 +1245,7 @@ export const api = {
     upgradeFee: number,
     paymentUtr: string
   ): Promise<{ success: boolean; message: string; request?: PlanUpgradeRequest }> {
-    const res = await fetch('/api/users/upgrade-plan', {
+    const res = await apiFetch('/api/users/upgrade-plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, targetServiceCode, upgradeFee, paymentUtr }),
@@ -1213,7 +1255,7 @@ export const api = {
 
   async getPlanUpgrades(adminPassword: string): Promise<{ success: boolean; upgrades: PlanUpgradeRequest[] }> {
     try {
-      const res = await fetch(`/api/admin/upgrades?adminPassword=${encodeURIComponent(adminPassword)}`);
+      const res = await apiFetch(`/api/admin/upgrades?adminPassword=${encodeURIComponent(adminPassword)}`);
       return await res.json();
     } catch {
       return { success: false, upgrades: [] };
@@ -1225,7 +1267,7 @@ export const api = {
     status: 'approved' | 'rejected',
     adminPassword: string
   ): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`/api/admin/upgrades/${encodeURIComponent(upgradeId)}/status`, {
+    const res = await apiFetch(`/api/admin/upgrades/${encodeURIComponent(upgradeId)}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminPassword }),

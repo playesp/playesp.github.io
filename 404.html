@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="hi">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ESP Platform - Redirecting...</title>
+    <script>
+      (function () {
+        if (window.location.hostname.indexOf('github.io') !== -1) {
+          window.location.replace('/docs/' + window.location.search + window.location.hash);
+        } else {
+          window.location.replace('/');
+        }
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

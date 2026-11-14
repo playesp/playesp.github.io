@@ -1,0 +1,2233 @@
+{
+  "settings": {
+    "ownerName": "SANTOSH KUMAR",
+    "ownerSponsorId": "EMO-MOM-MMO",
+    "adminUpiId": "8877490845@SPICEPAY",
+    "adminPayeeName": "VIKAS KUMAR",
+    "adminQrCodeUrl": "",
+    "contactAddress": "ESP Headquarters, Bihar, India (Operating Pan-India)",
+    "supportPhone": "+91 8877490845",
+    "supportEmail": "ioisplatform@gmail.com",
+    "whatsappNumber": "8877490845",
+    "minWithdrawal": 50,
+    "defaultReferralCommissionRate": 0.4,
+    "blogReferenceUrl": "https://emofi100.blogspot.com/2024/03/earning-service-platform-esp.html?m=1",
+    "joiningFormUrl": "https://docs.google.com/forms/d/e/1FAIpQLScqqyR1CDev8HEmpKaSzvRd1hcIERIIOP1qYWL1NaPV_9L-rg/viewform?usp=sf_link",
+    "bannerNotice": "🎉 Welcome to ESP! Join any service starting at just ₹10 and receive your Verified Member Digital ID Card instantly!"
+  },
+  "services": [
+    {
+      "id": "srv-1",
+      "code": "EMO",
+      "name": "EARN MONEY ONLINE",
+      "hindiName": "अर्न मनी ऑनलाइन (Normal & Fast)",
+      "description": "Dual Income System: EMO Normal Earning (₹10+) & EMO Fast Income with 3-Level Rewards (₹100+).",
+      "hindiDescription": "सामान्य अर्निंग एवं 3-लेवल फास्ट इनकम सिस्टम के साथ न्यूनतम ₹10 से शुरू।",
+      "category": "task",
+      "joiningFeeTiers": [
+        10,
+        50,
+        100,
+        500,
+        1000
+      ],
+      "defaultFee": 10,
+      "dailyEarningEst": "₹15 - ₹400 / day",
+      "referralBonusPercent": 55,
+      "icon": "Coins",
+      "features": [
+        "EMO Normal Earning (₹10+)",
+        "EMO Fast Income (3 Levels, ₹100+)",
+        "₹3 to ₹750 per Invitation",
+        "Daily UPI Payout"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-2",
+      "code": "MMO",
+      "name": "MAKE MONEY ONLINE",
+      "hindiName": "मेक मनी ऑनलाइन (Business Promotion)",
+      "description": "Promote any business, shop, YouTube channel, or service and earn lucrative referral invitation cash rewards.",
+      "hindiDescription": "अपने व्यवसाय व सेवा का प्रचार करवाएं और प्रत्येक इनविटेशन पर ₹45 से ₹550 तक का सीधा नकद लाभ पाएं।",
+      "category": "direct",
+      "joiningFeeTiers": [
+        50,
+        100,
+        500,
+        1000
+      ],
+      "defaultFee": 50,
+      "dailyEarningEst": "₹45 - ₹550 / invite",
+      "referralBonusPercent": 55,
+      "icon": "TrendingUp",
+      "features": [
+        "Business & YouTube Promotion",
+        "₹45 to ₹550 per Invitation",
+        "High-converting viral posters",
+        "Weekly rewards"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-3",
+      "code": "MOM",
+      "name": "MAKE ONLINE MONEY",
+      "hindiName": "मेक ऑनलाइन मनी (डिजिटल स्टार्टर किट)",
+      "description": "100% Legal Digital Marketing Assets (₹1500+ value) + Social media growth courses and high-margin affiliate payouts.",
+      "hindiDescription": "पंजीकरण पर ₹1500 मूल्य की डिजिटल किट (AI प्रॉम्प्ट्स, सोशल पोस्टर्स, वीडियो हुक्स) और 70% तक एफिलिएट कमीशन।",
+      "category": "task",
+      "joiningFeeTiers": [
+        100,
+        499,
+        999,
+        4999
+      ],
+      "defaultFee": 499,
+      "dailyEarningEst": "₹100 - ₹1,000 / refer",
+      "referralBonusPercent": 70,
+      "icon": "Smartphone",
+      "features": [
+        "Instant ₹1500+ Digital Asset Pack",
+        "YouTube & Instagram Promotion Kit",
+        "₹100 to ₹1000 per Referral",
+        "100% Legal Deliverables"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-4",
+      "code": "OES",
+      "name": "ONLINE EARNING SYSTEM",
+      "hindiName": "ऑनलाइन अर्निंग सिस्टम (क्रिएटर टूल्स व 5-लेवल)",
+      "description": "Enterprise Digital Creator Suite (Verified ID Generator, Smart Resume Maker) + 5-Level transparent affiliate matrix.",
+      "hindiDescription": "स्टूडेंट व क्रिएटर टूल्स (रिज्यूमे मेकर, आईडी कार्ड जेनरेटर) और 5-स्तरीय पारदर्शी एफिलिएट कमीशन।",
+      "category": "team",
+      "joiningFeeTiers": [
+        500,
+        1000,
+        5000,
+        10000
+      ],
+      "defaultFee": 1000,
+      "dailyEarningEst": "₹350 - ₹4,800 / refer",
+      "referralBonusPercent": 50,
+      "icon": "Network",
+      "features": [
+        "Enterprise SaaS Tool Access",
+        "5-Level Income System (LIS ₹500)",
+        "50% Super Affiliate Commission",
+        "Govt Compliant Invoicing"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-5",
+      "code": "MMS",
+      "name": "MONEY MAKING SYSTEM",
+      "hindiName": "मनी मेकिंग सिस्टम (5 Services)",
+      "description": "5 Specialized Earning Branches: Non-Level, Level, Ultra Level, Pro, and Ultra Pro Income Services.",
+      "hindiDescription": "MMS में 5 प्रकार की विशिष्ट सेवाएं: नॉन-लेवल से लेकर अल्ट्रा प्रो लेवल तक।",
+      "category": "team",
+      "joiningFeeTiers": [
+        100,
+        250,
+        500,
+        1000,
+        2500
+      ],
+      "defaultFee": 250,
+      "dailyEarningEst": "₹120 - ₹1,250 / day",
+      "referralBonusPercent": 50,
+      "icon": "Zap",
+      "features": [
+        "5 Services: Non-Level to Ultra Pro",
+        "Compounding yield",
+        "VIP Crown Badge",
+        "Direct Admin Hotline"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-6",
+      "code": "NWI",
+      "name": "LOYALTY REWARD POOL (LRP / NWI)",
+      "hindiName": "लॉयल्टी रिवॉर्ड पूल (मर्चेंट विज्ञापन व कैशबैक लाभांश)",
+      "description": "100% Legal Platform Loyalty Pool. Earn quarterly community cashbacks generated from real partner merchant ad revenue and utility margins (Prize Chits Act & Direct Selling Rules 2021 compliant; no illegal ponzi circulation).",
+      "hindiDescription": "पार्टनर ब्रांड्स की विज्ञापन आय एवं यूटिलिटी मार्जिन से वैध कम्युनिटी कैशबैक पूल। गैर-कानूनी मनी सर्कुलेशन पूरी तरह बंद।",
+      "category": "passive",
+      "joiningFeeTiers": [
+        200,
+        500,
+        1000,
+        2000
+      ],
+      "defaultFee": 2000,
+      "dailyEarningEst": "₹200 - ₹1,500 / merchant pool",
+      "referralBonusPercent": 35,
+      "icon": "Clock",
+      "features": [
+        "100% Govt Compliant Ad Pool",
+        "Real Merchant Cashback Sharing",
+        "No Illegal Ponzi Recruitment",
+        "Direct UPI Payout"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-7",
+      "code": "SWI",
+      "name": "SELF WORKING INCOME",
+      "hindiName": "सेल्फ वर्किंग इनकम (Recharge & Bill Pay)",
+      "description": "Fixed high commissions on mobile & DTH recharge and bill payments. Save extra platform fees charged by other apps.",
+      "hindiDescription": "Google Pay / PhonePe के एक्स्ट्रा चार्ज से मुक्ति! मोबाइल व DTH रिचार्ज पर 1% से 25% तक पक्का कमीशन।",
+      "category": "task",
+      "joiningFeeTiers": [
+        100,
+        150,
+        330,
+        350,
+        597,
+        599,
+        1197,
+        1500
+      ],
+      "defaultFee": 100,
+      "dailyEarningEst": "1% to 25% Commission / txn",
+      "referralBonusPercent": 40,
+      "icon": "UserCheck",
+      "features": [
+        "LRCS, MRCS, HRCS (1% - 3.5%)",
+        "SHRCS (4% to 7% Commission)",
+        "AEPS Banking (10% to 25%)",
+        "Jio Special 3.3%"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-8",
+      "code": "TWI",
+      "name": "TEAM WORKING INCOME",
+      "hindiName": "टीम वर्किंग इनकम (TWIS Team Work)",
+      "description": "Earn multi-level overrides on every team recharge + large direct referral benefits from ₹30 to ₹700.",
+      "hindiDescription": "टीम बनाएं और टीम के हर रिचार्ज पर कमीशन के साथ ₹30 से ₹700 का डायरेक्ट रेफरल बेनिफिट पाएं।",
+      "category": "team",
+      "joiningFeeTiers": [
+        100,
+        150,
+        330,
+        350,
+        597,
+        599,
+        1197,
+        1500
+      ],
+      "defaultFee": 100,
+      "dailyEarningEst": "₹100 - ₹2,500 / day",
+      "referralBonusPercent": 50,
+      "icon": "Users",
+      "features": [
+        "0.1% to 1.5% Team Recharge Comm",
+        "₹30 to ₹700 Direct Referral Cash",
+        "AEPS ₹700 Direct Benefit",
+        "Real-time Downline CRM"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-9",
+      "code": "PROMOTE",
+      "name": "PROMOTE & EARN",
+      "hindiName": "प्रमोट & अर्न (Promotional Services)",
+      "description": "Post official ESP promotional banners and WhatsApp status updates; submit screenshots to receive ad compensation.",
+      "hindiDescription": "हमारे सर्विस का विज्ञापन करके पैसा कमाएं! व्हाट्सएप स्टेटस व सोशल मीडिया पर पोस्टर लगाकर कमाई।",
+      "category": "direct",
+      "joiningFeeTiers": [
+        50,
+        100,
+        250
+      ],
+      "defaultFee": 50,
+      "dailyEarningEst": "₹20 - ₹250 / day",
+      "referralBonusPercent": 40,
+      "icon": "Share2",
+      "features": [
+        "Start at Just ₹50",
+        "Ready-to-post HD banners",
+        "Automated screenshot verification",
+        "Daily WhatsApp status bonus"
+      ],
+      "active": true
+    },
+    {
+      "id": "srv-10",
+      "code": "REFER",
+      "name": "REFER & EARN",
+      "hindiName": "रेफर & अर्न (Sponsor & Upgrade)",
+      "description": "Share your personal Roll Number / Sponsor Code and invite friends; upgrade service plan anytime with ₹100 extra charge.",
+      "hindiDescription": "अपना यूनिक स्पॉन्सर कोड बनाएं, बिना परेशानी डाउनलाइन जोड़ें और ₹100 से कभी भी प्लान अपग्रेड करें।",
+      "category": "direct",
+      "joiningFeeTiers": [
+        10,
+        50,
+        100,
+        250,
+        500,
+        1000
+      ],
+      "defaultFee": 100,
+      "dailyEarningEst": "₹100 - ₹5,000 / day (Unlimited)",
+      "referralBonusPercent": 50,
+      "icon": "Gift",
+      "features": [
+        "Permanent Roll Number (Sponsor Code)",
+        "₹100 Service Upgrade Plan",
+        "50% Flat Referral Bonus",
+        "Unlimited Downline Scaling"
+      ],
+      "active": true
+    }
+  ],
+  "users": [
+    {
+      "id": "usr-sharma-ji",
+      "userId": "SHARMA-JI-VIP",
+      "fullName": "👑 Sharma Ji (शर्मा जी)",
+      "phone": "9876598765",
+      "email": "sharmaji.royal@espgaming.in",
+      "fullAddress": "Royal Palace, New Delhi, India",
+      "paymentAddress": "sharmaji@upi",
+      "payoutUpiId": "sharmaji@upi",
+      "password": "password123",
+      "sponsorId": "FOUNDER",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "OES",
+      "chosenServiceName": "ONLINE EARNING SYSTEM (OES)",
+      "joiningFee": 10000,
+      "joiningDate": "2024-01-01",
+      "paymentUtr": "SHARMA_ROYAL_GENESIS",
+      "status": "active",
+      "verifiedAt": "2024-01-01T00:00:00.000Z",
+      "balance": 550000,
+      "totalEarnings": 890000,
+      "referralEarnings": 650000,
+      "promoEarnings": 240000,
+      "totalWithdrawn": 340000,
+      "coins": 999999,
+      "charms": 98765,
+      "gameLevel": 99,
+      "gameXp": 99999,
+      "crownPost": true,
+      "frameType": "royal-dragon-crown",
+      "vipTitle": "👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)",
+      "roomAddress": "ESP-ROOM-SHARMAJI-ROYAL",
+      "houseName": "👑 शर्मा जी का राजमहल (Sharma Ji Royal Palace)",
+      "clanName": "👑 Sharma Ji Royals",
+      "clanRole": "Leader",
+      "loginStreak": 7,
+      "claimedDays": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "friendsCount": 2500,
+      "visitorCount": 98765,
+      "role": "member",
+      "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99",
+      "bio": "👑 ESP PLAY & ESP के सबसे बड़े लेजेंड | Level 99 | 98,765 Charms | सभी गेम के बेताज बादशाह | क्राउन पोस्ट धारक",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "usr-admin",
+      "userId": "EMO-MOM-MMO",
+      "fullName": "SANTOSH KUMAR",
+      "phone": "8877490845",
+      "email": "ioisplatform@gmail.com",
+      "fullAddress": "ESP Headquarters, Bihar, India",
+      "paymentAddress": "8877490845@SPICEPAY",
+      "payoutUpiId": "8877490845@SPICEPAY",
+      "password": "admin",
+      "sponsorId": "OWNER",
+      "sponsorName": "ESP SYSTEM FOUNDER",
+      "chosenServiceCode": "OES",
+      "chosenServiceName": "ONLINE EARNING SYSTEM",
+      "joiningFee": 1000,
+      "joiningDate": "2024-03-01",
+      "paymentUtr": "ADMIN_FOUNDER_GENESIS",
+      "status": "active",
+      "verifiedAt": "2024-03-01T00:00:00.000Z",
+      "balance": 15428,
+      "totalEarnings": 28408,
+      "referralEarnings": 21508,
+      "taskEarnings": 6900,
+      "totalWithdrawn": 12980,
+      "role": "admin",
+      "createdAt": "2024-03-01T00:00:00.000Z",
+      "activeSessions": [
+        {
+          "sessionId": "sess_1793286557144_pfn4mb",
+          "token": "esp_tok_1793286557144_7earj0446s",
+          "deviceType": "desktop",
+          "deviceName": "Windows / PC - Chrome",
+          "browser": "Chrome",
+          "os": "Windows / PC",
+          "ipAddress": "127.0.0.1",
+          "loginTime": "2026-10-29T15:09:17.144Z",
+          "lastActive": "2026-10-29T15:09:17.144Z"
+        }
+      ],
+      "lastLogin": "2026-10-29T15:09:17.144Z",
+      "coins": 4950,
+      "charms": 150,
+      "gameLevel": 3,
+      "gameXp": 405,
+      "roomAddress": "ESP-ROOM-EMOMOMMMO",
+      "houseName": "SANTOSH KUMAR Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "usr-rahul",
+      "userId": "ESP10RK01",
+      "fullName": "RAHUL Kumar",
+      "phone": "9876543210",
+      "email": "rahul.kumar@gmail.com",
+      "fullAddress": "Patna, Bihar, PIN: 800001",
+      "paymentAddress": "rahul987@okaxis",
+      "payoutUpiId": "rahul987@okaxis",
+      "password": "password123",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "EMO",
+      "chosenServiceName": "EARN MONEY ONLINE",
+      "joiningFee": 10,
+      "joiningDate": "2024-03-15",
+      "paymentUtr": "407812938471",
+      "status": "active",
+      "verifiedAt": "2024-03-15T10:20:00.000Z",
+      "balance": 1820,
+      "totalEarnings": 1920,
+      "referralEarnings": 160,
+      "taskEarnings": 80,
+      "totalWithdrawn": 100,
+      "role": "member",
+      "createdAt": "2024-03-15T10:00:00.000Z",
+      "coins": 5000,
+      "charms": 150,
+      "gameLevel": 5,
+      "gameXp": 380,
+      "roomAddress": "ESP-ROOM-ESP10RK01",
+      "houseName": "RAHUL Kumar Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "usr-vikas",
+      "userId": "ESP50VK01",
+      "fullName": "VIKAS KUMAR",
+      "phone": "8877490845",
+      "email": "vikas.esp@gmail.com",
+      "fullAddress": "Gaya, Bihar, India",
+      "paymentAddress": "8877490845@SPICEPAY",
+      "payoutUpiId": "8877490845@SPICEPAY",
+      "password": "password123",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "REFER",
+      "chosenServiceName": "REFER & EARN",
+      "joiningFee": 50,
+      "joiningDate": "2024-03-16",
+      "paymentUtr": "407983726152",
+      "status": "active",
+      "verifiedAt": "2024-03-16T12:00:00.000Z",
+      "balance": 450,
+      "totalEarnings": 850,
+      "referralEarnings": 720,
+      "taskEarnings": 130,
+      "totalWithdrawn": 400,
+      "role": "member",
+      "createdAt": "2024-03-16T11:30:00.000Z",
+      "coins": 5000,
+      "charms": 150,
+      "gameLevel": 5,
+      "gameXp": 380,
+      "roomAddress": "ESP-ROOM-ESP50VK01",
+      "houseName": "VIKAS KUMAR Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "usr-1793282083932-c5op",
+      "userId": "ESP10AS01",
+      "fullName": "Anita Sharma",
+      "phone": "9811223344",
+      "email": "anita@example.com",
+      "fullAddress": "",
+      "paymentAddress": "anita@upi",
+      "payoutUpiId": "anita@upi",
+      "password": "pass",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "EMO",
+      "chosenServiceName": "EARN MONEY ONLINE",
+      "joiningFee": 10,
+      "joiningDate": "2026-10-29",
+      "paymentUtr": "123456789012",
+      "paymentScreenshot": "",
+      "status": "active",
+      "verifiedAt": "2026-10-29T13:54:43.932Z",
+      "balance": 10,
+      "totalEarnings": 10,
+      "referralEarnings": 0,
+      "taskEarnings": 0,
+      "totalWithdrawn": 0,
+      "role": "member",
+      "createdAt": "2026-10-29T13:54:43.932Z",
+      "lastLogin": "2026-10-29T13:54:43.932Z",
+      "coins": 5000,
+      "charms": 150,
+      "gameLevel": 5,
+      "gameXp": 380,
+      "roomAddress": "ESP-ROOM-ESP10AS01",
+      "houseName": "Anita Sharma Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "usr-1793282090723-8yjn",
+      "userId": "ESP10AS02",
+      "fullName": "Ajay Singh",
+      "phone": "9811223345",
+      "email": "ajay@example.com",
+      "fullAddress": "",
+      "paymentAddress": "ajay@upi",
+      "payoutUpiId": "ajay@upi",
+      "password": "pass",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "EMO",
+      "chosenServiceName": "EARN MONEY ONLINE",
+      "joiningFee": 10,
+      "joiningDate": "2026-10-29",
+      "paymentUtr": "123456789013",
+      "paymentScreenshot": "",
+      "status": "active",
+      "verifiedAt": "2026-10-29T13:54:50.723Z",
+      "balance": 10,
+      "totalEarnings": 10,
+      "referralEarnings": 0,
+      "taskEarnings": 0,
+      "totalWithdrawn": 0,
+      "role": "member",
+      "createdAt": "2026-10-29T13:54:50.723Z",
+      "lastLogin": "2026-10-29T13:54:50.723Z",
+      "coins": 5000,
+      "charms": 150,
+      "gameLevel": 5,
+      "gameXp": 380,
+      "roomAddress": "ESP-ROOM-ESP10AS02",
+      "houseName": "Ajay Singh Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "TEST-ESP-USER",
+      "userId": "TEST-ESP-USER",
+      "fullName": "परीक्षण यूजर",
+      "phone": "8877490845",
+      "email": "test-esp-user@esp.com",
+      "fullAddress": "India",
+      "paymentAddress": "member@upi",
+      "payoutUpiId": "member@upi",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "EMO",
+      "chosenServiceName": "Earn Money Online",
+      "joiningFee": 10,
+      "joiningDate": "2026-11-03",
+      "paymentUtr": "ACTIVE",
+      "status": "active",
+      "balance": 0,
+      "totalEarnings": 0,
+      "referralEarnings": 0,
+      "promoEarnings": 0,
+      "totalWithdrawn": 0,
+      "coins": 5000,
+      "charms": 150,
+      "gameLevel": 5,
+      "gameXp": 500,
+      "roomAddress": "ESP-ROOM-TESTESPUSER",
+      "houseName": "परीक्षण यूजर Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TEST-ESP-USER",
+      "loginStreak": 1,
+      "claimedDays": [
+        1
+      ],
+      "role": "member",
+      "createdAt": "2026-11-03T14:29:07.085Z",
+      "editHistory": [],
+      "activeSessions": [],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false
+    },
+    {
+      "id": "ESP-GUEST-01",
+      "userId": "ESP-GUEST-01",
+      "fullName": "ESP Player",
+      "phone": "8877490845",
+      "status": "active",
+      "coins": 2815,
+      "charms": 13041,
+      "gameLevel": 9,
+      "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "gameXp": 1580,
+      "roomAddress": "ESP-ROOM-ESPGUEST01",
+      "houseName": "ESP Player Gaming House",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 3,
+      "claimedDays": [
+        1,
+        2
+      ],
+      "friendsCount": 12,
+      "visitorCount": 148,
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 19,
+      "isOnline": true,
+      "lastSessionStart": "2026-11-12T02:35:41.675Z",
+      "lastActiveTime": "2026-11-12T02:49:58.853Z"
+    }
+  ],
+  "referrals": [
+    {
+      "id": "ref-1",
+      "sponsorUserId": "EMO-MOM-MMO",
+      "downlineUserId": "ESP10RK01",
+      "downlineName": "RAHUL Kumar",
+      "downlinePhone": "9876543210",
+      "serviceCode": "EMO",
+      "joiningFee": 10,
+      "commissionAmount": 4,
+      "status": "credited",
+      "date": "2024-03-15"
+    },
+    {
+      "id": "ref-2",
+      "sponsorUserId": "EMO-MOM-MMO",
+      "downlineUserId": "ESP50VK01",
+      "downlineName": "VIKAS KUMAR",
+      "downlinePhone": "8877490845",
+      "serviceCode": "REFER",
+      "joiningFee": 50,
+      "commissionAmount": 20,
+      "status": "credited",
+      "date": "2024-03-16"
+    },
+    {
+      "id": "ref-1793282083932",
+      "sponsorUserId": "EMO-MOM-MMO",
+      "downlineUserId": "ESP10AS01",
+      "downlineName": "Anita Sharma",
+      "downlinePhone": "9811223344",
+      "serviceCode": "EMO",
+      "joiningFee": 10,
+      "commissionAmount": 4,
+      "status": "credited",
+      "date": "2026-10-29"
+    },
+    {
+      "id": "ref-1793282090723",
+      "sponsorUserId": "EMO-MOM-MMO",
+      "downlineUserId": "ESP10AS02",
+      "downlineName": "Ajay Singh",
+      "downlinePhone": "9811223345",
+      "serviceCode": "EMO",
+      "joiningFee": 10,
+      "commissionAmount": 4,
+      "status": "credited",
+      "date": "2026-10-29"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "TXN-NWI-829518",
+      "userId": "ESP10RK01",
+      "amount": 1680,
+      "type": "nwi_level_income",
+      "description": "👑 NWI 3-Level नॉन-वर्किंग पैसिव इनकम क्रेडिट (बिना काम किए ऑटो-टीम लाभ)",
+      "date": "2026-11-12 02:50",
+      "status": "completed",
+      "referenceId": "NWI-AUTO-REF-51829518"
+    },
+    {
+      "id": "tx-1",
+      "userId": "ESP10RK01",
+      "amount": 20,
+      "type": "signup_bonus",
+      "description": "ESP Welcome Registration Bonus",
+      "date": "2024-03-15T10:20:00.000Z",
+      "status": "completed"
+    },
+    {
+      "id": "tx-2",
+      "userId": "ESP10RK01",
+      "amount": 40,
+      "type": "task_bonus",
+      "description": "Completed WhatsApp Status Promotion Task",
+      "date": "2024-03-17T11:00:00.000Z",
+      "status": "completed"
+    },
+    {
+      "id": "tx-1793282083932-1",
+      "userId": "ESP10AS01",
+      "amount": 10,
+      "type": "signup_bonus",
+      "description": "ESP Welcome Registration Bonus",
+      "date": "2026-10-29T13:54:43.932Z",
+      "status": "completed"
+    },
+    {
+      "id": "tx-1793282083932-ref",
+      "userId": "EMO-MOM-MMO",
+      "amount": 4,
+      "type": "referral_credit",
+      "description": "Direct Referral Reward from Anita Sharma (EMO ₹10)",
+      "date": "2026-10-29T13:54:43.932Z",
+      "status": "completed",
+      "referenceId": "ref-1793282083932"
+    },
+    {
+      "id": "tx-1793282090723-1",
+      "userId": "ESP10AS02",
+      "amount": 10,
+      "type": "signup_bonus",
+      "description": "ESP Welcome Registration Bonus",
+      "date": "2026-10-29T13:54:50.723Z",
+      "status": "completed"
+    },
+    {
+      "id": "tx-1793282090723-ref",
+      "userId": "EMO-MOM-MMO",
+      "amount": 4,
+      "type": "referral_credit",
+      "description": "Direct Referral Reward from Ajay Singh (EMO ₹10)",
+      "date": "2026-10-29T13:54:50.723Z",
+      "status": "completed",
+      "referenceId": "ref-1793282090723"
+    }
+  ],
+  "payouts": [
+    {
+      "id": "po-1",
+      "userId": "ESP10RK01",
+      "userName": "RAHUL Kumar",
+      "userPhone": "9876543210",
+      "amount": 100,
+      "payoutAddress": "rahul987@okaxis",
+      "status": "approved",
+      "requestDate": "2024-03-20",
+      "processedDate": "2024-03-20",
+      "transactionRef": "UPI_PAYOUT_837264819"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif-nwi-1794451829518",
+      "userId": "ESP10RK01",
+      "title": "👑 NWI 3-Level इनकम प्राप्त हुई!",
+      "message": "बधाई! आपके खाते में बिना किसी काम के 3-लेवल नॉन-वर्किंग ऑटो टीम से ₹1680 सफलतापूर्वक क्रेडिट कर दिए गए हैं।",
+      "type": "system",
+      "date": "12/11/2026",
+      "read": false
+    },
+    {
+      "id": "notif-1",
+      "userId": "ESP10RK01",
+      "title": "🎉 Welcome to ESP Family!",
+      "message": "Your account is officially active. Your Roll Number is ESP10RK01. Download your Verified Member Digital ID Card now!",
+      "date": "2024-03-15T10:20:00.000Z",
+      "read": false,
+      "type": "system"
+    },
+    {
+      "id": "notif-1793282083932-w",
+      "userId": "ESP10AS01",
+      "title": "🎉 Welcome to ESP!",
+      "message": "Congratulations Anita Sharma! Your Roll Number / Code is ESP10AS01. Your Verified Member Digital ID Card has been generated.",
+      "date": "2026-10-29T13:54:43.932Z",
+      "read": false,
+      "type": "system"
+    },
+    {
+      "id": "notif-1793282083932-sp",
+      "userId": "EMO-MOM-MMO",
+      "title": "💰 Referral Reward Credited!",
+      "message": "₹4 credited to your wallet! Member Anita Sharma (ESP10AS01) just joined under your sponsorship.",
+      "date": "2026-10-29T13:54:43.932Z",
+      "read": false,
+      "type": "referral"
+    },
+    {
+      "id": "notif-1793282090723-w",
+      "userId": "ESP10AS02",
+      "title": "🎉 Welcome to ESP!",
+      "message": "Congratulations Ajay Singh! Your Roll Number / Code is ESP10AS02. Your Verified Member Digital ID Card has been generated.",
+      "date": "2026-10-29T13:54:50.723Z",
+      "read": false,
+      "type": "system"
+    },
+    {
+      "id": "notif-1793282090723-sp",
+      "userId": "EMO-MOM-MMO",
+      "title": "💰 Referral Reward Credited!",
+      "message": "₹4 credited to your wallet! Member Ajay Singh (ESP10AS02) just joined under your sponsorship.",
+      "date": "2026-10-29T13:54:50.723Z",
+      "read": false,
+      "type": "referral"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "tsk-1",
+      "title": "Post ESP Poster on WhatsApp Status",
+      "titleHindi": "व्हाट्सएप स्टेटस पर ESP पोस्टर शेयर करें",
+      "description": "Download the official promotional poster from your dashboard and post it to your WhatsApp Status for 24 hours.",
+      "category": "whatsapp_status",
+      "reward": 15,
+      "serviceType": "ALL",
+      "completed": false
+    },
+    {
+      "id": "tsk-2",
+      "title": "Daily Platform Attendance Check-in",
+      "titleHindi": "दैनिक उपस्थिति चेक-इन",
+      "description": "Claim your daily active login reward bonus to keep your ESP account in verified standing.",
+      "category": "daily_checkin",
+      "reward": 5,
+      "serviceType": "ALL",
+      "completed": false
+    },
+    {
+      "id": "tsk-3",
+      "title": "Share Referral Link in 3 Earning Groups",
+      "titleHindi": "3 व्हाट्सएप/टेलीग्राम ग्रुप में रेफरल लिंक भेजें",
+      "description": "Share your unique referral link and roll number in active work-from-home or job discussion communities.",
+      "category": "social_share",
+      "reward": 20,
+      "serviceType": "PROMOTE",
+      "completed": false
+    },
+    {
+      "id": "tsk-4",
+      "title": "Engage with ESP Official Updates",
+      "titleHindi": "ESP ऑफिशियल अपडेट्स और आर्टिकल देखें",
+      "description": "Visit the official blog update and read about the latest social media networking monetization tips.",
+      "category": "ad_view",
+      "reward": 10,
+      "serviceType": "EMO",
+      "actionUrl": "https://emofi100.blogspot.com/2024/03/earning-service-platform-esp.html?m=1",
+      "completed": false
+    }
+  ],
+  "adminMasterKey": "ESP_Admin_9988#Secure",
+  "moments": [
+    {
+      "id": "moment-1",
+      "userId": "usr-admin",
+      "userName": "SANTOSH KUMAR (Founder)",
+      "userRollNumber": "EMO-MOM-MMO",
+      "userAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "caption": "🎉 Congratulations to all 2,800+ active ESP Members! Today all UPI withdrawals have been processed. Share your referral posters daily on WhatsApp status!",
+      "imageUrl": "https://images.unsplash.com/photo-1579621970795-87facc2f976d?w=800&auto=format&fit=crop&q=80",
+      "serviceTag": "OFFICIAL NOTICE",
+      "createdAt": "2026-11-01T08:31:21.769Z",
+      "likes": [
+        "usr-demo1",
+        "usr-demo2"
+      ],
+      "comments": [
+        {
+          "id": "c-1",
+          "userId": "usr-demo1",
+          "userName": "Rahul Verma",
+          "userRollNumber": "ESP10RV01",
+          "text": "Thank you Santosh Sir! ESP is truly transparent and fast.",
+          "createdAt": "2026-11-01T09:31:21.769Z"
+        }
+      ],
+      "sharesCount": 42
+    },
+    {
+      "id": "moment-2",
+      "userId": "usr-demo1",
+      "userName": "Amit Kumar",
+      "userRollNumber": "ESP10AK88",
+      "caption": "💰 Just received ₹450 direct in PhonePe through MMO & Refer & Earn! Starting with just ₹10 has been the best decision.",
+      "imageUrl": "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=800&auto=format&fit=crop&q=80",
+      "serviceTag": "PAYOUT PROOF",
+      "createdAt": "2026-11-01T06:31:21.769Z",
+      "likes": [
+        "usr-admin",
+        "usr-demo2"
+      ],
+      "comments": [],
+      "sharesCount": 19
+    }
+  ],
+  "chatRooms": [
+    {
+      "id": "room-global",
+      "name": "ESP National Community Club",
+      "hindiName": "राष्ट्रीय कम्युनिटी क्लब (सभी सदस्य)",
+      "description": "All ESP verified members official chatting hub. Discuss daily earnings, share tips & ideas.",
+      "category": "community",
+      "membersCount": 2840,
+      "lastMessage": "Welcome to ESP Club! Share your referral links and daily task proofs.",
+      "lastMessageTime": "Just now"
+    },
+    {
+      "id": "room-services",
+      "name": "10 Services Earning Discussion",
+      "hindiName": "10 सर्विसेज पर चर्चा व रणनीति",
+      "description": "Master all 10 earning services (EMO, MMO, MOM, NWI Auto Pool, SWI, TWI, etc.)",
+      "category": "service",
+      "membersCount": 1620,
+      "lastMessage": "NWI Auto pool dividends credited today! Check your wallet.",
+      "lastMessageTime": "10m ago"
+    },
+    {
+      "id": "room-referrals",
+      "name": "Referral & Team Builders Club",
+      "hindiName": "रेफरल & डाउनलाइन टीम बिल्डर्स",
+      "description": "Connect with other members, make new friends, build 5-tier networks, and share status templates.",
+      "category": "group",
+      "membersCount": 980,
+      "lastMessage": "Joined with ₹10! Earned ₹400 in direct referral within 2 days.",
+      "lastMessageTime": "25m ago"
+    },
+    {
+      "id": "room-support",
+      "name": "Founder & Admin 24x7 Helpdesk",
+      "hindiName": "फाउंडर मार्गदर्शन एवं हेल्पलाइन",
+      "description": "Official WhatsApp +91 8877490845 & Live IOIS Support Assistant channel.",
+      "category": "help",
+      "membersCount": 3100,
+      "lastMessage": "Admin verifies 12-digit UTR within minutes. Digital ID cards ready.",
+      "lastMessageTime": "1h ago"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "msg-1",
+      "roomId": "room-global",
+      "senderId": "usr-admin",
+      "senderName": "SANTOSH KUMAR (Founder)",
+      "senderRollNumber": "EMO-MOM-MMO",
+      "senderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "text": "🙏 Welcome all members to the Official ESP Chatting Club! Join any service starting at ₹10 and unlock your Verified Digital ID Card.",
+      "createdAt": "2026-11-01T07:31:21.768Z",
+      "likes": 24
+    },
+    {
+      "id": "msg-2",
+      "roomId": "room-global",
+      "senderId": "usr-demo1",
+      "senderName": "Rahul Verma",
+      "senderRollNumber": "ESP10RV01",
+      "text": "Sir, mera payment UTR verify ho gaya aur Digital ID card download ho gaya! Direct UPI me ₹150 withdrawal mil gaya.",
+      "createdAt": "2026-11-01T09:31:21.769Z",
+      "likes": 12
+    },
+    {
+      "id": "msg-3",
+      "roomId": "room-services",
+      "senderId": "usr-demo2",
+      "senderName": "Priya Sharma",
+      "senderRollNumber": "ESP10PS02",
+      "text": "NWI Auto Pool is best for passive income! Without mandatory tasks, dividends are getting credited.",
+      "createdAt": "2026-11-01T11:01:21.769Z",
+      "likes": 8
+    },
+    {
+      "id": "gift-1793718459966",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने SANTOSH KUMAR को Royal Rose भेंट किया! (+20 Charms ✨)",
+      "createdAt": "2026-11-03T15:07:39.966Z"
+    },
+    {
+      "id": "gift-1793718472712",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Emperor Crown भेंट किया! (+6500 Charms ✨)",
+      "createdAt": "2026-11-03T15:07:52.712Z"
+    },
+    {
+      "id": "gift-1793718640235",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Emperor Crown भेंट किया! (+6500 Charms ✨)",
+      "createdAt": "2026-11-03T15:10:40.235Z"
+    },
+    {
+      "id": "gift-1793718650871",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Emperor Crown भेंट किया! (+6500 Charms ✨)",
+      "createdAt": "2026-11-03T15:10:50.871Z"
+    },
+    {
+      "id": "gift-1793718663127",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Magic Castle भेंट किया! (+15000 Charms ✨)",
+      "createdAt": "2026-11-03T15:11:03.127Z"
+    },
+    {
+      "id": "gift-1793718676835",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Magic Castle भेंट किया! (+15000 Charms ✨)",
+      "createdAt": "2026-11-03T15:11:16.835Z"
+    },
+    {
+      "id": "gift-1793718697595",
+      "roomId": "room-global",
+      "senderId": "ESP-GUEST-01",
+      "senderName": "ESP Player",
+      "senderRollNumber": "ESP-GUEST-01",
+      "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "text": "🎁 [गिफ्ट भेजा] ESP Player ने ESP Player को Magic Castle भेंट किया! (+15000 Charms ✨)",
+      "createdAt": "2026-11-03T15:11:37.595Z"
+    }
+  ],
+  "contacts": [],
+  "coinRecharges": [],
+  "voiceRoomSeats": [
+    {
+      "seatNumber": 1,
+      "seatNumberLabel": "1",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 2,
+      "seatNumberLabel": "2",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 3,
+      "seatNumberLabel": "3",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 4,
+      "seatNumberLabel": "4",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 5,
+      "seatNumberLabel": "5",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 6,
+      "seatNumberLabel": "6",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 7,
+      "seatNumberLabel": "7",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    },
+    {
+      "seatNumber": 8,
+      "seatNumberLabel": "8",
+      "isMuted": false,
+      "isSpeaking": false,
+      "charms": 0
+    }
+  ],
+  "voiceRoomChat": [
+    {
+      "id": "msg-v-init",
+      "senderId": "usr-admin",
+      "sender": "SANTOSH KUMAR (Founder)",
+      "senderRoll": "EMO-MOM-MMO",
+      "text": "🎮 नमस्ते! ESP GAMING ROOM वॉइस स्टेज लाइव है। कोई भी खाली सीट टैप करके स्टेज जॉइन कर सकते हैं।",
+      "time": "Live"
+    }
+  ],
+  "customVoiceRooms": [
+    {
+      "id": "room-espguest01-mw0tocew",
+      "title": "Oo",
+      "topic": "J",
+      "category": "earning",
+      "roomAddress": "ESP-ROOM-ESPGUEST01",
+      "hostUserId": "ESP-GUEST-01",
+      "hostName": "ESP Player",
+      "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+      "hostLevel": 5,
+      "hostCharms": 1404,
+      "createdAt": "2026-11-03T15:08:09.561Z",
+      "isPrivate": false,
+      "passcode": "",
+      "seats": [
+        {
+          "seatNumber": 1,
+          "seatNumberLabel": "1",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 2,
+          "userId": "ESP-GUEST-01",
+          "userName": "ESP Player",
+          "gameLevel": 5,
+          "charms": 1404,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01"
+        },
+        {
+          "seatNumber": 3,
+          "seatNumberLabel": "3",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 4,
+          "seatNumberLabel": "4",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 5,
+          "seatNumberLabel": "5",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 6,
+          "seatNumberLabel": "6",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 7,
+          "seatNumberLabel": "7",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 8,
+          "seatNumberLabel": "8",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        }
+      ],
+      "chatMessages": [
+        {
+          "id": "msg-1793718489561",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "👑 ESP Player ने अपना नया वॉइस रूम \"Oo\" शुरू किया! सभी दोस्तों का स्वागत है।",
+          "time": "Live"
+        },
+        {
+          "id": "seat-1793718498359",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #2 ग्रैब की!",
+          "time": "03:08 PM"
+        },
+        {
+          "id": "seat-1793718506046",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #1 ग्रैब की!",
+          "time": "03:08 PM"
+        },
+        {
+          "id": "seat-1793718518362",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #4 ग्रैब की!",
+          "time": "03:08 PM"
+        },
+        {
+          "id": "seat-1793718523236",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #2 ग्रैब की!",
+          "time": "03:08 PM"
+        }
+      ],
+      "audience": [
+        "ESP-GUEST-01"
+      ]
+    },
+    {
+      "id": "room-testespuser-mw0sa4y5",
+      "title": "टेस्ट गेमिंग कमरा",
+      "topic": "स्नेक गेम और वॉइस चैट",
+      "category": "gaming",
+      "roomAddress": "ESP-ROOM-TESTESPUSER",
+      "hostUserId": "TEST-ESP-USER",
+      "hostName": "परीक्षण यूजर",
+      "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TEST-ESP-USER",
+      "hostLevel": 5,
+      "hostCharms": 150,
+      "createdAt": "2026-11-03T14:29:07.085Z",
+      "isPrivate": false,
+      "passcode": "",
+      "seats": [
+        {
+          "seatNumber": 1,
+          "seatNumberLabel": "1 (Host)",
+          "userId": "TEST-ESP-USER",
+          "userName": "परीक्षण यूजर",
+          "gameLevel": 5,
+          "charms": 150,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TEST-ESP-USER"
+        },
+        {
+          "seatNumber": 2,
+          "seatNumberLabel": "2",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 3,
+          "seatNumberLabel": "3",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 4,
+          "seatNumberLabel": "4",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 5,
+          "seatNumberLabel": "5",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 6,
+          "seatNumberLabel": "6",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 7,
+          "seatNumberLabel": "7",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 8,
+          "seatNumberLabel": "8",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        }
+      ],
+      "chatMessages": [
+        {
+          "id": "msg-1793716147085",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "👑 परीक्षण यूजर ने अपना नया वॉइस रूम \"टेस्ट गेमिंग कमरा\" शुरू किया! सभी दोस्तों का स्वागत है।",
+          "time": "Live"
+        }
+      ],
+      "audience": [
+        "TEST-ESP-USER"
+      ]
+    },
+    {
+      "id": "room-emomommmo-mvzh4oq0",
+      "title": "Test Room",
+      "topic": "Test Topic",
+      "category": "earning",
+      "roomAddress": "ESP-ROOM-EMOMOMMMO",
+      "hostUserId": "EMO-MOM-MMO",
+      "hostName": "SANTOSH KUMAR",
+      "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=EMO-MOM-MMO",
+      "hostLevel": 3,
+      "hostCharms": 150,
+      "createdAt": "2026-11-02T16:29:10.824Z",
+      "isPrivate": false,
+      "passcode": "",
+      "seats": [
+        {
+          "seatNumber": 1,
+          "seatNumberLabel": "1",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 2,
+          "seatNumberLabel": "2",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 3,
+          "seatNumberLabel": "3",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 4,
+          "seatNumberLabel": "4",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 5,
+          "seatNumberLabel": "5",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 6,
+          "seatNumberLabel": "6",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 7,
+          "seatNumberLabel": "7",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 8,
+          "seatNumberLabel": "8",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        }
+      ],
+      "chatMessages": [
+        {
+          "id": "msg-1793636950824",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "👑 SANTOSH KUMAR ने अपना नया वॉइस रूम \"Test Room\" शुरू किया! सभी दोस्तों का स्वागत है।",
+          "time": "Live"
+        }
+      ],
+      "audience": [
+        "EMO-MOM-MMO"
+      ]
+    },
+    {
+      "id": "room-founder",
+      "title": "ESP Royal Voice Stage #1 (Official Stage)",
+      "topic": "Daily ₹500 - ₹2000 Earnings with 10 ESP Services & Games",
+      "category": "earning",
+      "roomAddress": "ESP-ROOM-FOUNDER-01",
+      "hostUserId": "EMO-MOM-MMO",
+      "hostName": "SANTOSH KUMAR",
+      "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP",
+      "hostLevel": 3,
+      "hostCharms": 150,
+      "createdAt": "2026-11-02T16:29:10.824Z",
+      "seats": [
+        {
+          "seatNumber": 1,
+          "seatNumberLabel": "1",
+          "userId": "BOT-JUDGE",
+          "userName": "⚖️ न्यायाधीश बॉट",
+          "gameLevel": 80,
+          "charms": 50000,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99",
+          "userRollNumber": "⚖️ JUSTICE"
+        },
+        {
+          "seatNumber": 2,
+          "userId": "ESP-GUEST-01",
+          "userName": "ESP Player",
+          "gameLevel": 5,
+          "charms": 100,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01"
+        },
+        {
+          "seatNumber": 3,
+          "seatNumberLabel": "3",
+          "userId": "BOT-WOLF",
+          "userName": "🐺 भेड़िया गेम मास्टर",
+          "gameLevel": 75,
+          "charms": 45000,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=WerewolfHostWolf",
+          "userRollNumber": "🐺 WEREWOLF"
+        },
+        {
+          "seatNumber": 4,
+          "seatNumberLabel": "4",
+          "userId": "BOT-BHAI",
+          "userName": "🤝 वी भाई (देसी मददगार)",
+          "gameLevel": 70,
+          "charms": 40000,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother",
+          "userRollNumber": "🤝 WE BHAI"
+        },
+        {
+          "seatNumber": 5,
+          "seatNumberLabel": "5",
+          "userId": "BOT-CHAT",
+          "userName": "💬 वी चैट (मनोरंजन साथी)",
+          "gameLevel": 65,
+          "charms": 38000,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet",
+          "userRollNumber": "💬 COMPANION"
+        },
+        {
+          "seatNumber": 6,
+          "seatNumberLabel": "6",
+          "userId": "SHARMA-JI-VIP",
+          "userName": "👑 Sharma Ji (शर्मा जी)",
+          "gameLevel": 99,
+          "charms": 98765,
+          "isMuted": false,
+          "isSpeaking": true,
+          "userAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99",
+          "userRollNumber": "👑 EMPEROR"
+        },
+        {
+          "seatNumber": 7,
+          "seatNumberLabel": "7",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 8,
+          "seatNumberLabel": "8",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        }
+      ],
+      "chatMessages": [
+        {
+          "id": "msg-init",
+          "senderId": "SYSTEM",
+          "sender": "STAGE HOST",
+          "senderRoll": "STAGE",
+          "text": "🎙️ Welcome to ESP Royal Voice Stage! Enable mic to talk, grab empty seat or listen live.",
+          "time": "Live"
+        },
+        {
+          "id": "seat-1793718445323",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #1 ग्रैब की!",
+          "time": "03:07 PM"
+        },
+        {
+          "id": "seat-1793718446076",
+          "senderId": "SYSTEM",
+          "sender": "ROOM STAGE",
+          "senderRoll": "STAGE",
+          "text": "🎙️ ESP Player (ESP-GUEST-01) ने सीट #2 ग्रैब की!",
+          "time": "03:07 PM"
+        },
+        {
+          "id": "vchat-1793718451124-71z6",
+          "senderId": "ESP-GUEST-01",
+          "sender": "ESP Player",
+          "senderRoll": "ESP-GUEST-01",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+          "text": "played sound effect: 👏 Applause",
+          "isGift": false,
+          "time": "03:07 PM"
+        },
+        {
+          "id": "vchat-1793718452396-365j",
+          "senderId": "ESP-GUEST-01",
+          "sender": "ESP Player",
+          "senderRoll": "ESP-GUEST-01",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+          "text": "played sound effect: 👏 Applause",
+          "isGift": false,
+          "time": "03:07 PM"
+        },
+        {
+          "id": "vchat-1793718452801-do6v",
+          "senderId": "ESP-GUEST-01",
+          "sender": "ESP Player",
+          "senderRoll": "ESP-GUEST-01",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+          "text": "played sound effect: 🥂 Cheers",
+          "isGift": false,
+          "time": "03:07 PM"
+        },
+        {
+          "id": "vchat-1793718453031-kd5p",
+          "senderId": "ESP-GUEST-01",
+          "sender": "ESP Player",
+          "senderRoll": "ESP-GUEST-01",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+          "text": "played sound effect: 😂 Laugh",
+          "isGift": false,
+          "time": "03:07 PM"
+        },
+        {
+          "id": "vchat-1793718453237-odcx",
+          "senderId": "ESP-GUEST-01",
+          "sender": "ESP Player",
+          "senderRoll": "ESP-GUEST-01",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESP-GUEST-01",
+          "text": "played sound effect: 🏆 Victory",
+          "isGift": false,
+          "time": "03:07 PM"
+        },
+        {
+          "id": "summon-1793718697295",
+          "senderId": "BOT-ALERT",
+          "sender": "🔔 WeAlert (शाही बिगुल)",
+          "senderRoll": "🔔 ALERT",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=WeAlertRoyalHorn",
+          "text": "🎺 सुनिए सुनिए! न्यायाधीश, भेड़िया बॉट, वी भाई, वी चैट और स्वयं शर्मा जी (Lvl 99, 98,765 Charms) स्टेज पर उपस्थित हैं! अकेला कोई नहीं रहेगा!",
+          "time": "03:11 PM"
+        },
+        {
+          "id": "bot-msg-1793718702602",
+          "senderId": "BOT-CHAT",
+          "sender": "💬 We Chat (वी चैट AI)",
+          "senderRoll": "💬 COMPANION",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet",
+          "text": "💬 \"हौसलों के तरकश में कोशिश का वो तीर जिंदा रखो, हार जाओ चाहे जिंदगी में सब कुछ मगर जीतने की उम्मीद जिंदा रखो!\" 🎯",
+          "time": "03:11 PM"
+        },
+        {
+          "id": "bot-msg-1793718706820",
+          "senderId": "BOT-JUDGE",
+          "sender": "⚖️ न्यायाधीश (Judge Bot)",
+          "senderRoll": "⚖️ JUSTICE",
+          "senderAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99",
+          "text": "⚖️ अदालत का फैसला: सभी खिलाड़ियों ने निष्पक्ष खेल दिखाया है। 50 इंसाफ कॉइन्स रिवॉर्ड स्वीकृत!",
+          "time": "03:11 PM"
+        }
+      ],
+      "audience": [
+        "EMO-MOM-MMO"
+      ]
+    }
+  ],
+  "complaints": [],
+  "gamePlayHistory": [],
+  "coinTransactions": [],
+  "profileHistory": [],
+  "activitySessions": [
+    {
+      "id": "SES-1794450941675-871",
+      "userId": "ESP-GUEST-01",
+      "userName": "ESP Player",
+      "sessionStart": "2026-11-12T02:35:41.675Z",
+      "lastHeartbeat": "2026-11-12T02:49:58.853Z",
+      "durationMinutes": 14,
+      "deviceType": "mobile",
+      "deviceName": "Android Smartphone",
+      "browser": "Chrome",
+      "os": "Android",
+      "status": "online"
+    }
+  ],
+  "contactMessages": [],
+  "homeSliderPhotos": [],
+  "giftCardVouchers": [
+    {
+      "id": "gc-amz-50",
+      "brand": "Amazon",
+      "title": "₹50 Amazon Pay E-Gift Card",
+      "hindiTitle": "₹50 अमेज़न पे डिजिटल वाउचर",
+      "denomination": 50,
+      "coinsRequired": 2500,
+      "voucherCode": "AMZ-ESP-9842-8812",
+      "voucherPin": "4892",
+      "validityDays": 365,
+      "description": "Instant Amazon Pay balance credit code. Redeem in Amazon App.",
+      "status": "available"
+    },
+    {
+      "id": "gc-flp-100",
+      "brand": "Flipkart",
+      "title": "₹100 Flipkart Gift Card",
+      "hindiTitle": "₹100 फ्लिपकार्ट शॉपिंग वाउचर",
+      "denomination": 100,
+      "coinsRequired": 5000,
+      "voucherCode": "FLP-ESP-3310-7744",
+      "voucherPin": "9921",
+      "validityDays": 365,
+      "description": "Flipkart shopping voucher valid for all categories.",
+      "status": "available"
+    },
+    {
+      "id": "gc-gplay-100",
+      "brand": "Google Play",
+      "title": "₹100 Google Play Recharge Code",
+      "hindiTitle": "₹100 गूगल प्ले रिडीम कोड",
+      "denomination": 100,
+      "coinsRequired": 5000,
+      "voucherCode": "GP-ESP-7711-2099",
+      "voucherPin": "5501",
+      "validityDays": 365,
+      "description": "Google Play balance for games, subscriptions and in-app coins.",
+      "status": "available"
+    },
+    {
+      "id": "gc-upi-250",
+      "brand": "UPI Cash Voucher",
+      "title": "₹250 Direct UPI Cash Voucher",
+      "hindiTitle": "₹250 सीधा यूपीआई नकद वाउचर",
+      "denomination": 250,
+      "coinsRequired": 12000,
+      "voucherCode": "UPI-ESP-5588-4421",
+      "voucherPin": "1120",
+      "validityDays": 180,
+      "description": "Direct UPI cash payout code processed within 1 hour.",
+      "status": "available"
+    }
+  ],
+  "nwiTreeRecords": [
+    {
+      "userId": "ESP10RK01",
+      "userName": "RAHUL Kumar",
+      "isActive": true,
+      "activatedAt": "2024-03-15",
+      "tierFee": 200,
+      "level1Members": [
+        {
+          "userId": "ESP-AUTO-L1-1",
+          "fullName": "Rahul Sharma (Bihar)",
+          "avatar": "https://images.unsplash.com/photo-1500000000000?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-10",
+          "planFee": 200,
+          "level": 1,
+          "spilloverFrom": "ग्लोबल कम्युनिटी ऑटो-स्पिलओवर (Level 1)",
+          "rewardEarned": 20,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L1-2",
+          "fullName": "Pooja Verma (UP)",
+          "avatar": "https://images.unsplash.com/photo-1500000234567?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-08",
+          "planFee": 200,
+          "level": 1,
+          "spilloverFrom": "ग्लोबल कम्युनिटी ऑटो-स्पिलओवर (Level 1)",
+          "rewardEarned": 20,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L1-3",
+          "fullName": "Amit Patel (Gujarat)",
+          "avatar": "https://images.unsplash.com/photo-1500000469134?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-06",
+          "planFee": 200,
+          "level": 1,
+          "spilloverFrom": "ग्लोबल कम्युनिटी ऑटो-स्पिलओवर (Level 1)",
+          "rewardEarned": 20,
+          "status": "active"
+        }
+      ],
+      "level2Members": [
+        {
+          "userId": "ESP-AUTO-L2-1",
+          "fullName": "Sunil Kumar (Patna)",
+          "avatar": "https://images.unsplash.com/photo-1510000000000?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-2",
+          "fullName": "Kavita Devi (Ranchi)",
+          "avatar": "https://images.unsplash.com/photo-1510000345678?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-10",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-3",
+          "fullName": "Vikas Raj (Gaya)",
+          "avatar": "https://images.unsplash.com/photo-1510000691356?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-09",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-4",
+          "fullName": "Anjali Singh (Lucknow)",
+          "avatar": "https://images.unsplash.com/photo-1510001037034?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-08",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-5",
+          "fullName": "Deepak Yadav (Delhi)",
+          "avatar": "https://images.unsplash.com/photo-1510001382712?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-07",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-6",
+          "fullName": "Priya Kumari (Bhagalpur)",
+          "avatar": "https://images.unsplash.com/photo-1510001728390?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-06",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-7",
+          "fullName": "Ramesh Verma (Muzaffarpur)",
+          "avatar": "https://images.unsplash.com/photo-1510002074068?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-05",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-8",
+          "fullName": "Sneha Gupta (Varanasi)",
+          "avatar": "https://images.unsplash.com/photo-1510002419746?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-04",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L2-9",
+          "fullName": "Manoj Tiwari (Kanpur)",
+          "avatar": "https://images.unsplash.com/photo-1510002765424?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-03",
+          "planFee": 200,
+          "level": 2,
+          "spilloverFrom": "सिस्टम ऑटो टीम ग्रोथ (Level 2)",
+          "rewardEarned": 30,
+          "status": "active"
+        }
+      ],
+      "level3Members": [
+        {
+          "userId": "ESP-AUTO-L3-1",
+          "fullName": "Neha Sharma (Jaipur)",
+          "avatar": "https://images.unsplash.com/photo-1520000000000?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-2",
+          "fullName": "Rajesh Meena (Kota)",
+          "avatar": "https://images.unsplash.com/photo-1520000456789?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-3",
+          "fullName": "Sanjay Rao (Indore)",
+          "avatar": "https://images.unsplash.com/photo-1520000913578?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-12",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-4",
+          "fullName": "Ritu Mishra (Bhopal)",
+          "avatar": "https://images.unsplash.com/photo-1520001370367?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-5",
+          "fullName": "Vivek Chouhan (Ujjain)",
+          "avatar": "https://images.unsplash.com/photo-1520001827156?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-6",
+          "fullName": "Suresh Soni (Agra)",
+          "avatar": "https://images.unsplash.com/photo-1520002283945?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-7",
+          "fullName": "Sonu Pandey (Darbhanga)",
+          "avatar": "https://images.unsplash.com/photo-1520002740734?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-8",
+          "fullName": "Simran Kaur (Ludhiana)",
+          "avatar": "https://images.unsplash.com/photo-1520003197523?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-9",
+          "fullName": "Arjun Thakur (Shimla)",
+          "avatar": "https://images.unsplash.com/photo-1520003654312?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-10",
+          "fullName": "Manish Chandel (Bilaspur)",
+          "avatar": "https://images.unsplash.com/photo-1520004111101?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-11",
+          "fullName": "Jyoti Sahu (Raipur)",
+          "avatar": "https://images.unsplash.com/photo-1520004567890?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-12",
+          "fullName": "Ravi Shankar (Siwan)",
+          "avatar": "https://images.unsplash.com/photo-1520005024679?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-13",
+          "fullName": "Pankaj Sinha (Purnia)",
+          "avatar": "https://images.unsplash.com/photo-1520005481468?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-14",
+          "fullName": "Swati Roy (Kolkata)",
+          "avatar": "https://images.unsplash.com/photo-1520005938257?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-15",
+          "fullName": "Bikram Das (Siliguri)",
+          "avatar": "https://images.unsplash.com/photo-1520006395046?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-16",
+          "fullName": "Kunal Roy (Howrah)",
+          "avatar": "https://images.unsplash.com/photo-1520006851835?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-17",
+          "fullName": "Divya Joshi (Dehradun)",
+          "avatar": "https://images.unsplash.com/photo-1520007308624?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-18",
+          "fullName": "Gaurav Bisht (Haridwar)",
+          "avatar": "https://images.unsplash.com/photo-1520007765413?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-19",
+          "fullName": "Santosh Shah (Samastipur)",
+          "avatar": "https://images.unsplash.com/photo-1520008222202?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-20",
+          "fullName": "Alok Kumar (Arrah)",
+          "avatar": "https://images.unsplash.com/photo-1520008678991?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-21",
+          "fullName": "Roshni Jha (Madhubani)",
+          "avatar": "https://images.unsplash.com/photo-1520009135780?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-22",
+          "fullName": "Santosh Sahani (Begusarai)",
+          "avatar": "https://images.unsplash.com/photo-1520009592569?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-23",
+          "fullName": "Chandan Paswan (Munger)",
+          "avatar": "https://images.unsplash.com/photo-1520010049358?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-12",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-24",
+          "fullName": "Archana Kumari (Nawada)",
+          "avatar": "https://images.unsplash.com/photo-1520010506147?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-25",
+          "fullName": "Naveen Yadav (Buxar)",
+          "avatar": "https://images.unsplash.com/photo-1520010962936?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-26",
+          "fullName": "Bablu Mandal (Katihar)",
+          "avatar": "https://images.unsplash.com/photo-1520011419725?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-11",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        },
+        {
+          "userId": "ESP-AUTO-L3-27",
+          "fullName": "Pappu Kumar (Saharsa)",
+          "avatar": "https://images.unsplash.com/photo-1520011876514?w=100&auto=format&fit=crop&q=80",
+          "joiningDate": "2026-11-12",
+          "planFee": 200,
+          "level": 3,
+          "spilloverFrom": "ग्लोबल मैट्रिक्स ऑटो प्लेसमेंट (Level 3)",
+          "rewardEarned": 50,
+          "status": "active"
+        }
+      ],
+      "level1Income": 60,
+      "level2Income": 270,
+      "level3Income": 1350,
+      "totalPassiveEarned": 1680,
+      "totalPassiveClaimed": 1680,
+      "pendingToClaim": 0,
+      "queuePosition": 1
+    }
+  ]
+}

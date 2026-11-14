@@ -1,0 +1,181 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile in ESP platform with approval status, referral tracking and wallet",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique Roll Number or Sponsor ID (e.g. ESP10RK01)" },
+        "fullName": { "type": "string", "description": "User's full name" },
+        "phone": { "type": "string", "description": "WhatsApp contact number" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "fullAddress": { "type": "string", "description": "Postal address" },
+        "paymentAddress": { "type": "string", "description": "UPI ID or bank account for payouts" },
+        "payoutUpiId": { "type": "string", "description": "Active payout UPI address" },
+        "sponsorId": { "type": "string", "description": "Upline sponsor ID" },
+        "sponsorName": { "type": "string", "description": "Upline sponsor full name" },
+        "chosenServiceCode": { "type": "string", "description": "Service code (e.g. EMO, MMO, NWI)" },
+        "chosenServiceName": { "type": "string", "description": "Service title" },
+        "joiningFee": { "type": "number", "description": "Joining charge fee paid" },
+        "joiningDate": { "type": "string", "description": "Registration date YYYY-MM-DD" },
+        "paymentUtr": { "type": "string", "description": "12-digit UPI transaction reference / UTR" },
+        "paymentScreenshot": { "type": "string", "description": "Uploaded payment proof" },
+        "status": { "type": "string", "enum": ["pending", "active", "rejected"], "description": "Admin verification status" },
+        "balance": { "type": "number", "description": "Current wallet balance" },
+        "totalEarnings": { "type": "number", "description": "Cumulative earnings" },
+        "referralEarnings": { "type": "number", "description": "Direct referral rewards" },
+        "totalWithdrawn": { "type": "number", "description": "Total amount paid out" },
+        "activeSessions": { "type": "array", "description": "Active logged-in multi-device sessions" },
+        "role": { "type": "string", "enum": ["member", "admin"], "description": "User access role" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["userId", "fullName", "phone", "email", "paymentAddress", "status"]
+    },
+    "ReferralRecord": {
+      "title": "ReferralRecord",
+      "description": "Records downline members linked to a sponsor",
+      "type": "object",
+      "properties": {
+        "sponsorUserId": { "type": "string" },
+        "downlineUserId": { "type": "string" },
+        "downlineName": { "type": "string" },
+        "downlinePhone": { "type": "string" },
+        "serviceCode": { "type": "string" },
+        "joiningFee": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["credited", "pending", "rejected"] },
+        "date": { "type": "string" }
+      },
+      "required": ["sponsorUserId", "downlineUserId", "commissionAmount", "status"]
+    },
+    "PayoutRequest": {
+      "title": "PayoutRequest",
+      "description": "Member withdrawal request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "amount": { "type": "number" },
+        "payoutAddress": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requestDate": { "type": "string" },
+        "transactionRef": { "type": "string" }
+      },
+      "required": ["userId", "amount", "payoutAddress", "status"]
+    },
+    "UserComplaint": {
+      "title": "UserComplaint",
+      "description": "User grievance, ticket status, and resolution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userRoll": { "type": "string" },
+        "category": { "type": "string" },
+        "categoryLabel": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "proofScreenshot": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "rejected"] },
+        "adminResponse": { "type": "string" },
+        "adminResolvedBy": { "type": "string" },
+        "resolvedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "category", "subject", "description", "status", "createdAt"]
+    },
+    "GamePlayRecord": {
+      "title": "GamePlayRecord",
+      "description": "Complete gameplay audit with bets, winnings, and duration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "gameId": { "type": "string" },
+        "gameName": { "type": "string" },
+        "betCoins": { "type": "number" },
+        "wonCoins": { "type": "number" },
+        "netChange": { "type": "number" },
+        "result": { "type": "string", "enum": ["win", "loss", "draw"] },
+        "durationSeconds": { "type": "number" },
+        "playedAt": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "userId", "gameName", "betCoins", "wonCoins", "result", "playedAt"]
+    },
+    "CoinTransactionRecord": {
+      "title": "CoinTransactionRecord",
+      "description": "Audit trail ledger of every coin credit and debit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string", "enum": ["credit", "debit"] },
+        "category": { "type": "string" },
+        "categoryLabel": { "type": "string" },
+        "amount": { "type": "number" },
+        "balanceBefore": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "type", "amount", "balanceBefore", "balanceAfter", "timestamp"]
+    },
+    "OnlineActivitySession": {
+      "title": "OnlineActivitySession",
+      "description": "Session tracking of exact online time duration and device",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "sessionStart": { "type": "string" },
+        "sessionEnd": { "type": "string" },
+        "lastHeartbeat": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "deviceType": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "browser": { "type": "string" },
+        "os": { "type": "string" },
+        "status": { "type": "string", "enum": ["online", "offline"] }
+      },
+      "required": ["id", "userId", "sessionStart", "lastHeartbeat", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Registered ESP members and accounts"
+    },
+    "/referrals/{referralId}": {
+      "schema": "ReferralRecord",
+      "description": "Downline referral tracking"
+    },
+    "/payouts/{payoutId}": {
+      "schema": "PayoutRequest",
+      "description": "Withdrawal requests submitted by members"
+    },
+    "/complaints/{complaintId}": {
+      "schema": "UserComplaint",
+      "description": "User grievance tickets and admin resolutions"
+    },
+    "/gameplay_history/{gameId}": {
+      "schema": "GamePlayRecord",
+      "description": "Complete gameplay records and logs"
+    },
+    "/coin_transactions/{txId}": {
+      "schema": "CoinTransactionRecord",
+      "description": "Audit trail ledger for all coin changes"
+    },
+    "/activity_sessions/{sessionId}": {
+      "schema": "OnlineActivitySession",
+      "description": "User presence session tracking"
+    }
+  }
+}

@@ -10,6 +10,7 @@ interface BingoGameProps {
   user: UserProfile;
   onCoinsUpdated: (newCoins: number) => void;
   onClose?: () => void;
+  onOpenBuyCoins?: () => void;
 }
 
 interface BingoCardCell {
@@ -18,8 +19,8 @@ interface BingoCardCell {
   isCenter?: boolean;
 }
 
-export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onClose }) => {
-  const [bet, setBet] = useState<number>(50);
+export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onClose, onOpenBuyCoins }) => {
+  const [bet, setBet] = useState<number>((user.coins || 0) >= 20 ? 20 : 0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [gameOver, setGameOver] = useState<boolean>(false);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -113,22 +114,24 @@ export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onCl
   }, [isPlaying, gameOver, autoCall, calledNumbers]);
 
   const startGame = async () => {
-    if ((user.coins || 0) < bet) {
-      setMessage(`पर्याप्त कॉइन्स नहीं हैं! इस गेम के लिए कम से कम ${bet} कॉइन्स चाहिए।`);
+    if (bet > 0 && (user.coins || 0) < bet) {
+      setMessage(`पर्याप्त कॉइन्स नहीं हैं! इस शर्त के लिए ${bet} कॉइन्स चाहिए या "🆓 Free" चुनें।`);
       return;
     }
 
-    try {
-      const uId = user.userId || (user as any).id;
-      const res = await api.playCoinsGame(uId, 'bingo', bet);
-      if (!res.success) {
-        setMessage(res.error || res.message || 'गेम शुरू करने में त्रुटि');
+    if (bet > 0) {
+      try {
+        const uId = user.userId || (user as any).id;
+        const res = await api.playCoinsGame(uId, 'bingo', bet);
+        if (!res.success) {
+          setMessage(res.error || res.message || 'गेम शुरू करने में त्रुटि');
+          return;
+        }
+        onCoinsUpdated(res.currentCoins);
+      } catch {
+        setMessage('सर्वर से संपर्क करने में असमर्थ');
         return;
       }
-      onCoinsUpdated(res.currentCoins);
-    } catch {
-      setMessage('सर्वर से संपर्क करने में असमर्थ');
-      return;
     }
 
     const newGrid = generateBingoCard();
@@ -251,7 +254,9 @@ export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onCl
 
       // Reward based on lines
       let wonAmount = 0;
-      if (newlyEarned.includes('Full House')) {
+      if (bet === 0) {
+        wonAmount = newlyEarned.includes('Full House') ? 14 : 10;
+      } else if (newlyEarned.includes('Full House')) {
         wonAmount += Math.floor(bet * 5); // 5x Full house!
       } else {
         wonAmount += Math.floor(bet * 1.5 * newlyEarned.length);
@@ -272,9 +277,17 @@ export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onCl
   const creditWin = async (amount: number) => {
     try {
       const uId = user.userId || (user as any).id;
-      const res = await api.claimGameWin(uId, 'bingo', amount);
-      if (res.success) {
-        onCoinsUpdated(res.currentCoins);
+      if (bet === 0) {
+        const res = await api.playFreeSkillMatch(uId, 'bingo', 'win', amount);
+        if (res.success && res.currentCoins !== undefined) {
+          onCoinsUpdated(res.currentCoins);
+          setMessage(res.message || `🎉 Bingo जीत! +${res.coinsEarned} कॉइन्स मिले!`);
+        }
+      } else {
+        const res = await api.claimGameWin(uId, 'bingo', amount);
+        if (res.success) {
+          onCoinsUpdated(res.currentCoins);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -286,6 +299,10 @@ export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onCl
     setGameOver(true);
     if (drawTimerRef.current) clearInterval(drawTimerRef.current);
     setMessage(msg);
+    const uId = user.userId || (user as any).id;
+    if (uId) {
+      api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
+    }
   };
 
   const claimEarlyCashout = () => {
@@ -492,31 +509,55 @@ export const BingoGame: React.FC<BingoGameProps> = ({ user, onCoinsUpdated, onCl
           {!isPlaying ? (
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-[#212121] mb-1.5 block">शर्त राशि (Bet Coins):</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[20, 50, 100, 200].map(amt => (
+                <label className="text-xs font-bold text-[#212121] mb-1.5 block">एंट्री मोड चुनें (Free Earn या Coin Bet):</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[0, 20, 50, 100, 200].map(amt => (
                     <button
                       key={amt}
                       onClick={() => setBet(amt)}
                       className={`py-2 rounded-sm text-xs font-bold border transition cursor-pointer ${
                         bet === amt
-                          ? 'bg-[#ffe500] text-[#212121] border-amber-400 shadow-xs'
+                          ? amt === 0
+                            ? 'bg-[#388e3c] text-white border-emerald-600 shadow-xs'
+                            : 'bg-[#ffe500] text-[#212121] border-amber-400 shadow-xs'
                           : 'bg-[#f9fafb] hover:bg-slate-100 text-[#212121] border-slate-200'
                       }`}
                     >
-                      🪙 {amt}
+                      {amt === 0 ? '🆓 Free' : `🪙 ${amt}`}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <button
-                onClick={startGame}
-                className="w-full py-3.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-sm sm:text-base flex items-center justify-center space-x-2 shadow-sm transition transform active:scale-98 cursor-pointer"
-              >
-                <Play className="w-5 h-5 fill-white" />
-                <span>START BINGO TAMBOLA (शर्त: {bet} कॉइन्स)</span>
-              </button>
+              {bet > 0 && (user.coins || 0) < bet ? (
+                <div className="space-y-2">
+                  <div className="p-2 bg-rose-50 border border-rose-200 rounded-sm text-xs font-bold text-rose-700 text-center">
+                    इस शर्त के लिए {bet} कॉइन्स चाहिए — या ऊपर "🆓 Free" चुनें!
+                  </div>
+                  {onOpenBuyCoins ? (
+                    <button
+                      onClick={onOpenBuyCoins}
+                      className="w-full py-3 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-black text-sm flex items-center justify-center space-x-2 shadow-sm transition cursor-pointer"
+                    >
+                      <span>🪙 Buy Coins (कॉइन्स खरीदें)</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <button
+                  onClick={startGame}
+                  className={`w-full py-3.5 rounded-sm ${
+                    bet === 0 ? 'bg-[#388e3c] hover:bg-emerald-700' : 'bg-[#fb641b] hover:bg-[#e8550f]'
+                  } text-white font-black text-sm sm:text-base flex items-center justify-center space-x-2 shadow-sm transition transform active:scale-98 cursor-pointer`}
+                >
+                  <Play className="w-5 h-5 fill-white" />
+                  <span>
+                    {bet === 0
+                      ? 'START FREE BINGO (जीतें +10 से +20 कॉइन्स!)'
+                      : `START BINGO TAMBOLA (शर्त: ${bet} कॉइन्स)`}
+                  </span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center space-x-2">

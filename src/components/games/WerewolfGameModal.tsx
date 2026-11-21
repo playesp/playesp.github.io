@@ -7,11 +7,12 @@ import {
 } from 'lucide-react';
 import type { UserProfile, WerewolfPlayer } from '../../types/index.ts';
 import { AvatarFrame } from '../AvatarFrame.tsx';
+import { api } from '../../services/api.ts';
 
 interface WerewolfGameModalProps {
   user: UserProfile;
   onClose: () => void;
-  onUpdateUserCoins: (newCoins: number, newCharms: number) => void;
+  onUpdateUserCoins?: (newCoins: number, newCharms: number) => void;
 }
 
 export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
@@ -26,62 +27,26 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [narratorText, setNarratorText] = useState('🐺 आपका स्वागत है ESP PLAY भेड़िया (Werewolf) गेम में! पत्ते बंट रहे हैं...');
 
-  // Players
+  // Players (Current user + real community table seats)
   const [players, setPlayers] = useState<WerewolfPlayer[]>([
     {
       id: user.userId,
       name: `${user.fullName} (आप)`,
       isBot: false,
       avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
-      role: 'seer', // Default role for player, randomized on start
+      role: 'seer',
       isAlive: true,
       votesReceived: 0,
     },
-    {
-      id: 'BOT-JUDGE',
-      name: '⚖️ न्यायाधीश (Judge Bot)',
+    ...[2, 3, 4, 5, 6].map((slotNum, idx) => ({
+      id: `SEAT-${slotNum}`,
+      name: `Table Member #${slotNum}`,
       isBot: true,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99',
-      role: 'doctor',
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=WerewolfSeat${slotNum}`,
+      role: (['doctor', 'villager', 'werewolf', 'villager', 'villager'] as const)[idx],
       isAlive: true,
       votesReceived: 0,
-    },
-    {
-      id: 'BOT-BHAI',
-      name: '🤝 We Bhai (वी भाई)',
-      isBot: true,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
-      role: 'villager',
-      isAlive: true,
-      votesReceived: 0,
-    },
-    {
-      id: 'BOT-CHAT',
-      name: '💬 We Chat AI',
-      isBot: true,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
-      role: 'werewolf',
-      isAlive: true,
-      votesReceived: 0,
-    },
-    {
-      id: 'BOT-SIMRAN',
-      name: '🌸 Simran (सिमरन)',
-      isBot: true,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SimranPlayer',
-      role: 'villager',
-      isAlive: true,
-      votesReceived: 0,
-    },
-    {
-      id: 'BOT-KABIR',
-      name: '⚡ Kabir (कबीर)',
-      isBot: true,
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=KabirGamer',
-      role: 'villager',
-      isAlive: true,
-      votesReceived: 0,
-    },
+    })),
   ]);
 
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string | null>(null);
@@ -91,10 +56,10 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
   const [lastNightEliminated, setLastNightEliminated] = useState<string | null>(null);
   const [winnerTeam, setWinnerTeam] = useState<'villagers' | 'werewolves' | null>(null);
 
-  const myPlayer = players.find(p => p.id === user.userId)!;
+  const myPlayer = players.find(p => p.id === user.userId) || players[0];
 
-  // Initialize random roles
-  const startNewGame = () => {
+  // Initialize random roles with real registered members if available
+  const startNewGame = (overrideList?: WerewolfPlayer[]) => {
     const roles: ('werewolf' | 'seer' | 'doctor' | 'villager')[] = [
       'werewolf',
       'seer',
@@ -103,10 +68,10 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
       'villager',
       'villager'
     ];
-    // Shuffle roles
     const shuffledRoles = [...roles].sort(() => Math.random() - 0.5);
+    const sourcePlayers = Array.isArray(overrideList) ? overrideList : players;
 
-    const newPlayers: WerewolfPlayer[] = players.map((p, idx) => ({
+    const newPlayers: WerewolfPlayer[] = sourcePlayers.map((p, idx) => ({
       ...p,
       role: shuffledRoles[idx],
       isAlive: true,
@@ -127,7 +92,37 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
   };
 
   useEffect(() => {
-    startNewGame();
+    api.getRealCommunityPlayers()
+      .then((list) => {
+        const others = Array.isArray(list) ? list.filter((p: any) => p.userId !== user.userId).slice(0, 5) : [];
+        const updatedRoster: WerewolfPlayer[] = [
+          {
+            id: user.userId,
+            name: `${user.fullName} (आप)`,
+            isBot: false,
+            avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
+            role: 'seer',
+            isAlive: true,
+            votesReceived: 0,
+          },
+          ...[0, 1, 2, 3, 4].map((idx) => {
+            const real = others[idx];
+            return {
+              id: real ? real.userId : `SEAT-${idx + 2}`,
+              name: real ? real.fullName : `Table Seat #${idx + 2}`,
+              isBot: true,
+              avatar: real?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${real?.userId || `Seat${idx + 2}`}`,
+              role: (['doctor', 'villager', 'werewolf', 'villager', 'villager'] as const)[idx],
+              isAlive: true,
+              votesReceived: 0,
+            };
+          }),
+        ];
+        startNewGame(updatedRoster);
+      })
+      .catch(() => {
+        startNewGame();
+      });
   }, []);
 
   // Move from Role Reveal to Night
@@ -270,14 +265,17 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
       setWinnerTeam('villagers');
       setPhase('game_over');
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      const newCoins = (user.coins || 0) + 200;
-      const newCharms = (user.charms || 0) + 50;
-      onUpdateUserCoins(newCoins, newCharms);
-      setNarratorText('🏆 बधाई! सभी भेड़ियों का सफाया हो गया! गांव वालों की ऐतिहासिक जीत हुई! (+200 Coins & +50 Charms)');
+      if (user.userId) {
+        api.recordTaskAction(user.userId, 'game_played', 1).catch(() => {});
+      }
+      setNarratorText('🏆 बधाई! सभी भेड़ियों का सफाया हो गया! आपका "Play 2 Games" टास्क प्रोग्रेस अपडेट हो गया — Daily Tasks से +5 Coins & EXP क्लेम करें!');
     } else if (aliveWerewolves.length >= aliveVillagers.length) {
       setWinnerTeam('werewolves');
       setPhase('game_over');
-      setNarratorText('🐺 भेड़ियों की तादाद गांव वालों के बराबर हो गई! भेड़ियों का पूरे गांव पर राज हो गया!');
+      if (user.userId) {
+        api.recordTaskAction(user.userId, 'game_played', 1).catch(() => {});
+      }
+      setNarratorText('🐺 भेड़ियों की तादाद गांव वालों के बराबर हो गई! गेम राउंड पूरा हुआ (टास्क प्रोग्रेस +1 दर्ज)!');
     }
   };
 
@@ -440,7 +438,7 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
                     <AvatarFrame
                       src={p.avatar}
                       size="md"
-                      level={isMe ? (user.gameLevel || 5) : 50}
+                      level={isMe ? (user.gameLevel || 1) : 12}
                     />
 
                     <div className="w-full">
@@ -520,7 +518,7 @@ export const WerewolfGameModal: React.FC<WerewolfGameModalProps> = ({
 
               {phase === 'game_over' && (
                 <button
-                  onClick={startNewGame}
+                  onClick={() => startNewGame()}
                   className="w-full py-2.5 rounded-sm bg-[#388e3c] hover:bg-[#2e7d32] text-white font-black text-xs flex items-center justify-center space-x-2 shadow-sm cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />

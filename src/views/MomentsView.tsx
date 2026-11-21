@@ -123,8 +123,7 @@ export const MomentsView: React.FC<MomentsViewProps> = ({
     }
   };
 
-  const handleShareWhatsApp = (moment: Moment) => {
-    api.shareMoment(moment.id);
+  const getWhatsAppShareUrl = (moment: Moment) => {
     const text = encodeURIComponent(
       `📸 *ESP MEMBER MOMENT & EARNING UPDATE*\n\n` +
       `👤 *Member:* ${moment.userName} (${moment.userRollNumber})\n` +
@@ -134,7 +133,7 @@ export const MomentsView: React.FC<MomentsViewProps> = ({
       `🔗 *View Official System:* ${window.location.origin}\n` +
       `👑 *Founder:* ${settings.ownerName} (${settings.ownerSponsorId})`
     );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+    return `https://api.whatsapp.com/send?text=${text}`;
   };
 
   const handleCopyLink = (moment: Moment) => {
@@ -180,6 +179,9 @@ export const MomentsView: React.FC<MomentsViewProps> = ({
         imageUrl: imageUrl,
         serviceTag: serviceTag,
       });
+
+      api.recordTaskAction(currentUser.userId, 'moment_posted', 1).catch(() => {});
+      showToast('मोमेंट पोस्ट हुआ! "Post 1 Moment" टास्क प्रोग्रेस अपडेट हो गया (+5 Coins & EXP क्लेम करें)!', 'success');
 
       setShowPostModal(false);
       setCaption('');
@@ -402,13 +404,16 @@ export const MomentsView: React.FC<MomentsViewProps> = ({
                       <span className="hidden sm:inline-block">{copiedId === item.id ? 'Copied' : 'Link'}</span>
                     </button>
 
-                    <button
-                      onClick={() => handleShareWhatsApp(item)}
+                    <a
+                      href={getWhatsAppShareUrl(item)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => api.shareMoment(item.id)}
                       className="px-3 py-1.5 rounded-sm font-bold text-white bg-[#388e3c] hover:bg-emerald-700 transition flex items-center space-x-1.5 cursor-pointer text-xs"
                     >
                       <Share2 className="w-3.5 h-3.5" />
                       <span>Share ({item.sharesCount || 0})</span>
-                    </button>
+                    </a>
                   </div>
                 </div>
 

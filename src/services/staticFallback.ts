@@ -19,14 +19,37 @@ import type {
   HomeSliderPhoto,
   ContactMessage,
   GiftCardVoucher,
+  GiftCardRedemption,
   PlanUpgradeRequest,
   VoiceRoomSeat,
   WePlayBot,
   NwiMemberNode,
   NwiTreeRecord,
 } from '../types/index.ts';
+import {
+  VIP_TIERS,
+  REAL_TASKS_CATALOG,
+  CHEST_MILESTONES,
+  ADVANCE_ROOM_THEMES,
+  COIN_RECHARGE_PACKS,
+  GIFT_CARD_CATALOG,
+  calculateLevelFromXp,
+  getFrameByVariant,
+  getVipConfig,
+  type TaskEventType,
+} from '../config/economy.ts';
+import {
+  FREE_SKILL_PLAY_DAILY_LIMIT,
+  SEVEN_DAY_CHECKIN_REWARDS,
+  COIN_UTILITY_BOOSTERS,
+  getDailyIntelForDate,
+  getDailyQuizForDate,
+  getSpotlightGameForDate,
+  getYesterdayDateString,
+} from '../config/dailyGameIntel.ts';
 
-const STORAGE_KEY = 'esp_static_db_v1';
+const STORAGE_KEY = 'esp_static_db_v2';
+const todayStr = (): string => new Date().toISOString().slice(0, 10);
 
 interface StaticDb {
   settings: PlatformSettings;
@@ -49,6 +72,8 @@ interface StaticDb {
   contactMessages: ContactMessage[];
   homeSliderPhotos: HomeSliderPhoto[];
   giftCardVouchers: GiftCardVoucher[];
+  giftCardRedemptions: GiftCardRedemption[];
+  activeGameWagers: Record<string, { gameName: string; bet: number; createdAt: string }>;
   planUpgrades: PlanUpgradeRequest[];
   voiceRoomSeats: VoiceRoomSeat[];
   voiceRoomChat: Array<{ id: string; senderId: string; sender: string; senderRoll: string; text: string; isGift?: boolean; time: string; audioDataUrl?: string; audioDuration?: number; isVoiceNote?: boolean }>;
@@ -250,16 +275,16 @@ const DEFAULT_BOTS: WePlayBot[] = [
     hindiRole: 'नियम व निष्पक्षता निर्णायक',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99',
     frameType: 'judge-justice',
-    level: 80,
-    charms: 50000,
-    coins: 200000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '⚖️ JUSTICE',
     voiceAccent: 'Hindi-Formal',
     status: 'online',
-    description: 'Supreme voice room & game arbiter. Ensures fair play, settles dispute bets, warns foul players, and rewards righteous champions.',
-    hindiDescription: 'गेम व वॉइस रूम का आधिकारिक निष्पक्ष जज। नियम पालन करवाता है, विवाद सुलझाता है और निष्पक्ष खेल पर इंसाफ बोनस देता है।',
-    superpowers: ['निष्पक्ष फैसला (Fair-Play Ruling)', 'चीटिंग डिटेक्शन व पेनल्टी वॉर्निंग', 'विवाद सुलझाना', 'इंसाफ बोनस रिवॉर्ड (+50 Coins)'],
-    sampleDialogues: ['⚖️ अदालत में आपका स्वागत है! हर खिलाड़ी के साथ निष्पक्ष न्याय होगा।', '⚖️ ईमानदारी से खेलने वाले हर सदस्य को मिलेगा इंसाफ बोनस!'],
+    description: 'Voice room & game arbiter. Explains rules and encourages fair play.',
+    hindiDescription: 'गेम व वॉइस रूम का नियम गाइड। निष्पक्ष खेल और नियमों की जानकारी देता है।',
+    superpowers: ['निष्पक्ष नियम मार्गदर्शन', 'पेनल्टी व नियम जानकारी', 'विवाद नियम समझाना'],
+    sampleDialogues: ['⚖️ रूम में आपका स्वागत है! हर खिलाड़ी के साथ निष्पक्ष नियम लागू होंगे।'],
   },
   {
     id: 'BOT-WOLF',
@@ -270,36 +295,36 @@ const DEFAULT_BOTS: WePlayBot[] = [
     hindiRole: 'वेयरवुल्फ कथावाचक व गेम सूत्रधार',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WerewolfHostWolf',
     frameType: 'wolf-night',
-    level: 75,
-    charms: 45000,
-    coins: 150000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '🐺 WEREWOLF',
     voiceAccent: 'Hindi-Dramatic',
     status: 'online',
-    description: 'ESP PLAY Werewolf game master. Moderates night/day cycles and distributes secret roles.',
-    hindiDescription: 'ESP PLAY का प्रसिद्ध वेयरवुल्फ गेम संचालक।',
-    superpowers: ['वेयरवुल्फ गेम लाइव होस्टिंग', 'गुप्त भूमिका वितरण', 'रात / दिन का नाटकीय कथावाचन'],
-    sampleDialogues: ['🐺 रात हो चुकी है... सभी गांव वाले आंखें बंद कर सो जाएं!', '🐺 सुबह हो चुकी है... गांव वाले जागें!'],
+    description: 'ESP PLAY Werewolf game master. Moderates night/day cycles.',
+    hindiDescription: 'ESP PLAY का वेयरवुल्फ गेम संचालक।',
+    superpowers: ['वेयरवुल्फ गेम लाइव होस्टिंग', 'गुप्त भूमिका वितरण'],
+    sampleDialogues: ['🐺 रात हो चुकी है... सभी गांव वाले ध्यान से खेलें!'],
   },
   {
     id: 'BOT-BHAI',
     code: 'we_bhai',
     name: 'We Bhai (वी भाई)',
-    hindiName: '🤝 वी भाई (देसी मददगार)',
-    roleTitle: 'Friendly Community Assistant',
-    hindiRole: 'कम्युनिटी गाइड व बोनस साथी',
+    hindiName: '🤝 वी भाई (कम्युनिटी गाइड)',
+    roleTitle: 'Community Guide Assistant',
+    hindiRole: 'कम्युनिटी गाइड व टास्क साथी',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
     frameType: 'vip-gold',
-    level: 70,
-    charms: 40000,
-    coins: 100000,
-    badge: '🤝 WE BHAI',
+    level: 1,
+    charms: 0,
+    coins: 0,
+    badge: '🤝 GUIDE',
     voiceAccent: 'Hindi-Friendly',
     status: 'online',
-    description: 'Warm, helpful Hindi & Bhojpuri friendly guide.',
-    hindiDescription: 'सच्चा देसी दोस्त! 10 सर्विसेज से कमाई के सीक्रेट ट्रिक्स समझाता है।',
-    superpowers: ['10 सर्विसेज अर्निंग गाइडेंस', 'डेली लकी कॉइन ड्रॉप (+100 Coins)', 'गेमिंग स्ट्रेटेजी'],
-    sampleDialogues: ['🤝 अरे भाई स्वागत बा! का हाल चाल? आज कौन सा गेम जीतना है?', '🤝 लो भाई, मेरी तरफ से 100 लकी कॉइन का तोहफा!'],
+    description: 'Helpful guide explaining real tasks, frames, VIP, and ESP services.',
+    hindiDescription: 'टास्क (+5 कॉइन्स व EXP), फ्रेम, VIP और 10 सर्विसेज का सही मार्गदर्शन करता है।',
+    superpowers: ['10 सर्विसेज गाइडेंस', 'असली टास्क गाइड (+5 Coins)', 'गेमिंग रणनीति'],
+    sampleDialogues: ['🤝 नमस्ते! असली टास्क पूरे करें और हर टास्क पर +5 कॉइन्स व EXP पाएं।'],
   },
   {
     id: 'BOT-CHAT',
@@ -307,51 +332,441 @@ const DEFAULT_BOTS: WePlayBot[] = [
     name: 'We Chat (वी चैट AI)',
     hindiName: '💬 वी चैट (मनोरंजन साथी)',
     roleTitle: 'Voice & Banter Companion',
-    hindiRole: 'शायरी, संगीत व दिल की बातें',
+    hindiRole: 'शायरी व बातचीत साथी',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
     frameType: 'cosmic-neon',
-    level: 65,
-    charms: 38000,
-    coins: 80000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '💬 COMPANION',
     voiceAccent: 'Hindi-Sweet',
     status: 'online',
-    description: 'Lively companion for solo players.',
-    hindiDescription: 'अकेलेपन का सबसे बड़ा तोड़! शायरी और चुटकुले सुनाता है।',
-    superpowers: ['खूबसूरत हिंदी शायरी', 'मज़ेदार देसी चुटकुले', '24x7 बातचीत'],
-    sampleDialogues: ['💬 महफ़िल में जब आप आए, तो दिल बाग-बाग हो गया!'],
-  },
-  {
-    id: 'BOT-ALERT',
-    code: 'alert_bot',
-    name: 'WeAlert (उद्घोषक बॉट)',
-    hindiName: '🔔 वी अलर्ट (शाही उद्घोषक)',
-    roleTitle: 'Royal Arrival & Event Announcer',
-    hindiRole: 'शाही आगमन व लाइव बिगुल उद्घोषणा',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeAlertRoyalHorn',
-    frameType: 'vip-gold',
-    level: 60,
-    charms: 30000,
-    coins: 50000,
-    badge: '🔔 VIP ALERT',
-    voiceAccent: 'Hindi-Announcer',
-    status: 'online',
-    description: 'Broadcasts royal trumpet horns, gift showers, and tournament alerts.',
-    hindiDescription: 'शाही आगमन पर बिगुल बजाता है और बड़े गिफ्ट्स की घोषणा करता है।',
-    superpowers: ['शाही बिगुल अलर्ट', 'मेगा गिफ्ट लाइव ब्रॉडकास्ट'],
-    sampleDialogues: ['🔔 🎺 सुनिए सुनिए! सर्वोच्च महाराजा शर्मा जी का आगमन हो चुका है!'],
+    description: 'Shares Hindi shayari and keeps the stage welcoming.',
+    hindiDescription: 'हिंदी शायरी और बातचीत से रूम का माहौल खुशनुमा बनाता है।',
+    superpowers: ['खूबसूरत हिंदी शायरी', 'स्वस्थ मनोरंजन बातचीत'],
+    sampleDialogues: ['💬 महफ़िल में जब आप आए, तो रूम में रौनक आ गई!'],
   },
 ];
 
-const DEFAULT_GIFT_CARDS: GiftCardVoucher[] = [
-  { id: 'gc-amz-50', brand: 'Amazon', title: '₹50 Amazon Pay E-Gift Card', hindiTitle: '₹50 अमेज़न पे डिजिटल वाउचर', denomination: 50, coinsRequired: 2500, voucherCode: 'AMZ-ESP-9842-8812', voucherPin: '4892', validityDays: 365, description: 'Instant Amazon Pay balance credit code.', status: 'available' },
-  { id: 'gc-flp-100', brand: 'Flipkart', title: '₹100 Flipkart Gift Card', hindiTitle: '₹100 फ्लिपकार्ट शॉपिंग वाउचर', denomination: 100, coinsRequired: 5000, voucherCode: 'FLP-ESP-3310-7744', voucherPin: '9921', validityDays: 365, description: 'Flipkart shopping voucher valid for all categories.', status: 'available' },
-  { id: 'gc-gplay-100', brand: 'Google Play', title: '₹100 Google Play Recharge Code', hindiTitle: '₹100 गूगल प्ले रिडीम कोड', denomination: 100, coinsRequired: 5000, voucherCode: 'GP-ESP-7711-2099', voucherPin: '5501', validityDays: 365, description: 'Google Play balance for games and in-app coins.', status: 'available' },
-  { id: 'gc-upi-250', brand: 'UPI Cash Voucher', title: '₹250 Direct UPI Cash Voucher', hindiTitle: '₹250 सीधा यूपीआई नकद वाउचर', denomination: 250, coinsRequired: 12000, voucherCode: 'UPI-ESP-5588-4421', voucherPin: '1120', validityDays: 180, description: 'Direct UPI cash payout code processed within 1 hour.', status: 'available' },
-];
+function getTodayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeStaticUsername(raw: unknown): string {
+  return String(raw || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function isValidStaticUsername(normalized: string): boolean {
+  return /^[a-z0-9]{3,24}$/.test(normalized);
+}
+
+function isStaticUsernameTaken(users: UserProfile[], normalized: string, excludeUserId?: string): boolean {
+  if (!normalized) return false;
+  return users.some(
+    u =>
+      u.userId !== excludeUserId &&
+      (normalizeStaticUsername(u.username) === normalized ||
+        String(u.userId || '').trim().toLowerCase() === normalized ||
+        String(u.gamingId || '').trim().toLowerCase() === normalized)
+  );
+}
+
+function findStaticSponsorUser(users: UserProfile[], rawRef: unknown): UserProfile | undefined {
+  const clean = String(rawRef || '').trim().toLowerCase();
+  const cleanHandle = normalizeStaticUsername(rawRef);
+  if (!clean && !cleanHandle) return undefined;
+  return users.find(
+    u =>
+      (u.userId || '').trim().toLowerCase() === clean ||
+      (cleanHandle !== '' && normalizeStaticUsername(u.username) === cleanHandle) ||
+      (u.gamingId || '').trim().toLowerCase() === clean
+  );
+}
+
+function extractStaticInitials(fullName: string): string {
+  const cleaned = String(fullName || '').replace(/[^a-zA-Z\s]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  let initials = '';
+  if (words.length >= 2) {
+    initials = (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  } else if (words.length === 1 && words[0].length >= 2) {
+    initials = words[0].substring(0, 2).toUpperCase();
+  } else if (words.length === 1) {
+    initials = (words[0][0] + 'X').toUpperCase();
+  } else {
+    initials = 'ES';
+  }
+  initials = initials.replace(/[^A-Z]/g, 'X');
+  return initials.length === 2 ? initials : initials.padEnd(2, 'X').slice(0, 2);
+}
+
+function isStaticAnyIdTaken(users: UserProfile[], candidate: string): boolean {
+  const lower = candidate.toLowerCase();
+  return users.some(
+    u =>
+      (u.userId || '').toLowerCase() === lower ||
+      (u.gamingId || '').toLowerCase() === lower ||
+      normalizeStaticUsername(u.username) === lower
+  );
+}
+
+function generateStaticGamerId(users: UserProfile[], fullName: string): string {
+  const initials = extractStaticInitials(fullName);
+  const basePrefix = `ESPGT${initials}`;
+  const regex = new RegExp(`^${basePrefix}(\\d+)$`, 'i');
+  let maxSeq = 0;
+  for (const u of users) {
+    for (const idVal of [u.userId, u.gamingId]) {
+      const m = String(idVal || '').match(regex);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxSeq) maxSeq = n;
+      }
+    }
+  }
+  let counter = maxSeq + 1;
+  let finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  while (isStaticAnyIdTaken(users, finalId)) {
+    counter++;
+    finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  }
+  return finalId;
+}
+
+function generateStaticIncomeId(users: UserProfile[], fullName: string, chosenServiceCode: string): string {
+  const initials = extractStaticInitials(fullName);
+  const cleanService = String(chosenServiceCode || 'EMO').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'EMO';
+  const basePrefix = `${cleanService}${initials}ESP`;
+  const regex = new RegExp(`^${basePrefix}(\\d+)$`, 'i');
+  let maxSeq = 0;
+  for (const u of users) {
+    for (const idVal of [u.userId, u.gamingId]) {
+      const m = String(idVal || '').match(regex);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxSeq) maxSeq = n;
+      }
+    }
+  }
+  let counter = maxSeq + 1;
+  let finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  while (isStaticAnyIdTaken(users, finalId)) {
+    counter++;
+    finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  }
+  return finalId;
+}
+
+function generateStaticDefaultUsername(
+  users: UserProfile[],
+  fullName: string,
+  newUserId: string,
+  newGamingId: string = ''
+): string {
+  const cleanName = String(fullName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const base = (cleanName.length >= 3 ? cleanName : newUserId.toLowerCase()).slice(0, 16);
+  const forbidden = new Set([newUserId.toLowerCase(), newGamingId.toLowerCase()].filter(Boolean));
+  let seq = 1;
+  let candidate = `${base}${String(seq).padStart(2, '0')}`.slice(0, 24);
+  if (!isStaticAnyIdTaken(users, candidate) && !forbidden.has(candidate) && isValidStaticUsername(candidate)) {
+    return candidate;
+  }
+  while (isStaticAnyIdTaken(users, candidate) || forbidden.has(candidate) || !isValidStaticUsername(candidate)) {
+    seq++;
+    candidate = `${base.slice(0, 20)}${String(seq).padStart(2, '0')}`;
+  }
+  return candidate;
+}
+
+function isStaticNumericRoomId(val?: string): boolean {
+  if (!val) return false;
+  return /^\d{3,10}$/.test(String(val).trim());
+}
+
+function isStaticVipFancyRoom(val?: string): boolean {
+  const s = String(val || '').trim();
+  if (!/^\d{3,10}$/.test(s)) return false;
+  if (s.length <= 4) return true;
+  if (/^(\d)\1+$/.test(s)) return true;
+  if ('0123456789'.includes(s) || '9876543210'.includes(s)) return true;
+  return false;
+}
+
+function findStaticRoomConflict(
+  users: UserProfile[],
+  rooms: any[],
+  candidate: string,
+  excludeUserId?: string
+): { conflict: boolean; ownerName?: string; ownerId?: string } {
+  const clean = String(candidate || '').trim();
+  const low = clean.toLowerCase();
+  const userHit = users.find(
+    u =>
+      u.userId !== excludeUserId &&
+      (String(u.roomAddress || '').trim() === clean ||
+        String(u.personalRoomId || '').trim() === clean ||
+        (u.userId || '').toLowerCase() === low ||
+        (u.gamingId || '').toLowerCase() === low ||
+        normalizeStaticUsername(u.username) === low)
+  );
+  if (userHit) return { conflict: true, ownerName: userHit.fullName, ownerId: userHit.userId };
+  const roomHit = rooms.find(
+    r =>
+      !(excludeUserId && r.isPersonalFixed && r.hostUserId === excludeUserId) &&
+      (String(r.roomAddress || '').trim() === clean || String(r.roomNumber || '').trim() === clean)
+  );
+  if (roomHit) return { conflict: true, ownerName: roomHit.hostName || roomHit.title, ownerId: roomHit.hostUserId };
+  return { conflict: false };
+}
+
+function generateStaticRoomId(
+  users: UserProfile[],
+  rooms: any[],
+  _fullName: string = '',
+  excludeUserId?: string
+): string {
+  let maxCount = 10000;
+  for (const u of users) {
+    for (const val of [u.roomAddress, u.personalRoomId]) {
+      const s = String(val || '').trim();
+      if (/^\d{5,10}$/.test(s)) {
+        const n = parseInt(s, 10);
+        if (n >= 10000 && n > maxCount) maxCount = n;
+      }
+    }
+  }
+  for (const r of rooms) {
+    for (const val of [r.roomAddress, r.roomNumber]) {
+      const s = String(val || '').trim();
+      if (/^\d{5,10}$/.test(s)) {
+        const n = parseInt(s, 10);
+        if (n >= 10000 && n > maxCount) maxCount = n;
+      }
+    }
+  }
+  let counter = maxCount + 1;
+  let candidate = String(counter);
+  while (findStaticRoomConflict(users, rooms, candidate, excludeUserId).conflict) {
+    counter++;
+    candidate = String(counter);
+  }
+  return candidate;
+}
+
+function ensureStaticPersonalRoom(db: StaticDb, user: UserProfile) {
+  if (!Array.isArray(db.customVoiceRooms)) db.customVoiceRooms = [];
+  if (!isStaticNumericRoomId(user.roomAddress)) {
+    const code =
+      (user.userId === 'EMO-MOM-MMO' || user.role === 'admin') &&
+      !findStaticRoomConflict(db.users, db.customVoiceRooms, '1111', user.userId).conflict
+        ? '1111'
+        : generateStaticRoomId(db.users, db.customVoiceRooms, user.fullName || user.userId, user.userId);
+    user.roomAddress = code;
+    user.personalRoomId = code;
+    if (code === '1111') {
+      user.isVipRoom = true;
+      user.vipRoomLabel = user.vipRoomLabel || 'VIP Royal';
+    }
+  } else {
+    user.roomAddress = String(user.roomAddress).trim();
+    user.personalRoomId = user.roomAddress;
+    if (user.isVipRoom === undefined && isStaticVipFancyRoom(user.roomAddress)) {
+      user.isVipRoom = true;
+    }
+  }
+  const isFounder = user.userId === 'EMO-MOM-MMO' || user.role === 'admin';
+  const cleanTag = String(user.userId || 'USR').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+  const targetId = isFounder ? 'room-founder' : `roompersonal${cleanTag}`;
+  let existing = db.customVoiceRooms.find(
+    r => r.id === targetId || (r.isPersonalFixed && r.hostUserId === user.userId)
+  );
+  if (!existing) {
+    existing = {
+      id: targetId,
+      title: isFounder ? 'ESP Royal Voice Stage (Official)' : `${user.fullName}'s Voice Room`,
+      topic: isFounder ? 'ESP 10 Services Discussion & Real Gaming Club' : `Welcome to ${user.fullName}'s Personal Fixed Voice Room`,
+      category: user.accountType === 'gamer' ? 'gaming' : 'earning',
+      roomAddress: user.roomAddress,
+      roomNumber: user.roomAddress,
+      isPersonalFixed: true,
+      isVipRoom: Boolean(user.isVipRoom || isStaticVipFancyRoom(user.roomAddress)),
+      vipRoomLabel: user.vipRoomLabel || (isFounder ? 'VIP Royal' : ''),
+      hostUserId: user.userId,
+      hostName: user.fullName,
+      hostUsername: user.username || '',
+      hostAvatar: user.avatar,
+      hostLevel: user.gameLevel || 1,
+      hostCharms: user.charms || 0,
+      wallpaperId: 'castle_night',
+      customWallpaperUrl: '',
+      stageLayout: 'classic_8',
+      youtubeVideoUrl: '',
+      lockedSeats: [],
+      followers: [],
+      audience: [user.userId],
+      seats: Array.from({ length: 8 }, (_, i) => ({
+        seatNumber: i + 1,
+        seatNumberLabel: String(i + 1),
+        isMuted: false,
+        isSpeaking: false,
+        charms: 0,
+      })),
+      chatMessages: [
+        {
+          id: `msg-init-${cleanTag}`,
+          senderId: 'SYSTEM',
+          sender: 'System',
+          senderRoll: 'STAGE',
+          text: `🔔 System: ${user.fullName}'s personal fixed room (ID: ${user.roomAddress}) is live!`,
+          time: 'Live',
+        },
+      ],
+      listenersCount: 1,
+      createdAt: user.createdAt || new Date().toISOString(),
+    };
+    if (isFounder) db.customVoiceRooms.unshift(existing);
+    else db.customVoiceRooms.push(existing);
+  } else {
+    existing.roomAddress = user.roomAddress;
+    existing.roomNumber = user.roomAddress;
+    existing.isPersonalFixed = true;
+    existing.isVipRoom = Boolean(user.isVipRoom || isStaticVipFancyRoom(user.roomAddress));
+    existing.vipRoomLabel = user.vipRoomLabel || existing.vipRoomLabel || '';
+    existing.hostName = user.fullName;
+    existing.hostUsername = user.username || '';
+    existing.hostAvatar = user.avatar;
+    if (!existing.wallpaperId) existing.wallpaperId = 'castle_night';
+    if (!existing.stageLayout) existing.stageLayout = 'classic_8';
+    if (!Array.isArray(existing.lockedSeats)) existing.lockedSeats = [];
+    if (!Array.isArray(existing.followers)) existing.followers = [];
+    if (!Array.isArray(existing.audience)) existing.audience = [user.userId];
+  }
+  return existing;
+}
+
+function ensureAllStaticRooms(db: StaticDb) {
+  for (const u of db.users) {
+    ensureStaticPersonalRoom(db, u);
+  }
+  for (const r of db.customVoiceRooms || []) {
+    if (!isStaticNumericRoomId(r.roomAddress)) {
+      const addr = generateStaticRoomId(db.users, db.customVoiceRooms, r.title || 'ESP');
+      r.roomAddress = addr;
+      r.roomNumber = addr;
+    }
+  }
+  return db.customVoiceRooms;
+}
+
+function buildStaticRoomDetail(db: StaticDb, room: any, viewerId?: string) {
+  const lockedSet = new Set<number>(Array.isArray(room.lockedSeats) ? room.lockedSeats : []);
+  const followers = Array.isArray(room.followers) ? room.followers : [];
+  const audience = Array.isArray(room.audience) ? room.audience : [room.hostUserId];
+  const hostUser = db.users.find(u => u.userId === room.hostUserId);
+  const enrichedSeats = (room.seats || db.voiceRoomSeats).map((s: any, idx: number) => ({
+    ...s,
+    isLocked: lockedSet.has(idx),
+  }));
+  const topContributors = [...db.users]
+    .sort((a, b) => (b.charms || 0) - (a.charms || 0))
+    .slice(0, 3)
+    .map(u => ({ userId: u.userId, fullName: u.fullName, avatar: u.avatar, coins: u.charms || 0 }));
+
+  return {
+    success: true,
+    room: {
+      ...room,
+      followers,
+      followersCount: followers.length,
+      isFollowed: Boolean(viewerId && followers.includes(viewerId)),
+      audience,
+      listenersCount: Math.max(1, audience.length),
+      occupiedSeatsCount: enrichedSeats.filter((s: any) => Boolean(s.userId)).length,
+      seats: enrichedSeats,
+      topContributors,
+    },
+    host: {
+      userId: room.hostUserId,
+      userName: hostUser?.fullName || room.hostName,
+      username: hostUser?.username || room.hostUsername || '',
+      gameLevel: hostUser?.gameLevel || room.hostLevel || 1,
+      charms: hostUser?.charms || room.hostCharms || 0,
+      userAvatar: hostUser?.avatar || room.hostAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
+      isSpeaking: true,
+      roleTitle: room.id === 'room-founder' ? 'ESP Founder & Room Host' : 'Room Owner & Host',
+    },
+    seats: enrichedSeats,
+    audience: db.users,
+    audienceCount: Math.max(1, audience.length),
+    chatMessages: room.chatMessages || db.voiceRoomChat,
+  };
+}
+
+function normalizeStaticUser(u: any): UserProfile {
+  if (u.coins === undefined || u.coins === null || Number.isNaN(Number(u.coins))) u.coins = 0;
+  if (u.charms === undefined || u.charms === null) u.charms = 0;
+  if (u.gameXp === undefined || u.gameXp === null) u.gameXp = 0;
+  u.gameLevel = calculateLevelFromXp(u.gameXp || 0);
+  if (!u.vipTier) u.vipTier = 'none';
+  if (u.vipTier === 'none') u.vipTitle = '';
+  if (!Array.isArray(u.unlockedFrames) || u.unlockedFrames.length === 0) u.unlockedFrames = ['standard'];
+  if (!u.unlockedFrames.includes('standard')) u.unlockedFrames.unshift('standard');
+  if (!u.frameType || !u.unlockedFrames.includes(u.frameType)) u.frameType = 'standard';
+  if (!Array.isArray(u.unlockedRooms) || u.unlockedRooms.length === 0) u.unlockedRooms = ['default_dark'];
+  if (!u.unlockedRooms.includes('default_dark')) u.unlockedRooms.unshift('default_dark');
+  if (!u.roomTheme || !u.unlockedRooms.includes(u.roomTheme)) u.roomTheme = 'default_dark';
+  if (!Array.isArray(u.followedRooms)) u.followedRooms = [];
+  if (u.roomAddress && /[^A-Za-z0-9]/.test(String(u.roomAddress))) {
+    u.roomAddress = '';
+  }
+  if (!Array.isArray(u.friendsList)) u.friendsList = [];
+  u.friendsCount = u.friendsList.length;
+  if (!u.receivedGifts || typeof u.receivedGifts !== 'object') u.receivedGifts = {};
+  if (u.username) u.username = normalizeStaticUsername(u.username);
+  const today = getTodayStr();
+  if (u.taskProgressDate !== today) {
+    u.taskProgressDate = today;
+    u.taskProgress = {};
+    u.claimedTaskIds = [];
+    u.claimedChestMilestones = [];
+  }
+  if (!u.taskProgress) u.taskProgress = {};
+  if (!Array.isArray(u.claimedTaskIds)) u.claimedTaskIds = [];
+  if (!Array.isArray(u.claimedChestMilestones)) u.claimedChestMilestones = [];
+  if (u.tasksCompletedCount === undefined) u.tasksCompletedCount = 0;
+  return u;
+}
+
+function trackStaticTask(user: UserProfile, eventType: TaskEventType, inc = 1) {
+  normalizeStaticUser(user);
+  user.taskProgress![eventType] = Number(user.taskProgress?.[eventType] || 0) + Math.max(1, inc);
+}
+
+function pushStaticCoinTx(
+  db: StaticDb,
+  user: UserProfile,
+  params: {
+    type: 'credit' | 'debit';
+    category: CoinTransactionRecord['category'];
+    categoryLabel: string;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    description: string;
+  }
+) {
+  if (!Array.isArray(db.coinTransactions)) db.coinTransactions = [];
+  db.coinTransactions.unshift({
+    id: `CTX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    userId: user.userId,
+    userName: user.fullName,
+    ...params,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 function createInitialStaticDb(): StaticDb {
-  const adminUser: UserProfile = {
+  const adminUser: UserProfile = normalizeStaticUser({
     id: 'usr-admin',
     userId: 'EMO-MOM-MMO',
     gamingId: 'GAME-887749',
@@ -376,72 +791,36 @@ function createInitialStaticDb(): StaticDb {
     referralEarnings: 0,
     promoEarnings: 0,
     totalWithdrawn: 0,
-    coins: 50000,
-    charms: 12500,
-    gameLevel: 25,
-    gameXp: 4500,
-    roomAddress: 'ESP-ROOM-FOUNDER',
+    coins: 0,
+    charms: 0,
+    gameLevel: 1,
+    gameXp: 0,
+    vipTier: 'none',
+    vipTitle: '',
+    unlockedFrames: ['standard'],
+    frameType: 'standard',
+    unlockedRooms: ['default_dark'],
+    roomTheme: 'default_dark',
+    roomAddress: '1111',
+    personalRoomId: '1111',
+    isVipRoom: true,
+    vipRoomLabel: 'VIP Royal',
+    followedRooms: [],
     houseName: 'Royal House of Santosh',
     clanName: 'Royal Warriors ESP',
     clanRole: 'Leader',
-    loginStreak: 7,
-    claimedDays: [1, 2, 3, 4, 5, 6, 7],
-    friendsCount: 142,
-    visitorCount: 1850,
+    loginStreak: 0,
+    claimedDays: [],
+    friendsCount: 0,
+    visitorCount: 0,
     role: 'admin',
     createdAt: '2024-03-01T00:00:00.000Z',
-  };
-
-  const sharmaJi: UserProfile = {
-    id: 'usr-sharma-ji',
-    userId: 'SHARMA-JI-VIP',
-    gamingId: 'GAME-990099',
-    fullName: '👑 Sharma Ji (शर्मा जी)',
-    phone: '9876598765',
-    email: 'sharmaji.royal@espgaming.in',
-    fullAddress: 'Royal Palace, New Delhi, India',
-    paymentAddress: 'sharmaji@upi',
-    payoutUpiId: 'sharmaji@upi',
-    password: 'password123',
-    sponsorId: 'FOUNDER',
-    sponsorName: 'SANTOSH KUMAR',
-    chosenServiceCode: 'OES',
-    chosenServiceName: 'ONLINE EARNING SYSTEM (OES)',
-    joiningFee: 10000,
-    joiningDate: '2024-01-01',
-    paymentUtr: 'SHARMA_ROYAL_GENESIS',
-    status: 'active',
-    verifiedAt: '2024-01-01T00:00:00.000Z',
-    balance: 550000,
-    totalEarnings: 890000,
-    referralEarnings: 650000,
-    promoEarnings: 240000,
-    totalWithdrawn: 340000,
-    coins: 999999,
-    charms: 98765,
-    gameLevel: 99,
-    gameXp: 99999,
-    crownPost: true,
-    frameType: 'royal-dragon-crown',
-    vipTitle: '👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)',
-    roomAddress: 'ESP-ROOM-SHARMAJI-ROYAL',
-    houseName: '👑 शर्मा जी का राजमहल (Sharma Ji Royal Palace)',
-    clanName: '👑 Sharma Ji Royals',
-    clanRole: 'Leader',
-    loginStreak: 7,
-    claimedDays: [1, 2, 3, 4, 5, 6, 7],
-    friendsCount: 2500,
-    visitorCount: 98765,
-    role: 'member',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99',
-    bio: '👑 ESP PLAY & ESP के सबसे बड़े लेजेंड | Level 99 | 98,765 Charms',
-    createdAt: '2024-01-01T00:00:00.000Z',
-  };
+  });
 
   return {
     settings: { ...DEFAULT_SETTINGS },
     services: [...DEFAULT_SERVICES],
-    users: [sharmaJi, adminUser],
+    users: [adminUser],
     referrals: [],
     transactions: [],
     payouts: [],
@@ -453,20 +832,20 @@ function createInitialStaticDb(): StaticDb {
         userName: 'SANTOSH KUMAR (Founder)',
         userRollNumber: 'EMO-MOM-MMO',
         userAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshFounderESP',
-        caption: '🎉 ESP Portal Official Notice: All registered members can download their Verified Digital ID Card and participate in Live Voice Rooms and Online Games.',
+        caption: '🎉 ESP Portal Official Notice: Complete daily tasks to earn +5 Coins & EXP, unlock Avatar Frames and VIP Passes!',
         imageUrl: 'https://images.unsplash.com/photo-1579621970795-87facc2f976d?w=800&auto=format&fit=crop&q=80',
         serviceTag: 'OFFICIAL NOTICE',
         createdAt: new Date().toISOString(),
         likes: ['usr-admin'],
         comments: [],
-        sharesCount: 10,
+        sharesCount: 0,
       },
     ],
     chatRooms: [
-      { id: 'room-global', name: 'ESP National Community Club', hindiName: 'राष्ट्रीय कम्युनिटी क्लब (सभी सदस्य)', description: 'All ESP verified members official chatting hub.', category: 'community', membersCount: 2840, lastMessage: 'Welcome to ESP Club!', lastMessageTime: 'Just now' },
-      { id: 'room-services', name: '10 Services Earning Discussion', hindiName: '10 सर्विसेज पर चर्चा व रणनीति', description: 'Master all 10 earning services.', category: 'service', membersCount: 1620, lastMessage: 'NWI 3-Level real team passive income live!', lastMessageTime: '10m ago' },
-      { id: 'room-referrals', name: 'Referral & Team Builders Club', hindiName: 'रेफरल & डाउनलाइन टीम बिल्डर्स', description: 'Connect with other members and build teams.', category: 'group', membersCount: 980, lastMessage: 'Joined with ₹10!', lastMessageTime: '25m ago' },
-      { id: 'room-support', name: 'Founder & Admin 24x7 Helpdesk', hindiName: 'फाउंडर मार्गदर्शन एवं हेल्पलाइन', description: 'Official WhatsApp +91 8877490845 support channel.', category: 'help', membersCount: 3100, lastMessage: 'Digital ID cards ready.', lastMessageTime: '1h ago' },
+      { id: 'room-global', name: 'ESP National Community Club', hindiName: 'राष्ट्रीय कम्युनिटी क्लब (सभी सदस्य)', description: 'All ESP verified members official chatting hub.', category: 'community', membersCount: 1, lastMessage: 'Welcome to ESP Club!', lastMessageTime: 'Live' },
+      { id: 'room-services', name: '10 Services Earning Discussion', hindiName: '10 सर्विसेज पर चर्चा व रणनीति', description: 'Master all 10 earning services.', category: 'service', membersCount: 1, lastMessage: 'NWI 3-Level real team passive income live!', lastMessageTime: 'Live' },
+      { id: 'room-referrals', name: 'Referral & Team Builders Club', hindiName: 'रेफरल & डाउनलाइन टीम बिल्डर्स', description: 'Connect with other members and build real teams.', category: 'group', membersCount: 1, lastMessage: 'Joined with ₹10!', lastMessageTime: 'Live' },
+      { id: 'room-support', name: 'Founder & Admin 24x7 Helpdesk', hindiName: 'फाउंडर मार्गदर्शन एवं हेल्पलाइन', description: 'Official WhatsApp +91 8877490845 support channel.', category: 'help', membersCount: 1, lastMessage: 'Digital ID cards ready.', lastMessageTime: 'Live' },
     ],
     chatMessages: [
       {
@@ -478,7 +857,7 @@ function createInitialStaticDb(): StaticDb {
         senderAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshFounderESP',
         text: '🙏 Welcome all verified members to the Official ESP Community Club!',
         createdAt: new Date().toISOString(),
-        likes: 5,
+        likes: 1,
       },
     ],
     contacts: [],
@@ -490,7 +869,9 @@ function createInitialStaticDb(): StaticDb {
     activitySessions: [],
     contactMessages: [],
     homeSliderPhotos: [],
-    giftCardVouchers: [...DEFAULT_GIFT_CARDS],
+    giftCardVouchers: [],
+    giftCardRedemptions: [],
+    activeGameWagers: {},
     planUpgrades: [],
     voiceRoomSeats: Array.from({ length: 8 }, (_, i) => ({
       seatNumber: i + 1,
@@ -513,12 +894,79 @@ function createInitialStaticDb(): StaticDb {
   };
 }
 
+function normalizeStaticPhone(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+function matchesStaticIdentifier(u: UserProfile, rawIdentifier: string): boolean {
+  const clean = String(rawIdentifier || '').trim().toLowerCase();
+  if (!clean) return false;
+  const cleanNoSpaces = clean.replace(/\s+/g, '');
+  const inputDigits = normalizeStaticPhone(clean);
+  const uid = (u.userId || '').trim().toLowerCase();
+  const gid = (u.gamingId || '').trim().toLowerCase();
+  const uname = normalizeStaticUsername(u.username);
+  const cleanHandle = normalizeStaticUsername(clean);
+  const email = (u.email || '').trim().toLowerCase();
+  const phone = (u.phone || '').trim().toLowerCase();
+  const phoneDigits = normalizeStaticPhone(u.phone || '');
+
+  return (
+    uid === clean ||
+    (uname !== '' && cleanHandle !== '' && uname === cleanHandle) ||
+    (cleanNoSpaces.length >= 3 && uid.replace(/\s+/g, '') === cleanNoSpaces) ||
+    (gid !== '' && (gid === clean || (cleanNoSpaces.length >= 3 && gid.replace(/\s+/g, '') === cleanNoSpaces))) ||
+    (email !== '' && email === clean) ||
+    (phone !== '' && phone === clean) ||
+    (inputDigits.length === 10 && phoneDigits.length === 10 && phoneDigits === inputDigits)
+  );
+}
+
+function isStaticPasswordMatch(storedPassword: string | undefined, inputPassword: string): boolean {
+  if (!storedPassword) return true;
+  const rawInput = String(inputPassword ?? '');
+  if (storedPassword === rawInput) return true;
+  const trimmedInput = rawInput.trim();
+  return trimmedInput.length > 0 && storedPassword.trim() === trimmedInput;
+}
+
+function mergeLegacyBackupUsers(db: StaticDb) {
+  try {
+    const knownIds = new Set(db.users.map(u => (u.userId || '').toLowerCase()));
+    const legacyKeys = ['esp_users_backup_v1', 'esp_static_db'];
+    for (const k of legacyKeys) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const list: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.users)
+        ? parsed.users
+        : [];
+      for (const u of list) {
+        if (u && u.userId && !knownIds.has(String(u.userId).toLowerCase())) {
+          knownIds.add(String(u.userId).toLowerCase());
+          db.users.push(normalizeStaticUser({ ...u }));
+        }
+      }
+    }
+  } catch {
+    // ignore storage parse error
+  }
+}
+
 function getDb(): StaticDb {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as StaticDb;
       if (parsed && Array.isArray(parsed.users) && Array.isArray(parsed.services)) {
+        parsed.users = parsed.users.map(u => normalizeStaticUser(u));
+        mergeLegacyBackupUsers(parsed);
+        if (!Array.isArray(parsed.giftCardRedemptions)) parsed.giftCardRedemptions = [];
+        if (!parsed.activeGameWagers || typeof parsed.activeGameWagers !== 'object') parsed.activeGameWagers = {};
         return parsed;
       }
     }
@@ -526,6 +974,7 @@ function getDb(): StaticDb {
     // ignore storage corruption and re-seed
   }
   const fresh = createInitialStaticDb();
+  mergeLegacyBackupUsers(fresh);
   saveDb(fresh);
   return fresh;
 }
@@ -540,10 +989,11 @@ function saveDb(db: StaticDb) {
 
 function findUser(db: StaticDb, idOrUserId: string): UserProfile | undefined {
   const key = (idOrUserId || '').trim().toLowerCase();
+  if (!key) return undefined;
   return db.users.find(
     u =>
-      u.userId.toLowerCase() === key ||
-      u.id.toLowerCase() === key ||
+      (u.userId || '').toLowerCase() === key ||
+      (u.id || '').toLowerCase() === key ||
       (u.gamingId || '').toLowerCase() === key
   );
 }
@@ -554,11 +1004,12 @@ function verifyAdminPass(pass?: string): boolean {
 
 function buildNwiTree(db: StaticDb, user: UserProfile): NwiTreeRecord {
   const tierFee = Number(user.joiningFee) || 200;
-  const claimedSet = new Set((user.nwiClaimedMemberIds || []).map(x => x.toLowerCase()));
-  const l1Users = db.users.filter(u => u.sponsorId && u.sponsorId.toLowerCase() === user.userId.toLowerCase() && u.id !== user.id);
-  const l1Ids = new Set(l1Users.map(u => u.userId.toLowerCase()));
+  const targetUserId = (user.userId || '').toLowerCase();
+  const claimedSet = new Set((user.nwiClaimedMemberIds || []).map(x => (x || '').toLowerCase()));
+  const l1Users = db.users.filter(u => u.sponsorId && u.sponsorId.toLowerCase() === targetUserId && u.id !== user.id);
+  const l1Ids = new Set(l1Users.map(u => (u.userId || '').toLowerCase()));
   const l2Users = db.users.filter(u => u.sponsorId && l1Ids.has(u.sponsorId.toLowerCase()));
-  const l2Ids = new Set(l2Users.map(u => u.userId.toLowerCase()));
+  const l2Ids = new Set(l2Users.map(u => (u.userId || '').toLowerCase()));
   const l3Users = db.users.filter(u => u.sponsorId && l2Ids.has(u.sponsorId.toLowerCase()));
 
   const toNode = (u: UserProfile, level: 1 | 2 | 3, rate: number): NwiMemberNode => ({
@@ -582,7 +1033,7 @@ function buildNwiTree(db: StaticDb, user: UserProfile): NwiTreeRecord {
   const level3Income = level3Members.reduce((s, m) => s + m.rewardEarned, 0);
   const totalPassiveEarned = level1Income + level2Income + level3Income;
   const allNodes = [...level1Members, ...level2Members, ...level3Members];
-  const totalPassiveClaimed = allNodes.filter(n => claimedSet.has(n.userId.toLowerCase())).reduce((s, n) => s + n.rewardEarned, 0);
+  const totalPassiveClaimed = allNodes.filter(n => claimedSet.has((n.userId || '').toLowerCase())).reduce((s, n) => s + n.rewardEarned, 0);
 
   return {
     userId: user.userId,
@@ -664,14 +1115,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, services: db.services };
   }
 
-  // Sponsor lookup
+  // Sponsor lookup (Supports User ID & Unique @Username)
   if (path === '/api/sponsor/check') {
     const id = (search.get('id') || '').trim();
-    const sp = id ? findUser(db, id) : undefined;
+    const sp = id ? findStaticSponsorUser(db.users, id) : undefined;
     if (!sp || id.toUpperCase() === db.settings.ownerSponsorId) {
+      const owner = db.users.find(u => u.userId === db.settings.ownerSponsorId);
       return {
         valid: true,
         sponsorId: db.settings.ownerSponsorId,
+        sponsorUsername: owner?.username || '',
         sponsorName: db.settings.ownerName,
         isOwner: true,
         maskedPhone: '******0845',
@@ -681,8 +1134,9 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return {
       valid: true,
       sponsorId: sp.userId,
+      sponsorUsername: sp.username || '',
       sponsorName: sp.fullName,
-      isOwner: false,
+      isOwner: sp.userId === db.settings.ownerSponsorId,
       maskedPhone: `******${sp.phone.slice(-4)}`,
       maskedEmail: sp.email,
       planName: sp.chosenServiceName,
@@ -691,37 +1145,65 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     };
   }
 
-  // Auth: Register, Login, Forget ID, Forget Password, Verify Session
+  // Auth: Register, Login, Restore, Forget ID, Forget Password, Verify Session
   if (path === '/api/auth/register' && method === 'POST') {
     const isGamer = body.accountType === 'gamer';
-    const fullName = String(body.fullName || '').trim();
-    const phone = String(body.phone || '').trim();
+    const fullName = String(body.fullName || '').trim().replace(/\s+/g, ' ');
+    const rawPhone = String(body.phone || '').trim();
+    const phone = normalizeStaticPhone(rawPhone) || rawPhone;
+    const cleanEmail = body.email ? String(body.email).trim().toLowerCase() : `${phone}@espgaming.club`;
     if (!fullName || !phone) return { success: false, message: 'नाम और मोबाइल नंबर आवश्यक है' };
-    const exists = db.users.find(u => u.phone === phone || (body.email && u.email.toLowerCase() === String(body.email).toLowerCase()));
-    if (exists) return { success: false, message: 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है। कृपया लॉगिन करें।' };
+    const inputUsername = body.username !== undefined ? normalizeStaticUsername(body.username) : '';
+    if (inputUsername) {
+      if (!isValidStaticUsername(inputUsername)) {
+        return {
+          success: false,
+          code: 'INVALID_USERNAME',
+          message: 'यूनिक यूज़रनेम में कोई Symbol (_ - . @) उपयोग न करें — केवल 3 से 24 अक्षर (a-z और 0-9) लिखें।',
+        };
+      }
+      if (isStaticUsernameTaken(db.users, inputUsername)) {
+        return {
+          success: false,
+          code: 'USERNAME_TAKEN',
+          message: `यूज़रनेम "@${inputUsername}" पहले से लिया जा चुका है! कृपया कोई दूसरा यूनिक नाम चुनें।`,
+        };
+      }
+    }
+    const exists = db.users.find(
+      u => normalizeStaticPhone(u.phone || '') === phone || (body.email && (u.email || '').trim().toLowerCase() === cleanEmail)
+    );
+    if (exists) return { success: false, message: 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।' };
 
     const fee = isGamer ? 0 : (Number(body.joiningFee) || 10);
     const srv = isGamer
       ? { code: 'GAME', name: 'ESP GAMING & VOICE CLUB' }
       : (db.services.find(s => s.code === body.chosenServiceCode) || db.services[0]);
-    const initials = fullName.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'ES';
     const userId = isGamer
-      ? `ESP-G-${Math.floor(100000 + Math.random() * 900000)}`
-      : `ESP${fee}${initials}${String(db.users.length + 1).padStart(2, '0')}`;
-    const sponsor = findUser(db, body.sponsorId || db.settings.ownerSponsorId);
+      ? generateStaticGamerId(db.users, fullName)
+      : generateStaticIncomeId(db.users, fullName, srv.code);
+    let gamingId = isGamer ? userId : generateStaticGamerId(db.users, fullName);
+    if (!isGamer && gamingId.toLowerCase() === userId.toLowerCase()) {
+      gamingId = `${gamingId}G`;
+    }
+    const username = inputUsername || generateStaticDefaultUsername(db.users, fullName, userId, gamingId);
+    const sponsor = findStaticSponsorUser(db.users, body.sponsorId || db.settings.ownerSponsorId);
     const sessionToken = `esp_static_${Date.now()}`;
 
-    const newUser: UserProfile = {
+    const roomAddress = generateStaticRoomId(db.users, db.customVoiceRooms || [], fullName);
+
+    const newUser: UserProfile = normalizeStaticUser({
       id: `usr-${Date.now()}`,
       userId,
-      gamingId: `GAME-${Math.floor(100000 + Math.random() * 900000)}`,
+      gamingId,
+      username,
       fullName,
       phone,
-      email: body.email ? String(body.email).trim().toLowerCase() : `${phone}@espgaming.club`,
+      email: cleanEmail,
       fullAddress: body.fullAddress || '',
       paymentAddress: body.paymentAddress || '',
       payoutUpiId: body.paymentAddress || '',
-      password: body.password || '123456',
+      password: String(body.password || '123456').trim(),
       sponsorId: sponsor ? sponsor.userId : db.settings.ownerSponsorId,
       sponsorName: sponsor ? sponsor.fullName : db.settings.ownerName,
       chosenServiceCode: srv.code,
@@ -736,39 +1218,54 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       referralEarnings: 0,
       promoEarnings: 0,
       totalWithdrawn: 0,
-      coins: isGamer ? 5500 : 5000,
-      charms: 150,
+      coins: 0,
+      charms: 0,
       gameLevel: 1,
-      gameXp: 100,
-      roomAddress: `ESP-ROOM-${userId}`,
+      gameXp: 0,
+      vipTier: 'none',
+      vipTitle: '',
+      unlockedFrames: ['standard'],
+      frameType: 'standard',
+      unlockedRooms: ['default_dark'],
+      roomTheme: 'default_dark',
+      roomAddress,
+      personalRoomId: roomAddress,
+      followedRooms: [],
       houseName: `${fullName} Gaming House`,
       clanName: 'Royal Warriors ESP',
       clanRole: 'Member',
-      loginStreak: 1,
+      loginStreak: 0,
       claimedDays: [],
-      friendsCount: 1,
-      visitorCount: 1,
+      friendsCount: 0,
+      visitorCount: 0,
       role: 'member',
       avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userId)}`,
       createdAt: new Date().toISOString(),
-    };
+    });
     db.users.unshift(newUser);
+    ensureStaticPersonalRoom(db, newUser);
     saveDb(db);
     return { success: true, user: newUser, sessionToken };
   }
 
   if (path === '/api/auth/login' && method === 'POST') {
-    const id = String(body.identifier || '').trim().toLowerCase();
+    const identifier = String(body.identifier || '').trim();
     const pass = String(body.password || '');
-    const user = db.users.find(
-      u =>
-        u.userId.toLowerCase() === id ||
-        (u.gamingId || '').toLowerCase() === id ||
-        u.phone.toLowerCase() === id ||
-        u.email.toLowerCase() === id
-    );
-    if (!user || (user.password && user.password !== pass && pass !== 'admin123')) {
-      return { success: false, message: 'गलत ID/मोबाइल या पासवर्ड (Demo: EMO-MOM-MMO / admin या SHARMA-JI-VIP / password123)' };
+    const candidates = db.users.filter(u => matchesStaticIdentifier(u, identifier));
+    if (candidates.length === 0) {
+      return {
+        success: false,
+        code: 'ACCOUNT_NOT_FOUND',
+        message: 'इस ID, मोबाइल नंबर या ईमेल से कोई खाता नहीं मिला। कृपया "Forget ID?" से अपनी ID खोजें।',
+      };
+    }
+    const user = candidates.find(u => isStaticPasswordMatch(u.password, pass) || pass === 'admin123');
+    if (!user) {
+      return {
+        success: false,
+        code: 'PASSWORD_MISMATCH',
+        message: 'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या "Forget Password?" का उपयोग करें।',
+      };
     }
     const sessionToken = `esp_static_${Date.now()}`;
     user.lastLogin = new Date().toISOString();
@@ -777,28 +1274,64 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, user, sessionToken };
   }
 
+  if (path === '/api/auth/restore-account' && method === 'POST') {
+    const backup = body.user;
+    if (!backup || !backup.userId) return { success: false, message: 'Invalid backup user' };
+    let existing = findUser(db, backup.userId);
+    if (!existing) {
+      existing = normalizeStaticUser({ ...backup });
+      db.users.push(existing);
+      saveDb(db);
+    }
+    const sessionToken = body.preferredToken || `esp_static_${Date.now()}`;
+    return { success: true, user: existing, sessionToken };
+  }
+
   if (path === '/api/auth/forget-id' && method === 'POST') {
     const q = String(body.phoneOrEmail || '').trim().toLowerCase();
-    const user = db.users.find(u => u.phone.toLowerCase() === q || u.email.toLowerCase() === q);
-    if (!user) return { success: false, message: 'इस मोबाइल नंबर या ईमेल से कोई खाता नहीं मिला' };
+    const qDigits = normalizeStaticPhone(q);
+    const matched = db.users.filter(
+      u =>
+        (u.email || '').trim().toLowerCase() === q ||
+        (u.phone || '').trim().toLowerCase() === q ||
+        (qDigits.length === 10 && normalizeStaticPhone(u.phone || '') === qDigits)
+    );
+    if (matched.length === 0) return { success: false, message: 'इस मोबाइल नंबर या ईमेल से कोई खाता नहीं मिला' };
+    const primary = matched[0];
     return {
       success: true,
-      userId: user.userId,
-      gamingId: user.gamingId || `GAME-${user.phone.slice(-6)}`,
-      fullName: user.fullName,
-      accountType: user.accountType || 'business',
-      chosenServiceCode: user.chosenServiceCode,
+      userId: primary.userId,
+      gamingId: primary.gamingId || `GAME-${(primary.phone || '000000').slice(-6)}`,
+      fullName: primary.fullName,
+      accountType: primary.accountType || 'business',
+      chosenServiceCode: primary.chosenServiceCode,
+      accounts: matched.map(u => ({
+        userId: u.userId,
+        gamingId: u.gamingId || `GAME-${(u.phone || '000000').slice(-6)}`,
+        fullName: u.fullName,
+        accountType: u.accountType || 'business',
+        chosenServiceCode: u.chosenServiceCode,
+      })),
     };
   }
 
   if (path === '/api/auth/forget-password' && method === 'POST') {
-    const id = String(body.identifier || '').trim().toLowerCase();
-    const ph = String(body.verifyPhone || '').trim();
-    const user = db.users.find(
-      u => (u.userId.toLowerCase() === id || u.phone.toLowerCase() === id || u.email.toLowerCase() === id) && u.phone === ph
-    );
-    if (!user) return { success: false, message: 'यूजर आईडी और मोबाइल नंबर मेल नहीं खा रहे हैं' };
-    user.password = String(body.newPassword || '123456');
+    const identifier = String(body.identifier || '').trim();
+    const cleanVerify = String(body.verifyPhone || '').trim().toLowerCase();
+    const verifyDigits = normalizeStaticPhone(cleanVerify);
+    const candidates = db.users.filter(u => matchesStaticIdentifier(u, identifier));
+    if (candidates.length === 0) return { success: false, message: 'इस आईडी या नंबर से कोई खाता नहीं मिला।' };
+
+    const user = candidates.find(u => {
+      const uDigits = normalizeStaticPhone(u.phone || '');
+      return (
+        (verifyDigits.length === 10 && uDigits === verifyDigits) ||
+        (u.phone || '').trim().toLowerCase() === cleanVerify ||
+        (u.email || '').trim().toLowerCase() === cleanVerify
+      );
+    });
+    if (!user) return { success: false, message: 'यूजर आईडी और मोबाइल नंबर / ईमेल मेल नहीं खा रहे हैं' };
+    user.password = String(body.newPassword || '123456').trim();
     saveDb(db);
     return { success: true, userId: user.userId, fullName: user.fullName, message: 'पासवर्ड सफलतापूर्वक बदल दिया गया!' };
   }
@@ -806,7 +1339,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   if (path === '/api/auth/verify-session') {
     const userId = search.get('userId') || '';
     const user = findUser(db, userId);
-    return user ? { valid: true, user } : { valid: true };
+    return user ? { valid: true, user } : { valid: false, accountMissing: true, sessionTerminated: false };
   }
 
   // User Dashboard, Profile, Withdraw, Heartbeat, Avatar, Server State
@@ -848,19 +1381,57 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     }
     if (!sub && method === 'PUT') {
       if (!user) return { success: false, message: 'User not found' };
-      Object.assign(user, body);
+      const { fullName, username, email, gender, location, fullAddress, paymentAddress, payoutUpiId, bio, houseName, clanName, avatar, coverPhoto, accountType } = body;
+      if (username !== undefined) {
+        const cleanUsername = normalizeStaticUsername(username);
+        if (cleanUsername) {
+          if (!isValidStaticUsername(cleanUsername)) {
+            return { success: false, code: 'INVALID_USERNAME', message: 'कोई Symbol (_ - . @) उपयोग न करें — केवल 3-24 अक्षर (a-z और 0-9) लिखें।' };
+          }
+          if (isStaticUsernameTaken(db.users, cleanUsername, user.userId)) {
+            return { success: false, code: 'USERNAME_TAKEN', message: `यूजरनेम "@${cleanUsername}" पहले से किसी दूसरे यूजर के पास है! एक ही यूजरनेम से 2 लोग नहीं हो सकते।` };
+          }
+          user.username = cleanUsername;
+        }
+      }
+      if (fullName !== undefined && String(fullName).trim()) {
+        user.fullName = String(fullName).trim().replace(/\s+/g, ' ');
+      }
+      if (email) user.email = String(email).trim();
+      if (gender !== undefined) user.gender = String(gender);
+      if (location !== undefined) user.location = String(location).trim().slice(0, 80);
+      if (fullAddress !== undefined) user.fullAddress = String(fullAddress);
+      if (paymentAddress !== undefined) {
+        user.paymentAddress = String(paymentAddress);
+        user.payoutUpiId = String(payoutUpiId || paymentAddress);
+      } else if (payoutUpiId !== undefined) {
+        user.payoutUpiId = String(payoutUpiId);
+      }
+      if (bio !== undefined) user.bio = String(bio);
+      if (houseName) user.houseName = String(houseName);
+      if (clanName) user.clanName = String(clanName);
+      if (avatar !== undefined) user.avatar = avatar;
+      if (coverPhoto !== undefined) user.coverPhoto = coverPhoto;
+      if (accountType === 'business' || accountType === 'gamer') {
+        user.accountType = accountType;
+      }
+      trackStaticTask(user, 'profile_completed', 1);
       saveDb(db);
       return { success: true, user };
     }
     if (sub === 'avatar' && method === 'POST') {
       if (!user) return { success: false, message: 'User not found' };
       user.avatar = body.avatar;
+      trackStaticTask(user, 'profile_completed', 1);
       saveDb(db);
       return { success: true, message: 'Avatar updated', avatar: user.avatar, user };
     }
     if (sub === 'server-state' && method === 'POST') {
       if (!user) return { success: false, message: 'User not found' };
-      Object.assign(user, body);
+      if (body.roomTheme && (body.roomTheme === 'default_dark' || (user.unlockedRooms || []).includes(body.roomTheme))) {
+        user.roomTheme = body.roomTheme;
+      }
+      if (body.voiceEffect) user.voiceEffect = body.voiceEffect;
       saveDb(db);
       return { success: true, user };
     }
@@ -882,6 +1453,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         requestDate: new Date().toISOString().split('T')[0],
       };
       db.payouts.unshift(payout);
+      db.transactions.unshift({
+        id: `TXN-WD-${Date.now().toString().slice(-6)}`,
+        userId: user.userId,
+        amount: amt,
+        type: 'withdrawal',
+        description: `Withdrawal Request ₹${amt} -> ${payout.payoutAddress} (Escrow Pending)`,
+        date: new Date().toISOString(),
+        status: 'pending',
+        referenceId: payout.id,
+      });
       saveDb(db);
       return { success: true, message: 'विथड्रॉल रिक्वेस्ट सबमिट हो गई!', payout, user };
     }
@@ -970,6 +1551,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       sharesCount: 0,
     };
     db.moments.unshift(m);
+    const author = findUser(db, body.userId);
+    if (author) trackStaticTask(author, 'moment_posted', 1);
     saveDb(db);
     return { success: true, moment: m };
   }
@@ -999,7 +1582,10 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true };
   }
 
-  if (path === '/api/chat/rooms' && method === 'GET') return { success: true, rooms: db.chatRooms };
+  if (path === '/api/chat/rooms' && method === 'GET') {
+    const realCount = Math.max(1, db.users.length);
+    return { success: true, rooms: db.chatRooms.map(r => ({ ...r, membersCount: realCount })) };
+  }
   if (path === '/api/chat/rooms' && method === 'POST') {
     const room: ChatRoom = { id: `room-${Date.now()}`, name: body.name, hindiName: body.hindiName, description: body.description || '', category: body.category || 'group', membersCount: 1, lastMessage: 'Room Created', lastMessageTime: 'Just now' };
     db.chatRooms.push(room);
@@ -1013,6 +1599,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   if (path === '/api/chat/messages' && method === 'POST') {
     const msg: ClubChatMessage = { id: `msg-${Date.now()}`, ...body, createdAt: new Date().toISOString(), likes: 0 };
     db.chatMessages.push(msg);
+    const sender = findUser(db, body.senderId);
+    if (sender) trackStaticTask(sender, 'chat_sent', 1);
     saveDb(db);
     return { success: true, message: msg };
   }
@@ -1027,21 +1615,359 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, contact };
   }
 
+  // Real Daily Tasks (+5 Coins & EXP)
+  if (path.startsWith('/api/tasks/') && method === 'GET') {
+    const uid = decodeURIComponent(path.replace('/api/tasks/', ''));
+    const user = findUser(db, uid);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const tasks = REAL_TASKS_CATALOG.map(t => {
+      const p = Number(user.taskProgress?.[t.eventType] || 0);
+      return {
+        ...t,
+        currentProgress: Math.min(p, t.targetCount),
+        isCompleted: p >= t.targetCount,
+        isClaimed: (user.claimedTaskIds || []).includes(t.id),
+      };
+    });
+    const claimedCount = (user.claimedTaskIds || []).length;
+    const chests = CHEST_MILESTONES.map(ch => ({
+      ...ch,
+      isUnlocked: claimedCount >= ch.requiredTasksCompleted,
+      isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
+    }));
+    saveDb(db);
+    return { success: true, tasks, chests, claimedTodayCount: claimedCount, tasksCompletedCount: user.tasksCompletedCount || 0, user };
+  }
+  if (path === '/api/tasks/track' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    trackStaticTask(user, body.eventType, Number(body.increment) || 1);
+    saveDb(db);
+    return { success: true, user };
+  }
+  if (path === '/api/tasks/claim' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const t = REAL_TASKS_CATALOG.find(x => x.id === body.taskId);
+    if (!t) return { success: false, message: 'Task not found' };
+    const p = Number(user.taskProgress?.[t.eventType] || 0);
+    if (p < t.targetCount) {
+      return { success: false, code: 'TASK_NOT_COMPLETED', message: `पहले टास्क पूरा करें (${p}/${t.targetCount}) तभी +5 कॉइन्स व EXP मिलेंगे।` };
+    }
+    if ((user.claimedTaskIds || []).includes(t.id)) {
+      return { success: false, message: 'आज यह टास्क पहले ही क्लेम हो चुका है!' };
+    }
+    const before = user.coins || 0;
+    const vipCfg = getVipConfig(user.vipTier);
+    const xpEarned = Math.round(t.xpReward * (vipCfg?.bonusXpMultiplier || 1));
+    user.coins = before + t.coinReward;
+    user.gameXp = (user.gameXp || 0) + xpEarned;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.claimedTaskIds!.push(t.id);
+    user.tasksCompletedCount = (user.tasksCompletedCount || 0) + 1;
+    pushStaticCoinTx(db, user, {
+      type: 'credit',
+      category: 'daily_task',
+      categoryLabel: 'रियल टास्क पूर्ण रिवॉर्ड',
+      amount: t.coinReward,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${t.hindiTitle} पूर्ण: +${t.coinReward} कॉइन्स व +${xpEarned} EXP`,
+    });
+    saveDb(db);
+    return { success: true, message: `🎉 +${t.coinReward} कॉइन्स और +${xpEarned} EXP जुड़े!`, coinsEarned: t.coinReward, xpEarned, newBalance: user.coins, user };
+  }
+  if (path === '/api/tasks/claim-chest' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const ch = CHEST_MILESTONES.find(c => c.id === body.chestId);
+    if (!ch) return { success: false, message: 'Chest not found' };
+    const claimedCount = (user.claimedTaskIds || []).length;
+    if (claimedCount < ch.requiredTasksCompleted) {
+      return { success: false, message: `पहले आज के ${ch.requiredTasksCompleted} टास्क पूरे करें।` };
+    }
+    if ((user.claimedChestMilestones || []).includes(ch.id)) {
+      return { success: false, message: 'यह चेस्ट पहले ही खोला जा चुका है!' };
+    }
+    const before = user.coins || 0;
+    user.coins = before + ch.coinReward;
+    user.gameXp = (user.gameXp || 0) + ch.xpReward;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.claimedChestMilestones!.push(ch.id);
+    pushStaticCoinTx(db, user, {
+      type: 'credit',
+      category: 'task_chest',
+      categoryLabel: 'टास्क माइलस्टोन चेस्ट',
+      amount: ch.coinReward,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${ch.hindiLabel}: +${ch.coinReward} कॉइन्स व +${ch.xpReward} EXP`,
+    });
+    saveDb(db);
+    return { success: true, message: `🎁 +${ch.coinReward} कॉइन्स व +${ch.xpReward} EXP प्राप्त हुए!`, coinsEarned: ch.coinReward, xpEarned: ch.xpReward, newBalance: user.coins, user };
+  }
+
+  // Frame, VIP & Room Store
+  if (path === '/api/store/buy-frame' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const frame = getFrameByVariant(body.frameId);
+    if (!Array.isArray(user.unlockedFrames)) user.unlockedFrames = ['standard'];
+    if (user.unlockedFrames.includes(frame.variant) || frame.coinPrice === 0) {
+      if (!user.unlockedFrames.includes(frame.variant)) user.unlockedFrames.push(frame.variant);
+      user.frameType = frame.variant;
+      saveDb(db);
+      return { success: true, message: `${frame.hindiName} सक्रिय हो गया!`, user };
+    }
+    const before = user.coins || 0;
+    if (before < frame.coinPrice) {
+      return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: frame.coinPrice, currentCoins: before, message: `${frame.hindiName} फ्रेम के लिए ${frame.coinPrice} कॉइन्स चाहिए। आपके पास ${before} हैं।` };
+    }
+    user.coins = before - frame.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + frame.coinPrice;
+    user.unlockedFrames.push(frame.variant);
+    user.frameType = frame.variant;
+    pushStaticCoinTx(db, user, {
+      type: 'debit',
+      category: 'frame_purchase',
+      categoryLabel: 'अवतार फ्रेम खरीद',
+      amount: frame.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${frame.hindiName} [${frame.quality}] फ्रेम (-${frame.coinPrice} कॉइन्स)`,
+    });
+    saveDb(db);
+    return { success: true, message: `🎉 ${frame.hindiName} फ्रेम खरीदा व लागू हो गया!`, newBalance: user.coins, user };
+  }
+  if (path === '/api/store/equip-frame' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const frame = getFrameByVariant(body.frameId);
+    const owned = user.unlockedFrames || ['standard'];
+    if (frame.coinPrice > 0 && !owned.includes(frame.variant) && !owned.includes(frame.id)) {
+      return { success: false, code: 'FRAME_LOCKED', requiredCoins: frame.coinPrice, currentCoins: user.coins || 0, message: `यह फ्रेम लॉक है! पहले ${frame.coinPrice} कॉइन्स से खरीदें।` };
+    }
+    user.frameType = frame.variant;
+    saveDb(db);
+    return { success: true, message: `${frame.hindiName} फ्रेम सेट हुआ!`, user };
+  }
+  if (path === '/api/store/buy-vip' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const vip = VIP_TIERS.find(v => v.id === body.vipTier);
+    if (!vip) return { success: false, message: 'अमान्य VIP प्लान' };
+    const orderMap: Record<string, number> = { none: 0, silver: 1, gold: 2, diamond: 3 };
+    if ((orderMap[user.vipTier || 'none'] || 0) >= (orderMap[vip.id] || 0)) {
+      return { success: false, message: 'यह या उच्च VIP स्तर पहले से सक्रिय है!' };
+    }
+    const before = user.coins || 0;
+    if (before < vip.coinPrice) {
+      return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: vip.coinPrice, currentCoins: before, message: `${vip.hindiName} के लिए ${vip.coinPrice} कॉइन्स चाहिए। आपके पास ${before} हैं।` };
+    }
+    user.coins = before - vip.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + vip.coinPrice;
+    user.vipTier = vip.id;
+    user.vipTitle = vip.badgeText;
+    user.vipPurchasedAt = new Date().toISOString();
+    if (vip.id === 'diamond') user.crownPost = true;
+    pushStaticCoinTx(db, user, {
+      type: 'debit',
+      category: 'vip_purchase',
+      categoryLabel: 'VIP खरीद',
+      amount: vip.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${vip.hindiName} सक्रिय (-${vip.coinPrice} कॉइन्स)`,
+    });
+    saveDb(db);
+    return { success: true, message: `👑 ${vip.hindiName} सक्रिय हो गया!`, newBalance: user.coins, user };
+  }
+  if (path === '/api/store/buy-room' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const theme = ADVANCE_ROOM_THEMES.find(t => t.id === body.roomId);
+    if (!theme) return { success: false, message: 'Room theme not found' };
+    if (!Array.isArray(user.unlockedRooms)) user.unlockedRooms = ['default_dark'];
+    if (user.unlockedRooms.includes(theme.id) || theme.coinPrice === 0) {
+      if (!user.unlockedRooms.includes(theme.id)) user.unlockedRooms.push(theme.id);
+      user.roomTheme = theme.id;
+      saveDb(db);
+      return { success: true, message: `${theme.name} थीम सक्रिय!`, user };
+    }
+    const before = user.coins || 0;
+    if (before < theme.coinPrice) {
+      return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: theme.coinPrice, currentCoins: before, message: `"${theme.name}" के लिए ${theme.coinPrice} कॉइन्स चाहिए। आपके पास ${before} हैं।` };
+    }
+    user.coins = before - theme.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + theme.coinPrice;
+    user.unlockedRooms.push(theme.id);
+    user.roomTheme = theme.id;
+    pushStaticCoinTx(db, user, {
+      type: 'debit',
+      category: 'room_purchase',
+      categoryLabel: 'रूम थीम खरीद',
+      amount: theme.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${theme.name} थीम (-${theme.coinPrice} कॉइन्स)`,
+    });
+    saveDb(db);
+    return { success: true, message: `🏛️ "${theme.name}" थीम अनलॉक!`, newBalance: user.coins, user };
+  }
+
   // Gaming, Coins, Voice Rooms, Bots, Community
   if (path === '/api/game/bots') return { success: true, bots: DEFAULT_BOTS };
-  if (path === '/api/community/real-players') {
-    return { success: true, players: db.users };
+  if (path === '/api/community/real-players') return { success: true, players: db.users };
+  if (path === '/api/community/leaderboard') {
+    const leaderboard = [...db.users]
+      .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.charms || 0) - (a.charms || 0))
+      .slice(0, 30)
+      .map((u, idx) => ({
+        rank: idx + 1,
+        userId: u.userId,
+        fullName: u.fullName,
+        avatar: u.avatar || '',
+        gameLevel: u.gameLevel || 1,
+        gameXp: u.gameXp || 0,
+        charms: u.charms || 0,
+        coins: u.coins || 0,
+        vipTier: u.vipTier || 'none',
+        frameType: u.frameType || 'standard',
+        clanName: u.clanName || 'Royal Warriors ESP',
+        tasksCompletedCount: u.tasksCompletedCount || 0,
+      }));
+    return { success: true, leaderboard };
+  }
+  if (path === '/api/community/clans') {
+    const clanMap = new Map<string, { clanName: string; membersCount: number; totalXp: number; totalCharms: number; leaderName: string; leaderId: string }>();
+    db.users.forEach(u => {
+      const cn = (u.clanName || 'Royal Warriors ESP').trim();
+      const ex = clanMap.get(cn);
+      if (!ex) clanMap.set(cn, { clanName: cn, membersCount: 1, totalXp: u.gameXp || 0, totalCharms: u.charms || 0, leaderName: u.fullName, leaderId: u.userId });
+      else { ex.membersCount += 1; ex.totalXp += (u.gameXp || 0); ex.totalCharms += (u.charms || 0); }
+    });
+    return { success: true, clans: Array.from(clanMap.values()).sort((a, b) => b.totalXp - a.totalXp) };
+  }
+  if (path === '/api/users/check-username') {
+    const raw = search.get('username') || '';
+    const currentUserId = search.get('currentUserId') || '';
+    const normalized = normalizeStaticUsername(raw);
+    if (!normalized) {
+      return { success: true, valid: false, available: false, normalized: '', message: 'कृपया यूजरनेम दर्ज करें (कम से कम 3 अक्षर)' };
+    }
+    if (!isValidStaticUsername(normalized)) {
+      return { success: true, valid: false, available: false, normalized, message: 'कोई Symbol (_ - . @) उपयोग न करें — केवल 3-24 अक्षर (a-z और 0-9) लिखें' };
+    }
+    const taken = isStaticUsernameTaken(db.users, normalized, currentUserId);
+    return {
+      success: true,
+      valid: true,
+      available: !taken,
+      normalized,
+      message: taken ? `@${normalized} पहले से किसी दूसरे यूजर ने लिया है!` : `✓ @${normalized} उपलब्ध है!`,
+    };
+  }
+  if (path === '/api/users/search') {
+    const rawQ = (search.get('q') || '').trim();
+    const cleanHandle = normalizeStaticUsername(rawQ);
+    const qLower = rawQ.toLowerCase();
+    const currentUserId = search.get('currentUserId') || '';
+    const viewer = currentUserId ? findUser(db, currentUserId) : undefined;
+    const viewerFriends = new Set(viewer?.friendsList || []);
+    const users = db.users
+      .filter(u => {
+        if (!qLower) return true;
+        return (
+          (cleanHandle && normalizeStaticUsername(u.username).includes(cleanHandle)) ||
+          (u.fullName || '').toLowerCase().includes(qLower) ||
+          (u.userId || '').toLowerCase().includes(qLower) ||
+          (u.gamingId || '').toLowerCase().includes(qLower)
+        );
+      })
+      .slice(0, 30)
+      .map(u => ({
+        userId: u.userId,
+        gamingId: u.gamingId || `GAME-${u.userId}`,
+        username: u.username || '',
+        fullName: u.fullName,
+        avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+        coverPhoto: u.coverPhoto || '',
+        location: u.location || 'India',
+        gender: u.gender || 'male',
+        bio: u.bio || '',
+        vipTier: u.vipTier || 'none',
+        vipTitle: u.vipTitle || '',
+        frameType: u.frameType || 'standard',
+        gameLevel: u.gameLevel || 1,
+        gameXp: u.gameXp || 0,
+        coins: u.coins || 0,
+        charms: u.charms || 0,
+        clanName: u.clanName || 'Royal Warriors ESP',
+        friendsCount: (u.friendsList || []).length,
+        isFriend: viewerFriends.has(u.userId),
+        isOnline: Boolean(u.isOnline),
+      }));
+    return { success: true, users };
+  }
+  if (path === '/api/friends/toggle' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    const target = findUser(db, body.targetUserId) || db.users.find(u => normalizeStaticUsername(u.username) === normalizeStaticUsername(body.targetUserId));
+    if (!user || !target) return { success: false, message: 'User or target player not found' };
+    if (user.userId === target.userId) return { success: false, message: 'आप खुद को फ्रेंड लिस्ट में नहीं जोड़ सकते।' };
+    if (!Array.isArray(user.friendsList)) user.friendsList = [];
+    if (!Array.isArray(target.friendsList)) target.friendsList = [];
+    const already = user.friendsList.includes(target.userId);
+    if (already) {
+      user.friendsList = user.friendsList.filter(id => id !== target.userId);
+      target.friendsList = target.friendsList.filter(id => id !== user.userId);
+    } else {
+      user.friendsList.push(target.userId);
+      if (!target.friendsList.includes(user.userId)) target.friendsList.push(user.userId);
+    }
+    user.friendsCount = user.friendsList.length;
+    target.friendsCount = target.friendsList.length;
+    saveDb(db);
+    return {
+      success: true,
+      isFriend: !already,
+      message: !already ? `✅ ${target.fullName} को फ्रेंड लिस्ट में जोड़ा गया!` : `${target.fullName} को फ्रेंड लिस्ट से हटाया गया।`,
+      user,
+      targetFriendsCount: target.friendsCount,
+    };
   }
   if (path.startsWith('/api/community/player-profile/')) {
     const uid = decodeURIComponent(path.split('/').pop() || '');
-    const u = findUser(db, uid);
-    return u ? { success: true, player: u } : { success: false, message: 'Player not found' };
-  }
-  if (path === '/api/community/real-online-count') {
+    const cleanHandle = normalizeStaticUsername(uid);
+    const viewerId = search.get('viewerId') || '';
+    const u = findUser(db, uid) || db.users.find(x => cleanHandle && normalizeStaticUsername(x.username) === cleanHandle);
+    if (!u) return { success: false, message: 'Player not found' };
+    const viewer = viewerId ? findUser(db, viewerId) : undefined;
+    const isFriend = Boolean(viewer && Array.isArray(viewer.friendsList) && viewer.friendsList.includes(u.userId));
+    const userMoments = (db.moments || []).filter(m => m.userId === u.userId || m.userId === u.id || m.userRollNumber === u.userId);
+    const giftEntries = Object.values(u.receivedGifts || {});
+    const totalGiftsLit = giftEntries.reduce((sum, g) => sum + (Number(g.count) || 0), 0);
     return {
       success: true,
-      realCount: db.users.length,
-      onlinePlayers: db.users.slice(0, 10).map(u => ({
+      profile: {
+        ...u,
+        friendsCount: (u.friendsList || []).length,
+        isFriend,
+        moments: userMoments,
+        momentsCount: userMoments.length,
+        giftWall: giftEntries,
+        totalGiftsLit,
+      },
+    };
+  }
+  if (path === '/api/community/real-online-count') {
+    const online = db.users.filter(u => u.isOnline);
+    return {
+      success: true,
+      realCount: online.length,
+      onlinePlayers: online.slice(0, 20).map(u => ({
         userId: u.userId,
         fullName: u.fullName,
         avatar: u.avatar,
@@ -1053,92 +1979,181 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   if (path === '/api/game/play' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (!user) return { success: false, message: 'User not found' };
-    const bet = Number(body.betAmount) || 0;
-    if ((user.coins || 0) < bet) return { success: false, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
-    const win = Math.random() > 0.45;
-    const winAmount = win ? bet * 2 : 0;
-    user.coins = (user.coins || 0) - bet + winAmount;
+    const bet = Math.max(10, Math.round(Number(body.betAmount) || 10));
+    const before = user.coins || 0;
+    if (before < bet) {
+      return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: bet, currentCoins: before, message: `खेलने के लिए ${bet} कॉइन्स चाहिए। आपके पास ${before} हैं।` };
+    }
+    user.coins = before - bet;
     user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
+    trackStaticTask(user, 'game_played', 1);
+
+    if (body.choice === 'direct') {
+      db.activeGameWagers[user.userId] = { gameName: body.gameName || 'Arcade', bet, createdAt: new Date().toISOString() };
+      user.gameXp = (user.gameXp || 0) + 10;
+      user.gameLevel = calculateLevelFromXp(user.gameXp);
+      saveDb(db);
+      return { success: true, result: 'wager_placed', betAmount: bet, winAmount: 0, newBalance: user.coins, user };
+    }
+    const win = Math.random() > 0.5;
+    const winAmount = win ? bet * 2 : 0;
+    user.coins += winAmount;
     if (win) user.totalGamesWon = (user.totalGamesWon || 0) + 1;
     else user.totalGamesLost = (user.totalGamesLost || 0) + 1;
+    user.gameXp = (user.gameXp || 0) + (win ? 25 : 10);
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
     saveDb(db);
-    return { success: true, result: win ? 'win' : 'loss', winAmount, newBalance: user.coins, user };
+    return { success: true, result: win ? 'win' : 'loss', betAmount: bet, winAmount, newBalance: user.coins, user };
   }
   if (path === '/api/game/claim-win' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (!user) return { success: false, message: 'User not found' };
-    const amt = Number(body.winAmount) || 0;
+    const wager = db.activeGameWagers[user.userId];
+    if (!wager) return { success: false, message: 'कोई सक्रिय कॉइन बेट नहीं मिला।' };
+    const amt = Math.min(Math.max(0, Number(body.winAmount) || 0), Math.max(wager.bet * 10, 500));
+    delete db.activeGameWagers[user.userId];
     user.coins = (user.coins || 0) + amt;
     user.totalCoinsWon = (user.totalCoinsWon || 0) + amt;
     saveDb(db);
-    return { success: true, newBalance: user.coins, user };
+    return { success: true, currentCoins: user.coins, newBalance: user.coins, user };
   }
   if (path === '/api/game/daily-lucky-spin' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (!user) return { success: false, message: 'User not found' };
-    const prizes = [50, 100, 150, 200, 300, 500, 1000, 75];
+    const SPIN_COST = 50;
+    if ((user.coins || 0) < SPIN_COST) {
+      return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: SPIN_COST, currentCoins: user.coins || 0, message: `स्पिन करने के लिए ${SPIN_COST} कॉइन्स आवश्यक हैं। आपके पास ${user.coins || 0} हैं।` };
+    }
+    user.coins = (user.coins || 0) - SPIN_COST;
+    const prizes = [40, 25, 0, 120, 60, 0, 250, 75];
     const idx = typeof body.targetSectorIndex === 'number' ? body.targetSectorIndex % prizes.length : Math.floor(Math.random() * prizes.length);
     const coinsWon = prizes[idx];
     user.coins = (user.coins || 0) + coinsWon;
+    user.gameXp = (user.gameXp || 0) + 25;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
     user.lastDailySpin = new Date().toISOString();
+    trackStaticTask(user, 'game_played', 1);
     saveDb(db);
-    return { success: true, sectorIndex: idx, coinsWon, newBalance: user.coins, user };
-  }
-  if (path === '/api/game/claim-login' && method === 'POST') {
-    const user = findUser(db, body.userId);
-    if (!user) return { success: false, message: 'User not found' };
-    const day = Number(body.day) || 1;
-    const bonus = day * 100;
-    user.coins = (user.coins || 0) + bonus;
-    user.claimedDays = Array.from(new Set([...(user.claimedDays || []), day]));
-    user.lastLoginClaimDate = new Date().toISOString().split('T')[0];
-    saveDb(db);
-    return { success: true, coinsEarned: bonus, newBalance: user.coins, user };
+    return { success: true, sectorIndex: idx, coinsWon, coins: user.coins, newBalance: user.coins, user };
   }
   if (path === '/api/game/recharge' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (!user) return { success: false, message: 'User not found' };
+    const utr = String(body.paymentUtr || '').replace(/\s+/g, '').toUpperCase();
+    if (!/^\d{12}$/.test(utr)) {
+      return { success: false, message: 'कृपया सही 12-अंकों का संख्यात्मक UPI UTR नंबर दर्ज करें।' };
+    }
+    const cleanScreenshot = typeof body.paymentScreenshot === 'string' ? body.paymentScreenshot.trim() : '';
+    if (!cleanScreenshot || cleanScreenshot.length < 20) {
+      return { success: false, message: 'कृपया UPI भुगतान के बाद पेमेंट स्क्रीनशॉट (Payment Screenshot) जरूर अपलोड करें।' };
+    }
+    if (db.coinRecharges.find(r => r.paymentUtr === utr && r.status !== 'rejected')) {
+      return { success: false, message: 'यह UTR नंबर पहले से दर्ज है!' };
+    }
+    const pack = COIN_RECHARGE_PACKS.find(p => p.id === body.packId);
+    const payAmount = pack ? pack.amount : (Number(body.amount) || 10);
+    const baseCoins = pack ? pack.coins : (Number(body.coins) || 100);
+    const bonusCoins = pack ? pack.bonus : 0;
     const reqItem: CoinRechargeRequest = {
       id: `CR-${Date.now().toString().slice(-6)}`,
       userId: user.userId,
       userName: user.fullName,
       userPhone: user.phone,
-      packId: body.packId || 'pack',
-      coins: Number(body.coins) || 0,
-      bonusCoins: Number(body.bonusCoins) || 0,
-      amount: Number(body.amount) || 0,
-      paymentUtr: body.paymentUtr || 'UTR',
+      packId: pack ? pack.id : (body.packId || 'pack'),
+      coins: baseCoins,
+      bonusCoins,
+      amount: payAmount,
+      paymentUtr: utr,
+      paymentScreenshot: cleanScreenshot,
       status: 'pending',
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
     };
     db.coinRecharges.unshift(reqItem);
+    db.notifications.unshift({
+      id: `notif-admin-cr-${Date.now()}`,
+      userId: 'EMO-MOM-MMO',
+      title: `🪙 नया कॉइन खरीद अनुरोध: ₹${payAmount} (+${baseCoins + bonusCoins} Coins)`,
+      message: `${user.fullName} (${user.userId}) ने ₹${payAmount} भुगतान कर ${baseCoins + bonusCoins} कॉइन्स का अनुरोध भेजा है। 12-अंक UTR: ${utr} (पेमेंट स्क्रीनशॉट संलग्न है)।`,
+      date: new Date().toISOString(),
+      read: false,
+      type: 'payment',
+    });
+    db.contactMessages.unshift({
+      id: `CNT-CR-${Date.now()}`,
+      name: user.fullName,
+      email: user.email || `${user.userId.toLowerCase()}@esp.local`,
+      phone: user.phone,
+      subject: `🪙 Coin Buy Request: ₹${payAmount} (+${baseCoins + bonusCoins} Coins) | UTR: ${utr}`,
+      message: `यूजर ${user.fullName} (ID: ${user.userId}) ने ₹${payAmount} भुगतान कर ${baseCoins + bonusCoins} कॉइन्स के लिए अनुरोध भेजा है। 12-अंक UTR: ${utr} • पेमेंट स्क्रीनशॉट संलग्न है।`,
+      createdAt: new Date().toISOString(),
+      status: 'unread',
+    });
     saveDb(db);
-    return { success: true, message: 'कॉइन रिचार्ज रिक्वेस्ट सबमिट हो गई!', recharge: reqItem, user };
+    return { success: true, message: 'कॉइन रिचार्ज रिक्वेस्ट व स्क्रीनशॉट सबमिट हो गई!', order: reqItem, recharge: reqItem, user };
   }
   if (path === '/api/game/convert' && method === 'POST') {
-    const user = findUser(db, body.userId);
-    if (!user) return { success: false, message: 'User not found' };
-    const c = Number(body.coinsAmount) || 0;
-    if ((user.coins || 0) < c || c < 100) return { success: false, message: 'कम से कम 100 कॉइन्स आवश्यक हैं' };
-    const rupees = Math.floor(c / 100);
-    user.coins = (user.coins || 0) - c;
-    user.balance = (user.balance || 0) + rupees;
-    saveDb(db);
-    return { success: true, rupeesCredited: rupees, user };
+    return {
+      success: false,
+      code: 'CONVERSION_DISABLED',
+      message: 'कॉइन्स को नकद में बदलने का सिस्टम बंद है। कॉइन्स केवल VIP, फ्रेम, वॉइस गिफ्ट्स व इन-ऐप गेम्स के लिए हैं।',
+    };
   }
   if (path === '/api/game/send-gift' && method === 'POST') {
     const user = findUser(db, body.senderId);
     if (!user) return { success: false, message: 'User not found' };
-    const cost = Number(body.coinCost) || 0;
-    if ((user.coins || 0) < cost) return { success: false, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
+    const cost = Number(body.coinCost) || 10;
+    const qty = Math.max(1, Math.round(Number(body.quantity) || 1));
+    if ((user.coins || 0) < cost) return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: cost, currentCoins: user.coins || 0, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
     user.coins = (user.coins || 0) - cost;
-    user.charms = (user.charms || 0) + (Number(body.charmValue) || 10);
+    const charmsVal = Number(body.charmValue) || 10;
+    user.charms = (user.charms || 0) + Math.round(charmsVal * 0.2);
+    const cleanTargetName = String(body.targetName || '').trim().replace(/^@+/, '').toLowerCase();
+    const recipient = body.targetUserId
+      ? findUser(db, body.targetUserId)
+      : db.users.find(
+          u =>
+            u.userId.toLowerCase() === cleanTargetName ||
+            normalizeStaticUsername(u.username) === cleanTargetName ||
+            (u.fullName || '').trim().toLowerCase() === cleanTargetName
+        );
+    const legacyMap: Record<string, { id: string; name: string; icon: string }> = {
+      g1: { id: 'pop_2', name: 'Red Rose', icon: '🌹' },
+      g2: { id: 'pop_4', name: 'Choco Delight', icon: '🍫' },
+      g3: { id: 'pop_5', name: 'Diamond Ring', icon: '💍' },
+      g4: { id: 'lux_1', name: 'Super Ferrari', icon: '🏎️' },
+      g5: { id: 'diwali_4', name: 'Sky Rocket Dhamaka', icon: '🚀' },
+      g6: { id: 'lux_2', name: 'Emperor Crown', icon: '👑' },
+      g7: { id: 'lux_3', name: 'Magic Castle', icon: '🏰' },
+    };
+    if (recipient) {
+      if (recipient.userId !== user.userId) {
+        recipient.charms = (recipient.charms || 0) + charmsVal;
+      }
+      if (!recipient.receivedGifts) recipient.receivedGifts = {};
+      const rawKey = String(body.giftId || body.giftName || 'pop_2').trim();
+      const mapped = legacyMap[rawKey];
+      const gKey = mapped ? mapped.id : rawKey;
+      const prev = recipient.receivedGifts[gKey];
+      recipient.receivedGifts[gKey] = {
+        id: gKey,
+        name: mapped ? mapped.name : String(body.giftName || 'Gift').replace(/^\d+x\s+/i, ''),
+        icon: mapped ? mapped.icon : String(body.giftIcon || '🎁'),
+        count: (prev?.count || 0) + qty,
+        coinCost: Math.round(cost / qty),
+        charmValue: Math.round(charmsVal / qty),
+        lastReceivedAt: new Date().toISOString(),
+        lastSenderName: user.fullName,
+      };
+    }
+    trackStaticTask(user, 'gift_sent', 1);
     saveDb(db);
-    return { success: true, user };
+    return { success: true, coins: user.coins, charms: user.charms, user };
   }
   if (path === '/api/game/record-play' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (user) {
+      trackStaticTask(user, 'game_played', 1);
+      user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
       db.gamePlayHistory.unshift({
         id: `GP-${Date.now()}`,
         userId: user.userId,
@@ -1146,9 +2161,9 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         gameId: body.gameId || 'game',
         gameName: body.gameName || 'Game',
         betCoins: Number(body.betCoins) || 0,
-        wonCoins: Number(body.wonCoins) || 0,
-        netChange: (Number(body.wonCoins) || 0) - (Number(body.betCoins) || 0),
-        result: (Number(body.wonCoins) || 0) >= (Number(body.betCoins) || 0) ? 'win' : 'loss',
+        wonCoins: 0,
+        netChange: 0,
+        result: 'draw',
         durationSeconds: Number(body.durationSeconds) || 30,
         playedAt: new Date().toISOString(),
         details: body.details,
@@ -1170,90 +2185,650 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, recharges: db.coinRecharges.filter(r => r.userId === uid) };
   }
 
-  // Voice rooms
+  const buildStaticDailyHub = (u: UserProfile) => {
+    const today = todayStr();
+    const yesterday = getYesterdayDateString(today);
+    const intel = getDailyIntelForDate(today);
+    const fullQuiz = getDailyQuizForDate(today);
+    const spotlightGame = getSpotlightGameForDate(today);
+
+    const lastCheckIn = u.lastDailyCheckInDate || '';
+    const claimedToday = lastCheckIn === today;
+    const rawStreak = Number(u.loginStreak || 0);
+    const streakAtRisk = Boolean(lastCheckIn && lastCheckIn !== today && lastCheckIn !== yesterday && rawStreak > 0);
+    const effectiveStreak = claimedToday
+      ? rawStreak
+      : lastCheckIn === yesterday
+      ? rawStreak
+      : streakAtRisk
+      ? rawStreak
+      : 0;
+    const nextDayNumber = claimedToday
+      ? Math.max(1, ((effectiveStreak - 1) % 7) + 1)
+      : (effectiveStreak % 7) + 1;
+    const schedule = SEVEN_DAY_CHECKIN_REWARDS.map(item => {
+      const completedDaysInCycle = claimedToday
+        ? ((effectiveStreak - 1) % 7) + 1
+        : (effectiveStreak % 7);
+      return {
+        ...item,
+        claimed: !streakAtRisk && item.day <= completedDaysInCycle,
+        isToday: !claimedToday && item.day === nextDayNumber,
+      };
+    });
+    const playedToday = u.dailyFreeGameDate === today ? Number(u.dailyFreeGamesPlayed || 0) : 0;
+    const coinBoosterActive = Boolean(u.coinBoosterUntil && new Date(u.coinBoosterUntil).getTime() > Date.now());
+    const topDailyPlayers = [...db.users]
+      .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.coins || 0) - (a.coins || 0))
+      .slice(0, 5)
+      .map(p => ({
+        userId: p.userId,
+        fullName: p.fullName,
+        username: p.username,
+        avatar: p.avatar,
+        gameLevel: p.gameLevel || 1,
+        gameXp: p.gameXp || 0,
+        coins: p.coins || 0,
+        totalGamesWon: p.totalGamesWon || 0,
+      }));
+    return {
+      today,
+      intel,
+      quiz: {
+        id: fullQuiz.id,
+        topic: fullQuiz.topic,
+        question: fullQuiz.question,
+        options: fullQuiz.options,
+        coinReward: coinBoosterActive ? fullQuiz.coinReward * 2 : fullQuiz.coinReward,
+        xpReward: fullQuiz.xpReward,
+        alreadyAnswered: u.dailyQuizDate === today,
+      },
+      spotlightGame,
+      checkIn: {
+        canClaimToday: !claimedToday,
+        currentStreak: effectiveStreak,
+        nextDayNumber,
+        streakAtRisk,
+        streakShields: Number(u.streakShields || 0),
+        schedule,
+      },
+      freePlay: {
+        playedToday,
+        dailyLimit: FREE_SKILL_PLAY_DAILY_LIMIT,
+        remaining: Math.max(0, FREE_SKILL_PLAY_DAILY_LIMIT - playedToday),
+        coinBoosterActive,
+        coinBoosterUntil: coinBoosterActive ? u.coinBoosterUntil : null,
+      },
+      topDailyPlayers,
+    };
+  };
+
+  if (path.startsWith('/api/game/daily-hub/') && method === 'GET') {
+    const uid = decodeURIComponent(path.split('/').pop() || '');
+    const user = findUser(db, uid);
+    if (!user) return { success: false, message: 'User not found' };
+    return { success: true, hub: buildStaticDailyHub(user), user };
+  }
+  if (path === '/api/game/daily-checkin' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const today = todayStr();
+    const yesterday = getYesterdayDateString(today);
+    if (user.lastDailyCheckInDate === today) {
+      return { success: false, message: 'आज का डेली चेक-इन रिवॉर्ड पहले ही क्लेम किया जा चुका है!' };
+    }
+    let newStreak = 1;
+    let shieldConsumed = false;
+    const prevDate = user.lastDailyCheckInDate || '';
+    const prevStreak = Number(user.loginStreak || 0);
+    if (prevDate === yesterday) newStreak = prevStreak + 1;
+    else if (prevDate && prevStreak > 0 && body.useShield && Number(user.streakShields || 0) > 0) {
+      user.streakShields = Number(user.streakShields || 0) - 1;
+      newStreak = prevStreak + 1;
+      shieldConsumed = true;
+    }
+    const rewardDef = SEVEN_DAY_CHECKIN_REWARDS[(newStreak - 1) % 7];
+    const boosterActive = Boolean(user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now());
+    const vipCfg = getVipConfig(user.vipTier);
+    const coinsEarned = rewardDef.coins + (boosterActive ? 5 : 0);
+    const xpEarned = Math.round(rewardDef.xp * (vipCfg?.bonusXpMultiplier || 1) * (boosterActive ? 1.5 : 1));
+    const before = user.coins || 0;
+    user.coins = before + coinsEarned;
+    user.gameXp = (user.gameXp || 0) + xpEarned;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.loginStreak = newStreak;
+    user.lastDailyCheckInDate = today;
+    db.coinTransactions.unshift({
+      id: `CTX-${Date.now()}`,
+      userId: user.userId,
+      userName: user.fullName,
+      type: 'credit',
+      category: 'daily_checkin',
+      categoryLabel: `Day ${rewardDef.day} Check-In Streak`,
+      amount: coinsEarned,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${rewardDef.label} (Streak #${newStreak}): +${coinsEarned} कॉइन्स`,
+      timestamp: new Date().toISOString(),
+    });
+    saveDb(db);
+    return {
+      success: true,
+      message: `🎉 ${rewardDef.label} पूरा! +${coinsEarned} कॉइन्स व +${xpEarned} EXP मिले!`,
+      coinsEarned,
+      xpEarned,
+      newStreak,
+      shieldConsumed,
+      hub: buildStaticDailyHub(user),
+      user,
+    };
+  }
+  if (path === '/api/game/daily-quiz' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const today = todayStr();
+    if (user.dailyQuizDate === today) {
+      return { success: false, message: 'आज का डेली नॉलेज क्विज़ पहले ही पूरा हो चुका है!' };
+    }
+    const quiz = getDailyQuizForDate(today);
+    const idx = Number(body.selectedIndex);
+    const isCorrect = idx === quiz.correctIndex;
+    const boosterActive = Boolean(user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now());
+    const coinsEarned = (isCorrect ? quiz.coinReward : 2) * (boosterActive ? 2 : 1);
+    const xpEarned = Math.round((isCorrect ? quiz.xpReward : 10) * (boosterActive ? 1.5 : 1));
+    const before = user.coins || 0;
+    user.coins = before + coinsEarned;
+    user.gameXp = (user.gameXp || 0) + xpEarned;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.dailyQuizDate = today;
+    if (isCorrect) user.dailyQuizCorrectCount = (user.dailyQuizCorrectCount || 0) + 1;
+    db.coinTransactions.unshift({
+      id: `CTX-${Date.now()}`,
+      userId: user.userId,
+      userName: user.fullName,
+      type: 'credit',
+      category: 'daily_quiz',
+      categoryLabel: 'डेली क्विज़',
+      amount: coinsEarned,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${quiz.topic}: +${coinsEarned} कॉइन्स`,
+      timestamp: new Date().toISOString(),
+    });
+    saveDb(db);
+    return {
+      success: true,
+      isCorrect,
+      correctIndex: quiz.correctIndex,
+      explanation: quiz.explanation,
+      coinsEarned,
+      xpEarned,
+      message: isCorrect ? `🧠 सही जवाब! +${coinsEarned} कॉइन्स व +${xpEarned} EXP मिले!` : `💡 ${quiz.explanation} (+${coinsEarned} कॉइन्स)`,
+      hub: buildStaticDailyHub(user),
+      user,
+    };
+  }
+  if (path === '/api/game/skill-play' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const today = todayStr();
+    if (user.dailyFreeGameDate !== today) {
+      user.dailyFreeGameDate = today;
+      user.dailyFreeGamesPlayed = 0;
+    }
+    const playedSoFar = Number(user.dailyFreeGamesPlayed || 0);
+    const withinDailyRewardCap = playedSoFar < FREE_SKILL_PLAY_DAILY_LIMIT;
+    const isWin = body.outcome === 'win';
+    const spotlight = getSpotlightGameForDate(today);
+    const isSpotlightMatch = spotlight.key === String(body.gameName || '').toLowerCase();
+    const boosterActive = Boolean(user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now());
+    const coinsEarned = withinDailyRewardCap
+      ? ((isWin ? 10 : 3) + (isWin && isSpotlightMatch ? spotlight.extraCoins : 0)) * (boosterActive ? 2 : 1)
+      : 0;
+    const xpEarned = withinDailyRewardCap ? Math.round((isWin ? 25 : 10) * (isSpotlightMatch ? 1.5 : 1) * (boosterActive ? 1.5 : 1)) : 5;
+    if (withinDailyRewardCap) user.dailyFreeGamesPlayed = playedSoFar + 1;
+    const before = user.coins || 0;
+    user.coins = before + coinsEarned;
+    user.gameXp = (user.gameXp || 0) + xpEarned;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
+    if (isWin) {
+      user.totalGamesWon = (user.totalGamesWon || 0) + 1;
+      user.totalCoinsWon = (user.totalCoinsWon || 0) + coinsEarned;
+    }
+    trackStaticTask(user, 'game_played', 1);
+    saveDb(db);
+    return {
+      success: true,
+      isWin,
+      withinDailyRewardCap,
+      isSpotlightMatch,
+      boosterActive,
+      coinsEarned,
+      xpEarned,
+      currentCoins: user.coins,
+      newBalance: user.coins,
+      message: withinDailyRewardCap
+        ? `${isWin ? '🎉 शानदार जीत!' : '👏 बढ़िया प्रयास!'} +${coinsEarned} कॉइन्स व +${xpEarned} EXP मिले!`
+        : `प्रैक्टिस राउंड पूरा! (+${xpEarned} EXP)`,
+      hub: buildStaticDailyHub(user),
+      user,
+    };
+  }
+  if (path === '/api/game/buy-booster' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const booster = COIN_UTILITY_BOOSTERS.find(b => b.id === body.boosterId);
+    if (!booster) return { success: false, message: 'Booster not found' };
+    const before = user.coins || 0;
+    if (before < booster.coinPrice) {
+      return { success: false, code: 'INSUFFICIENT_COINS', message: `${booster.hindiName} के लिए ${booster.coinPrice} कॉइन्स चाहिए।` };
+    }
+    user.coins = before - booster.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + booster.coinPrice;
+    if (booster.id === 'booster_2x_24h') {
+      const base = user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+        ? new Date(user.coinBoosterUntil).getTime()
+        : Date.now();
+      user.coinBoosterUntil = new Date(base + 24 * 60 * 60 * 1000).toISOString();
+    } else if (booster.id === 'streak_shield') {
+      user.streakShields = Number(user.streakShields || 0) + 1;
+    }
+    saveDb(db);
+    return { success: true, message: `⚡ ${booster.hindiName} अनलॉक हो गया!`, booster, hub: buildStaticDailyHub(user), user };
+  }
+
+  // Voice rooms (Personal Fixed Rooms, Custom Wallpapers, Symbol-Free IDs, Join & Follow)
   if (path === '/api/game/voice-rooms' && method === 'GET') {
-    return { success: true, rooms: db.customVoiceRooms };
+    const viewerId = search.get('viewerId') || '';
+    const q = (search.get('q') || '').trim().replace(/^(id:|room:|#)/i, '').trim().toLowerCase();
+    const rooms = ensureAllStaticRooms(db);
+    saveDb(db);
+    const filtered = q
+      ? rooms
+          .filter(
+            r =>
+              String(r.roomAddress || '').toLowerCase().includes(q) ||
+              String(r.title || '').toLowerCase().includes(q) ||
+              String(r.hostName || '').toLowerCase().includes(q) ||
+              String(r.hostUserId || '').toLowerCase().includes(q)
+          )
+          .sort((a, b) => {
+            const aExact = String(a.roomAddress || '').toLowerCase() === q ? 1 : 0;
+            const bExact = String(b.roomAddress || '').toLowerCase() === q ? 1 : 0;
+            if (aExact !== bExact) return bExact - aExact;
+            return (b.isVipRoom ? 1 : 0) - (a.isVipRoom ? 1 : 0);
+          })
+      : [...rooms].sort((a, b) => (b.isVipRoom ? 1 : 0) - (a.isVipRoom ? 1 : 0));
+    return {
+      success: true,
+      rooms: filtered.map(r => buildStaticRoomDetail(db, r, viewerId).room),
+    };
+  }
+  if (path.startsWith('/api/game/voice-rooms/my-room/') && method === 'GET') {
+    const uid = decodeURIComponent(path.split('/').pop() || '');
+    const viewerId = search.get('viewerId') || uid;
+    const user = findUser(db, uid);
+    if (!user) return { success: false, message: 'User not found' };
+    const room = ensureStaticPersonalRoom(db, user);
+    saveDb(db);
+    return buildStaticRoomDetail(db, room, viewerId);
+  }
+  if (path.startsWith('/api/game/voice-rooms/lookup/') && method === 'GET') {
+    const qRaw = decodeURIComponent(path.split('/').pop() || '').trim().replace(/^(id:|room:|#)/i, '').trim();
+    const viewerId = search.get('viewerId') || '';
+    const rooms = ensureAllStaticRooms(db);
+    const qLow = qRaw.toLowerCase();
+    const match =
+      rooms.find(r => String(r.roomAddress || '').toLowerCase() === qLow) ||
+      rooms.find(r => r.id.toLowerCase() === qLow) ||
+      rooms.find(r => String(r.hostUserId || '').toLowerCase() === qLow) ||
+      rooms.find(r => String(r.hostUsername || '').toLowerCase() === normalizeStaticUsername(qRaw));
+    if (!match) return { success: false, message: `रूम ID "${qRaw}" नहीं मिला।` };
+    return buildStaticRoomDetail(db, match, viewerId);
   }
   if (path === '/api/game/voice-room' && method === 'GET') {
-    return { success: true, seats: db.voiceRoomSeats, chat: db.voiceRoomChat };
+    const viewerId = search.get('viewerId') || '';
+    const rooms = ensureAllStaticRooms(db);
+    saveDb(db);
+    return buildStaticRoomDetail(db, rooms[0], viewerId);
   }
   if (path.startsWith('/api/game/voice-rooms/') && method === 'GET') {
     const rid = decodeURIComponent(path.split('/').pop() || '');
-    const room = db.customVoiceRooms.find(r => r.id === rid);
-    return { success: true, seats: room?.seats || db.voiceRoomSeats, chat: room?.chatMessages || db.voiceRoomChat, room };
+    const viewerId = search.get('viewerId') || '';
+    const rooms = ensureAllStaticRooms(db);
+    const room =
+      rooms.find(
+        r => r.id.toLowerCase() === rid.toLowerCase() || String(r.roomAddress || '').toLowerCase() === rid.toLowerCase()
+      ) || rooms[0];
+    return buildStaticRoomDetail(db, room, viewerId);
   }
   if (path === '/api/game/voice-rooms/create' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'Login required' };
+    ensureAllStaticRooms(db);
+    trackStaticTask(user, 'voice_joined', 1);
+    const roomAddress = generateStaticRoomId(db.users, db.customVoiceRooms, body.title || user.fullName);
     const room = {
-      id: `vroom-${Date.now()}`,
-      title: body.title || 'ESP Live Room',
+      id: `vroom${Date.now()}`,
+      title: body.title || `${user.fullName}'s Voice Room`,
       topic: body.topic || 'Earning & Gaming',
       category: body.category || 'earning',
-      roomAddress: `ESP-VR-${Math.floor(1000 + Math.random() * 9000)}`,
-      hostUserId: body.userId,
-      hostName: body.hostName || 'Host',
-      hostAvatar: body.hostAvatar,
-      seats: Array.from({ length: 8 }, (_, i) => ({ seatNumber: i + 1, seatNumberLabel: String(i + 1), isMuted: false, isSpeaking: false, charms: 0 })),
-      chatMessages: [],
+      roomAddress,
+      roomNumber: roomAddress,
+      isPersonalFixed: false,
+      hostUserId: user.userId,
+      hostName: body.hostName || user.fullName,
+      hostUsername: user.username || '',
+      hostAvatar: user.avatar || body.hostAvatar,
+      wallpaperId: body.wallpaperId || 'castle_night',
+      customWallpaperUrl: body.customWallpaperUrl || '',
+      stageLayout: body.stageLayout || 'classic_8',
+      youtubeVideoUrl: body.youtubeVideoUrl || '',
+      lockedSeats: [],
+      followers: [user.userId],
+      audience: [user.userId],
+      seats: [
+        {
+          seatNumber: 1,
+          seatNumberLabel: '1 (Host)',
+          userId: user.userId,
+          userName: user.fullName,
+          userAvatar: user.avatar,
+          gameLevel: user.gameLevel || 1,
+          isMuted: false,
+          isSpeaking: true,
+          charms: user.charms || 0,
+        },
+        ...Array.from({ length: 7 }, (_, i) => ({
+          seatNumber: i + 2,
+          seatNumberLabel: String(i + 2),
+          isMuted: false,
+          isSpeaking: false,
+          charms: 0,
+        })),
+      ],
+      chatMessages: [
+        {
+          id: `vc-cr-${Date.now()}`,
+          senderId: 'SYSTEM',
+          sender: 'System',
+          senderRoll: 'STAGE',
+          text: `🔔 System: ${user.fullName} started room "${body.title || 'Live Room'}" (${roomAddress})`,
+          time: 'Live',
+        },
+      ],
       listenersCount: 1,
       createdAt: new Date().toISOString(),
     };
     db.customVoiceRooms.unshift(room);
     saveDb(db);
-    return { success: true, room };
+    return { success: true, room, roomId: room.id };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/join$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id.toLowerCase() === rid.toLowerCase() || String(r.roomAddress || '').toLowerCase() === rid.toLowerCase());
+    const user = findUser(db, body.userId);
+    if (!room || !user) return { success: false, message: 'Room or user not found' };
+    if (room.isPrivate && room.passcode && room.hostUserId !== user.userId && String(body.passcode || '') !== String(room.passcode)) {
+      return { success: false, requiresPasscode: true, message: '🔒 गलत पासकोड!' };
+    }
+    if (!Array.isArray(room.audience)) room.audience = [];
+    if (!room.audience.includes(user.userId)) {
+      room.audience.push(user.userId);
+      trackStaticTask(user, 'voice_joined', 1);
+      if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+      room.chatMessages.push({
+        id: `join-${Date.now()}`,
+        senderId: 'SYSTEM',
+        sender: 'System',
+        senderRoll: 'STAGE',
+        text: `🔔 System: ${user.fullName} joined the room`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    }
+    saveDb(db);
+    return { ...buildStaticRoomDetail(db, room, user.userId), user };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/leave$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = db.customVoiceRooms.find(r => r.id === rid);
+    if (room && Array.isArray(room.audience) && body.userId !== room.hostUserId) {
+      room.audience = room.audience.filter((id: string) => id !== body.userId);
+      saveDb(db);
+    }
+    return { success: true };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/follow$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id === rid || String(r.roomAddress || '').toLowerCase() === rid.toLowerCase());
+    const user = findUser(db, body.userId);
+    if (!room || !user) return { success: false, message: 'Room or user not found' };
+    if (!Array.isArray(room.followers)) room.followers = [];
+    if (!Array.isArray(user.followedRooms)) user.followedRooms = [];
+    const wasFollowing = room.followers.includes(user.userId);
+    if (wasFollowing) {
+      room.followers = room.followers.filter((id: string) => id !== user.userId);
+      user.followedRooms = user.followedRooms.filter(id => id !== room.id);
+    } else {
+      room.followers.push(user.userId);
+      if (!user.followedRooms.includes(room.id)) user.followedRooms.push(room.id);
+    }
+    saveDb(db);
+    return {
+      success: true,
+      isFollowed: !wasFollowing,
+      followersCount: room.followers.length,
+      room: buildStaticRoomDetail(db, room, user.userId).room,
+      user,
+    };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/update-design$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id === rid || String(r.roomAddress || '').toLowerCase() === rid.toLowerCase());
+    const user = findUser(db, body.userId);
+    if (!room || !user) return { success: false, message: 'Room not found' };
+    if (body.title) room.title = String(body.title).trim();
+    if (typeof body.topic === 'string') room.topic = body.topic.trim();
+    if (body.category) room.category = body.category;
+    if (body.wallpaperId) {
+      room.wallpaperId = body.wallpaperId;
+      if (body.wallpaperId !== 'custom_upload' && body.customWallpaperUrl === undefined) room.customWallpaperUrl = '';
+    }
+    if (typeof body.customWallpaperUrl === 'string') {
+      room.customWallpaperUrl = body.customWallpaperUrl;
+      if (body.customWallpaperUrl) room.wallpaperId = 'custom_upload';
+    }
+    if (body.stageLayout) room.stageLayout = body.stageLayout;
+    if (typeof body.youtubeVideoUrl === 'string') room.youtubeVideoUrl = body.youtubeVideoUrl;
+    if (typeof body.isPrivate === 'boolean') room.isPrivate = body.isPrivate;
+    if (typeof body.passcode === 'string') room.passcode = body.passcode;
+    if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+    room.chatMessages.push({
+      id: `sys-${Date.now()}`,
+      senderId: 'SYSTEM',
+      sender: 'System',
+      senderRoll: 'STAGE',
+      text: '🔔 System: Owner changed the theme',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+    saveDb(db);
+    return buildStaticRoomDetail(db, room, user.userId);
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/invite$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = db.customVoiceRooms.find(r => r.id === rid);
+    const targets = Array.isArray(body.targetUserIds) ? body.targetUserIds : [];
+    const sender = findUser(db, body.senderUserId);
+    if (room && sender) {
+      for (const tid of targets) {
+        db.notifications.unshift({
+          id: `notif-inv-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          userId: tid,
+          title: `🎙️ Voice Room Invite from ${sender.fullName}`,
+          message: `Join "${room.title}" (ID: ${room.roomAddress})`,
+          type: 'system',
+          read: false,
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
+      saveDb(db);
+    }
+    return { success: true, sentCount: targets.length, roomAddress: room?.roomAddress || '' };
   }
   if (path.includes('/take-seat') && method === 'POST') {
     const user = findUser(db, body.userId);
     const idx = Number(body.seatIndex) || 0;
-    if (user && db.voiceRoomSeats[idx]) {
-      db.voiceRoomSeats[idx] = { ...db.voiceRoomSeats[idx], userId: user.userId, userName: user.fullName, userAvatar: user.avatar, userRollNumber: user.userId, gameLevel: user.gameLevel || 1 };
+    const rid = body.roomId || path.split('/')[4] || 'room-founder';
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id === rid) || rooms[0];
+    const lockedSet = new Set<number>(Array.isArray(room?.lockedSeats) ? room.lockedSeats : []);
+    if (lockedSet.has(idx) && room?.hostUserId !== user?.userId) {
+      return { success: false, message: `🔒 सीट #${idx + 1} लॉक है।` };
+    }
+    if (user && room?.seats?.[idx]) {
+      trackStaticTask(user, 'voice_joined', 1);
+      room.seats = room.seats.map((s: any) =>
+        s.userId === user.userId ? { seatNumber: s.seatNumber, seatNumberLabel: String(s.seatNumber), isMuted: false, isSpeaking: false, charms: 0 } : s
+      );
+      room.seats[idx] = { ...room.seats[idx], userId: user.userId, userName: user.fullName, userAvatar: user.avatar, userRollNumber: user.userId, gameLevel: user.gameLevel || 1, isSpeaking: true, isMuted: false };
       saveDb(db);
     }
-    return { success: true, seats: db.voiceRoomSeats };
+    return {
+      success: true,
+      seats: (room?.seats || db.voiceRoomSeats).map((s: any, sIdx: number) => ({ ...s, isLocked: lockedSet.has(sIdx) })),
+      chatMessages: room?.chatMessages || db.voiceRoomChat,
+      user,
+    };
   }
   if (path.includes('/leave-seat') && method === 'POST') {
-    db.voiceRoomSeats = db.voiceRoomSeats.map(s => s.userId === body.userId ? { seatNumber: s.seatNumber, seatNumberLabel: s.seatNumberLabel, isMuted: false, isSpeaking: false, charms: 0 } : s);
-    saveDb(db);
-    return { success: true, seats: db.voiceRoomSeats };
+    const rid = body.roomId || path.split('/')[4] || 'room-founder';
+    const room = db.customVoiceRooms.find(r => r.id === rid) || db.customVoiceRooms[0];
+    if (room) {
+      room.seats = room.seats.map((s: any) => s.userId === body.userId ? { seatNumber: s.seatNumber, seatNumberLabel: String(s.seatNumber), isMuted: false, isSpeaking: false, charms: 0 } : s);
+      saveDb(db);
+    }
+    return { success: true, seats: room?.seats || db.voiceRoomSeats };
   }
-  if (path.includes('/voice-room') && (path.endsWith('/chat') || path.endsWith('/voice-audio')) && method === 'POST') {
+  if ((path.includes('/voice-room') || path.includes('/voice-rooms')) && (path.endsWith('/chat') || path.endsWith('/voice-audio')) && method === 'POST') {
     const user = findUser(db, body.userId);
-    db.voiceRoomChat.push({
+    const rid = body.roomId || path.split('/')[4] || 'room-founder';
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id === rid) || rooms[0];
+    if (user) trackStaticTask(user, 'chat_sent', 1);
+    const msg = {
       id: `vc-${Date.now()}`,
       senderId: body.userId,
       sender: user?.fullName || 'Member',
       senderRoll: user?.userId || 'ESP',
+      senderAvatar: user?.avatar,
       text: body.text || '🎙️ Voice Note',
       isGift: !!body.isGift,
       audioDataUrl: body.audioDataUrl,
       audioDuration: body.durationSec,
       isVoiceNote: !!body.audioDataUrl,
-      time: new Date().toLocaleTimeString(),
-    });
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    if (room) {
+      if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+      room.chatMessages.push(msg);
+    }
     saveDb(db);
-    return { success: true, chat: db.voiceRoomChat };
+    return { success: true, chat: room?.chatMessages || db.voiceRoomChat, chatMessages: room?.chatMessages || db.voiceRoomChat };
   }
-  if (path.includes('/invite-bot') || path.includes('/summon-all-bots') || path.includes('/bot-interact') || path.includes('/host-action')) {
-    return { success: true, seats: db.voiceRoomSeats, chat: db.voiceRoomChat, reply: DEFAULT_BOTS[2].sampleDialogues[0] };
+  if (path.includes('/host-action') && method === 'POST') {
+    const rid = body.roomId || path.split('/')[4] || 'room-founder';
+    const rooms = ensureAllStaticRooms(db);
+    const room = rooms.find(r => r.id === rid) || rooms[0];
+    if (room) {
+      if (!Array.isArray(room.lockedSeats)) room.lockedSeats = [];
+      if (body.action === 'update_topic' && body.newTopic) room.topic = body.newTopic;
+      if (body.action === 'set_youtube') {
+        room.youtubeVideoUrl = body.youtubeVideoUrl || '';
+        room.youtubeVideoTitle = body.youtubeVideoTitle || '';
+        room.stageLayout = 'watch_party';
+      }
+      if (typeof body.seatIndex === 'number' && room.seats[body.seatIndex]) {
+        if (body.action === 'mute') room.seats[body.seatIndex].isMuted = true;
+        if (body.action === 'unmute') room.seats[body.seatIndex].isMuted = false;
+        if (body.action === 'kick') room.seats[body.seatIndex] = { seatNumber: body.seatIndex + 1, seatNumberLabel: String(body.seatIndex + 1), isMuted: false, isSpeaking: false, charms: 0 };
+        if (body.action === 'lock_seat' && !room.lockedSeats.includes(body.seatIndex)) {
+          room.lockedSeats.push(body.seatIndex);
+          room.seats[body.seatIndex] = { seatNumber: body.seatIndex + 1, seatNumberLabel: String(body.seatIndex + 1), isMuted: false, isSpeaking: false, charms: 0 };
+        }
+        if (body.action === 'unlock_seat') {
+          room.lockedSeats = room.lockedSeats.filter((i: number) => i !== body.seatIndex);
+        }
+      }
+      saveDb(db);
+      const lockedSet = new Set<number>(room.lockedSeats);
+      return {
+        success: true,
+        room: buildStaticRoomDetail(db, room).room,
+        seats: room.seats.map((s: any, idx: number) => ({ ...s, isLocked: lockedSet.has(idx) })),
+      };
+    }
+    return { success: true, seats: db.voiceRoomSeats };
   }
-  if (path === '/api/game/voice-room/seat-reward' && method === 'POST') {
-    const user = findUser(db, body.userId);
-    if (user) { user.coins = (user.coins || 0) + 25; saveDb(db); }
-    return { success: true, message: '+25 स्टेज रिवॉर्ड कॉइन्स मिले!', coinsEarned: 25, newBalance: user?.coins || 0, user };
+  if (path.includes('/invite-bot') || path.includes('/summon-all-bots') || path.includes('/bot-interact')) {
+    return { success: true, seats: db.voiceRoomSeats, chat: db.voiceRoomChat, coinsAwarded: 0, reply: DEFAULT_BOTS[2].sampleDialogues[0] };
   }
 
-  // Gift Cards, Home Slider, Complaints, Contact
-  if (path === '/api/gift-cards') return { success: true, vouchers: db.giftCardVouchers };
+  // Gift Cards (Admin Fulfillment Queue), Home Slider, Complaints, Contact
+  if (path === '/api/gift-cards') {
+    return { success: true, catalog: GIFT_CARD_CATALOG, vouchers: GIFT_CARD_CATALOG.map(c => ({ ...c, status: 'available' as const })) };
+  }
   if (path === '/api/gift-cards/redeem' && method === 'POST') {
     const user = findUser(db, body.userId);
-    const v = db.giftCardVouchers.find(x => x.id === body.voucherId);
-    if (!user || !v) return { success: false, message: 'Invalid voucher or user' };
-    if ((user.coins || 0) < v.coinsRequired) return { success: false, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
-    user.coins = (user.coins || 0) - v.coinsRequired;
-    v.status = 'claimed';
-    v.redeemedBy = user.userId;
-    v.redeemedAt = new Date().toISOString();
+    const c = GIFT_CARD_CATALOG.find(x => x.id === (body.catalogId || body.voucherId));
+    if (!user || !c) return { success: false, message: 'Invalid gift card or user' };
+    if ((user.coins || 0) < c.coinsRequired) return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: c.coinsRequired, currentCoins: user.coins || 0, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
+    user.coins = (user.coins || 0) - c.coinsRequired;
+    const redemption: GiftCardRedemption = {
+      id: `GCR-${Date.now().toString().slice(-6)}`,
+      catalogId: c.id,
+      brand: c.brand,
+      title: c.title,
+      denomination: c.denomination,
+      coinsSpent: c.coinsRequired,
+      userId: user.userId,
+      userName: user.fullName,
+      userPhone: user.phone,
+      status: 'pending_fulfillment',
+      requestedAt: new Date().toISOString(),
+    };
+    db.giftCardRedemptions.unshift(redemption);
     saveDb(db);
-    return { success: true, message: 'गिफ्ट कार्ड सफलतापूर्वक रिडीम हुआ!', voucher: v, newBalance: user.coins, user };
+    return { success: true, message: 'गिफ्ट कार्ड अनुरोध एडमिन को भेजा गया!', redemption, newBalance: user.coins, user };
+  }
+  if (path === '/api/gift-cards/redemptions') {
+    const uid = search.get('userId') || '';
+    if (adminPassHeader && verifyAdminPass(adminPassHeader)) {
+      return { success: true, redemptions: db.giftCardRedemptions };
+    }
+    return { success: true, redemptions: db.giftCardRedemptions.filter(r => r.userId.toLowerCase() === uid.toLowerCase()) };
+  }
+  if (path.match(/^\/api\/admin\/gift-cards\/[^/]+\/fulfill$/) && method === 'POST') {
+    if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const id = decodeURIComponent(path.split('/')[4]);
+    const r = db.giftCardRedemptions.find(x => x.id === id);
+    if (!r) return { success: false, message: 'Not found' };
+    if (body.status === 'rejected') {
+      r.status = 'rejected';
+      r.rejectionReason = body.rejectionReason || 'Rejected';
+      const u = findUser(db, r.userId);
+      if (u) u.coins = (u.coins || 0) + r.coinsSpent;
+    } else {
+      r.status = 'fulfilled';
+      r.voucherCode = body.voucherCode;
+      r.voucherPin = body.voucherPin || '';
+    }
+    r.fulfilledAt = new Date().toISOString();
+    saveDb(db);
+    return { success: true, redemption: r };
   }
   if (path === '/api/home-slider-photos') return { success: true, photos: db.homeSliderPhotos };
   if (path === '/api/admin/home-slider-photos' && method === 'POST') {
@@ -1292,9 +2867,11 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, message: 'संदेश सफलतापूर्वक भेजा गया!', contactMessage: msg };
   }
 
-  // Admin Overview & Management
+  // Admin Overview, Payouts Approve/Reject, Coin Recharges & Management
   if (path === '/api/admin/overview') {
     if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Invalid Admin Security Key' };
+    ensureAllStaticRooms(db);
+    saveDb(db);
     return {
       success: true,
       settings: db.settings,
@@ -1302,16 +2879,84 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       users: db.users,
       referrals: db.referrals,
       payouts: db.payouts,
+      coinRecharges: db.coinRecharges,
+      contactMessages: db.contactMessages,
+      adminNotifications: db.notifications.filter(n => n.userId === 'EMO-MOM-MMO'),
       transactions: db.transactions,
       stats: {
         totalUsers: db.users.length,
         activeUsers: db.users.filter(u => u.status === 'active').length,
         pendingUsers: db.users.filter(u => u.status === 'pending').length,
         pendingPayouts: db.payouts.filter(p => p.status === 'pending').length,
+        pendingCoinRechargesCount: db.coinRecharges.filter(r => r.status === 'pending').length,
         totalPlatformRevenue: db.users.reduce((s, u) => s + (Number(u.joiningFee) || 0), 0),
         totalWalletLiability: db.users.reduce((s, u) => s + (Number(u.balance) || 0), 0),
       },
     };
+  }
+  if (path === '/api/admin/vip-rooms/check' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const rooms = ensureAllStaticRooms(db);
+    const raw = String(body.roomNumber || '').trim();
+    if (!/^\d{3,10}$/.test(raw)) {
+      return {
+        success: true,
+        valid: false,
+        available: false,
+        normalized: raw.replace(/\D/g, ''),
+        isFancyVip: false,
+        message: 'केवल 3 से 10 अंकों की संख्या दर्ज करें (जैसे 1111, 2222, 1234)',
+      };
+    }
+    const conflict = findStaticRoomConflict(db.users, rooms, raw, body.excludeUserId);
+    const isFancy = isStaticVipFancyRoom(raw);
+    return {
+      success: true,
+      valid: true,
+      available: !conflict.conflict,
+      normalized: raw,
+      isFancyVip: isFancy,
+      conflictOwner: conflict.conflict ? `${conflict.ownerName || ''} (${conflict.ownerId || ''})` : null,
+      message: conflict.conflict
+        ? `❌ Room ID ${raw} पहले से ${conflict.ownerName || conflict.ownerId} को अलॉट है!`
+        : `✓ Room ID ${raw} उपलब्ध है!`,
+    };
+  }
+  if (path === '/api/admin/vip-rooms/assign' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const user = findUser(db, body.targetUserId);
+    if (!user) return { success: false, message: 'User not found' };
+    const cleanNum = String(body.roomNumber || '').trim();
+    if (!/^\d{3,10}$/.test(cleanNum)) return { success: false, message: 'केवल 3 से 10 अंक दर्ज करें।' };
+    const rooms = ensureAllStaticRooms(db);
+    const conflict = findStaticRoomConflict(db.users, rooms, cleanNum, user.userId);
+    if (conflict.conflict) return { success: false, message: `Room ID ${cleanNum} पहले से अलॉट है।` };
+    const vipFlag = Boolean(body.isVipRoom || isStaticVipFancyRoom(cleanNum));
+    user.roomAddress = cleanNum;
+    user.personalRoomId = cleanNum;
+    user.isVipRoom = vipFlag;
+    user.vipRoomLabel = String(body.vipRoomLabel || (vipFlag ? 'VIP Room' : '')).trim();
+    const room = ensureStaticPersonalRoom(db, user);
+    room.roomAddress = cleanNum;
+    room.roomNumber = cleanNum;
+    room.isVipRoom = vipFlag;
+    room.vipRoomLabel = user.vipRoomLabel;
+    saveDb(db);
+    return { success: true, message: `✅ ${user.fullName} को Room ID "${cleanNum}" अलॉट हो गया!`, user, room };
+  }
+  if (path === '/api/admin/vip-rooms/reset' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const user = findUser(db, body.targetUserId);
+    if (!user) return { success: false, message: 'User not found' };
+    const rooms = ensureAllStaticRooms(db);
+    const nextStd = generateStaticRoomId(db.users, rooms, user.fullName, user.userId);
+    user.roomAddress = nextStd;
+    user.personalRoomId = nextStd;
+    user.isVipRoom = false;
+    user.vipRoomLabel = '';
+    const room = ensureStaticPersonalRoom(db, user);
+    saveDb(db);
+    return { success: true, message: `↺ Room ID "${nextStd}" पर रीसेट हो गया।`, user, room };
   }
   if (path.match(/^\/api\/admin\/users\/[^/]+\/status$/) && method === 'POST') {
     if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
@@ -1323,6 +2968,52 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       saveDb(db);
     }
     return { success: true, user };
+  }
+  if (path.match(/^\/api\/admin\/payouts\/[^/]+\/approve$/) && method === 'POST') {
+    if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const pid = decodeURIComponent(path.split('/')[4]);
+    const p = db.payouts.find(x => x.id === pid);
+    if (!p) return { success: false, message: 'Payout not found' };
+    p.status = 'approved';
+    p.transactionRef = body.transactionRef || 'UTR';
+    p.processedDate = new Date().toISOString().split('T')[0];
+    const u = findUser(db, p.userId);
+    if (u) u.totalWithdrawn = (u.totalWithdrawn || 0) + p.amount;
+    saveDb(db);
+    return { success: true, payout: p };
+  }
+  if (path.match(/^\/api\/admin\/payouts\/[^/]+\/reject$/) && method === 'POST') {
+    if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const pid = decodeURIComponent(path.split('/')[4]);
+    const p = db.payouts.find(x => x.id === pid);
+    if (!p) return { success: false, message: 'Payout not found' };
+    if (p.status === 'pending') {
+      p.status = 'rejected';
+      p.processedDate = new Date().toISOString().split('T')[0];
+      const u = findUser(db, p.userId);
+      if (u) u.balance = (u.balance || 0) + p.amount;
+      saveDb(db);
+    }
+    return { success: true, message: 'Payout rejected & refunded', payout: p };
+  }
+  if (path.match(/^\/api\/admin\/coin-recharges\/[^/]+\/approve$/) && method === 'POST') {
+    if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const id = decodeURIComponent(path.split('/')[4]);
+    const o = db.coinRecharges.find(x => x.id === id);
+    if (o && o.status !== 'approved') {
+      o.status = 'approved';
+      const u = findUser(db, o.userId);
+      if (u) u.coins = (u.coins || 0) + (o.coins || 0) + (o.bonusCoins || 0);
+      saveDb(db);
+    }
+    return { success: true, order: o };
+  }
+  if (path.match(/^\/api\/admin\/coin-recharges\/[^/]+\/reject$/) && method === 'POST') {
+    if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const id = decodeURIComponent(path.split('/')[4]);
+    const o = db.coinRecharges.find(x => x.id === id);
+    if (o) { o.status = 'rejected'; saveDb(db); }
+    return { success: true, order: o };
   }
   if (path.match(/^\/api\/admin\/users\/[^/]+\/share-swi-app$/) && method === 'POST') {
     if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };

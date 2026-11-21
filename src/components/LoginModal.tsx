@@ -49,6 +49,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     fullName: string;
     accountType: string;
     chosenServiceCode: string;
+    accounts?: Array<{
+      userId: string;
+      gamingId: string;
+      fullName: string;
+      accountType: string;
+      chosenServiceCode: string;
+    }>;
   } | null>(null);
 
   const [resetIdentifier, setResetIdentifier] = useState('');
@@ -202,9 +209,29 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* Right Clean White Form Panel */}
         <div className="md:col-span-7 p-5 sm:p-7 space-y-4 text-[#212121]">
           {errorMsg && (
-            <div className="p-3 rounded-sm bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span className="leading-snug">{errorMsg}</span>
+            <div className="p-3 rounded-sm bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="leading-snug">{errorMsg}</span>
+              </div>
+              {mode === 'login' && (
+                <div className="flex flex-wrap items-center gap-3 pl-6 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forget-id')}
+                    className="text-[11px] font-bold text-[#2874f0] underline cursor-pointer"
+                  >
+                    ESP ID खोजें (Forget ID?)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forget-password')}
+                    className="text-[11px] font-bold text-[#fb641b] underline cursor-pointer"
+                  >
+                    नया पासवर्ड बनाएं (Forget Password?)
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -400,25 +427,56 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <div className="p-4 rounded-sm bg-emerald-50 border border-emerald-200 space-y-3">
                   <div className="flex items-center gap-2 text-[#388e3c] text-xs font-bold">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>खाता मिल गया: {foundAccount.fullName}</span>
+                    <span>
+                      {(foundAccount.accounts && foundAccount.accounts.length > 1)
+                        ? `इस नंबर/ईमेल से ${foundAccount.accounts.length} खाते मिले:`
+                        : `खाता मिल गया: ${foundAccount.fullName}`}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="bg-white p-2.5 rounded-xs border border-slate-200">
-                      <span className="text-[10px] text-[#878787] block">ESP ID</span>
-                      <span className="font-mono font-bold text-[#212121]">{foundAccount.userId}</span>
-                    </div>
-                    <div className="bg-white p-2.5 rounded-xs border border-slate-200">
-                      <span className="text-[10px] text-[#878787] block">Gaming ID</span>
-                      <span className="font-mono font-bold text-[#2874f0]">{foundAccount.gamingId}</span>
-                    </div>
+                  <div className="space-y-2.5 max-h-52 overflow-y-auto pr-0.5">
+                    {(foundAccount.accounts && foundAccount.accounts.length > 0
+                      ? foundAccount.accounts
+                      : [foundAccount]
+                    ).map(acc => (
+                      <div key={acc.userId} className="bg-white p-2.5 rounded-xs border border-emerald-200 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-[#212121]">{acc.fullName}</span>
+                          <span className="text-[10px] font-semibold text-[#2874f0]">
+                            {acc.accountType === 'gamer' ? 'Gaming Profile' : `Business (${acc.chosenServiceCode})`}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+                          <div className="bg-slate-50 px-2 py-1.5 rounded-xs border border-slate-200">
+                            <span className="text-[10px] text-[#878787] block">ESP ID</span>
+                            <span className="font-mono font-bold text-[#212121]">{acc.userId}</span>
+                          </div>
+                          <div className="bg-slate-50 px-2 py-1.5 rounded-xs border border-slate-200">
+                            <span className="text-[10px] text-[#878787] block">Gaming ID</span>
+                            <span className="font-mono font-bold text-[#2874f0]">{acc.gamingId}</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyRecoveredIdAndLogin(acc.userId)}
+                            className="flex-1 min-h-[38px] py-1.5 px-2 rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white text-xs font-bold cursor-pointer transition"
+                          >
+                            लॉगिन करें ({acc.userId})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetIdentifier(acc.userId);
+                              switchMode('forget-password');
+                            }}
+                            className="px-2.5 py-1.5 rounded-xs border border-[#2874f0] text-[#2874f0] hover:bg-blue-50 text-[11px] font-semibold cursor-pointer"
+                          >
+                            Reset Pass
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => applyRecoveredIdAndLogin(foundAccount.userId)}
-                    className="w-full min-h-[42px] py-2 rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white text-xs font-bold cursor-pointer transition"
-                  >
-                    इस ID से लॉगिन करें ({foundAccount.userId})
-                  </button>
                 </div>
               )}
 

@@ -27,10 +27,33 @@ import type {
   HomeSliderPhoto,
   ContactMessage,
   GiftCardVoucher,
+  GiftCardRedemption,
   NwiTreeRecord,
   NwiMemberNode,
   PlanUpgradeRequest,
 } from './src/types/index.ts';
+import {
+  FRAME_CATALOG,
+  VIP_TIERS,
+  REAL_TASKS_CATALOG,
+  CHEST_MILESTONES,
+  ADVANCE_ROOM_THEMES,
+  COIN_RECHARGE_PACKS,
+  GIFT_CARD_CATALOG,
+  calculateLevelFromXp,
+  getFrameByVariant,
+  getVipConfig,
+  type TaskEventType,
+} from './src/config/economy.ts';
+import {
+  FREE_SKILL_PLAY_DAILY_LIMIT,
+  SEVEN_DAY_CHECKIN_REWARDS,
+  COIN_UTILITY_BOOSTERS,
+  getDailyIntelForDate,
+  getDailyQuizForDate,
+  getSpotlightGameForDate,
+  getYesterdayDateString,
+} from './src/config/dailyGameIntel.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +103,8 @@ interface Database {
   contactMessages?: ContactMessage[];
   homeSliderPhotos?: HomeSliderPhoto[];
   giftCardVouchers?: GiftCardVoucher[];
+  giftCardRedemptions?: GiftCardRedemption[];
+  activeGameWagers?: Record<string, { gameName: string; bet: number; createdAt: string }>;
   nwiTreeRecords?: NwiTreeRecord[];
   planUpgrades?: PlanUpgradeRequest[];
   voiceRoomSeats?: VoiceRoomSeat[];
@@ -90,11 +115,24 @@ interface Database {
     topic: string;
     category: 'earning' | 'gaming' | 'chitchat' | 'clan' | 'help';
     roomAddress: string;
+    roomNumber?: string;
+    isPersonalFixed?: boolean;
+    isVipRoom?: boolean;
+    vipRoomLabel?: string;
     hostUserId: string;
     hostName: string;
+    hostUsername?: string;
     hostAvatar?: string;
     hostLevel?: number;
     hostCharms?: number;
+    wallpaperId?: string;
+    customWallpaperUrl?: string;
+    stageLayout?: 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
+    youtubeVideoUrl?: string;
+    youtubeVideoTitle?: string;
+    lockedSeats?: number[];
+    followers?: string[];
+    roomCharms?: number;
     createdAt: string;
     isPrivate?: boolean;
     passcode?: string;
@@ -303,61 +341,6 @@ const DEFAULT_SETTINGS: PlatformSettings = {
   swiSpecialAppName: 'ESP 3.3% Special Recharge App',
 };
 
-const DEFAULT_GIFT_CARD_VOUCHERS: GiftCardVoucher[] = [
-  {
-    id: 'gc-amz-50',
-    brand: 'Amazon',
-    title: '₹50 Amazon Pay E-Gift Card',
-    hindiTitle: '₹50 अमेज़न पे डिजिटल वाउचर',
-    denomination: 50,
-    coinsRequired: 2500,
-    voucherCode: 'AMZ-ESP-9842-8812',
-    voucherPin: '4892',
-    validityDays: 365,
-    description: 'Instant Amazon Pay balance credit code. Redeem in Amazon App.',
-    status: 'available',
-  },
-  {
-    id: 'gc-flp-100',
-    brand: 'Flipkart',
-    title: '₹100 Flipkart Gift Card',
-    hindiTitle: '₹100 फ्लिपकार्ट शॉपिंग वाउचर',
-    denomination: 100,
-    coinsRequired: 5000,
-    voucherCode: 'FLP-ESP-3310-7744',
-    voucherPin: '9921',
-    validityDays: 365,
-    description: 'Flipkart shopping voucher valid for all categories.',
-    status: 'available',
-  },
-  {
-    id: 'gc-gplay-100',
-    brand: 'Google Play',
-    title: '₹100 Google Play Recharge Code',
-    hindiTitle: '₹100 गूगल प्ले रिडीम कोड',
-    denomination: 100,
-    coinsRequired: 5000,
-    voucherCode: 'GP-ESP-7711-2099',
-    voucherPin: '5501',
-    validityDays: 365,
-    description: 'Google Play balance for games, subscriptions and in-app coins.',
-    status: 'available',
-  },
-  {
-    id: 'gc-upi-250',
-    brand: 'UPI Cash Voucher',
-    title: '₹250 Direct UPI Cash Voucher',
-    hindiTitle: '₹250 सीधा यूपीआई नकद वाउचर',
-    denomination: 250,
-    coinsRequired: 12000,
-    voucherCode: 'UPI-ESP-5588-4421',
-    voucherPin: '1120',
-    validityDays: 180,
-    description: 'Direct UPI cash payout code processed within 1 hour.',
-    status: 'available',
-  },
-];
-
 const DEFAULT_CHAT_ROOMS: ChatRoom[] = [
   {
     id: 'room-global',
@@ -365,39 +348,39 @@ const DEFAULT_CHAT_ROOMS: ChatRoom[] = [
     hindiName: 'राष्ट्रीय कम्युनिटी क्लब (सभी सदस्य)',
     description: 'All ESP verified members official chatting hub. Discuss daily earnings, share tips & ideas.',
     category: 'community',
-    membersCount: 2840,
-    lastMessage: 'Welcome to ESP Club! Share your referral links and daily task proofs.',
-    lastMessageTime: 'Just now',
+    membersCount: 1,
+    lastMessage: 'Welcome to ESP Club! Discuss plans and real community updates.',
+    lastMessageTime: 'Live',
   },
   {
     id: 'room-services',
     name: '10 Services Earning Discussion',
     hindiName: '10 सर्विसेज पर चर्चा व रणनीति',
-    description: 'Master all 10 earning services (EMO, MMO, MOM, NWI Auto Pool, SWI, TWI, etc.)',
+    description: 'Master all 10 earning services (EMO, MMO, MOM, NWI, SWI, TWI, Promote, Refer)',
     category: 'service',
-    membersCount: 1620,
-    lastMessage: 'NWI Auto pool dividends credited today! Check your wallet.',
-    lastMessageTime: '10m ago',
+    membersCount: 1,
+    lastMessage: 'Discuss 10 business plans and referral commissions.',
+    lastMessageTime: 'Live',
   },
   {
     id: 'room-referrals',
     name: 'Referral & Team Builders Club',
     hindiName: 'रेफरल & डाउनलाइन टीम बिल्डर्स',
-    description: 'Connect with other members, make new friends, build 5-tier networks, and share status templates.',
+    description: 'Connect with verified members, build real teams, and share promotion tools.',
     category: 'group',
-    membersCount: 980,
-    lastMessage: 'Joined with ₹10! Earned ₹400 in direct referral within 2 days.',
-    lastMessageTime: '25m ago',
+    membersCount: 1,
+    lastMessage: 'Share your Roll Number & promotion cards responsibly.',
+    lastMessageTime: 'Live',
   },
   {
     id: 'room-support',
     name: 'Founder & Admin 24x7 Helpdesk',
     hindiName: 'फाउंडर मार्गदर्शन एवं हेल्पलाइन',
-    description: 'Official WhatsApp +91 8877490845 & Live IOIS Support Assistant channel.',
+    description: 'Official WhatsApp +91 8877490845 & Support Desk channel.',
     category: 'help',
-    membersCount: 3100,
-    lastMessage: 'Admin verifies 12-digit UTR within minutes. Digital ID cards ready.',
-    lastMessageTime: '1h ago',
+    membersCount: 1,
+    lastMessage: 'Admin verifies 12-digit UTR payments manually.',
+    lastMessageTime: 'Live',
   },
 ];
 
@@ -442,25 +425,22 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
     hindiRole: 'नियम व निष्पक्षता निर्णायक',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99',
     frameType: 'judge-justice',
-    level: 80,
-    charms: 50000,
-    coins: 200000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '⚖️ JUSTICE',
     voiceAccent: 'Hindi-Formal',
     status: 'online',
-    description: 'Supreme voice room & game arbiter. Ensures fair play, settles dispute bets, warns foul players, and rewards righteous champions.',
-    hindiDescription: 'गेम व वॉइस रूम का आधिकारिक निष्पक्ष जज। नियम पालन करवाता है, विवाद सुलझाता है और निष्पक्ष खेल पर इंसाफ बोनस देता है।',
+    description: 'Voice room & game arbiter. Explains rules and encourages fair play.',
+    hindiDescription: 'गेम व वॉइस रूम का नियम गाइड। निष्पक्ष खेल और नियमों की जानकारी देता है।',
     superpowers: [
-      'निष्पक्ष फैसला (Fair-Play Ruling)',
-      'चीटिंग डिटेक्शन व पेनल्टी वॉर्निंग',
-      'विवाद सुलझाना (Dispute Resolution)',
-      'इंसाफ बोनस रिवॉर्ड (+50 Coins)'
+      'निष्पक्ष नियम मार्गदर्शन (Fair-Play Rules)',
+      'पेनल्टी व नियम जानकारी',
+      'विवाद नियम समझाना',
     ],
     sampleDialogues: [
-      '⚖️ अदालत में आपका स्वागत है! हर खिलाड़ी के साथ निष्पक्ष न्याय होगा।',
-      '⚖️ फैसला: नियम 4 के तहत दोनों खिलाड़ियों का खेल जायज है!',
-      '⚖️ किसी भी विवाद में मैं हर गेम मूव का पारदर्शी ऑडिट करता हूँ।',
-      '⚖️ ईमानदारी से खेलने वाले हर सदस्य को मिलेगा इंसाफ बोनस!'
+      '⚖️ रूम में आपका स्वागत है! हर खिलाड़ी के साथ निष्पक्ष नियम लागू होंगे।',
+      '⚖️ किसी भी गेम में असली कॉइन्स से ही खेलें और टास्क पूरे कर के EXP कमाएं।',
     ]
   },
   {
@@ -472,55 +452,47 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
     hindiRole: 'वेयरवुल्फ कथावाचक व गेम सूत्रधार',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WerewolfHostWolf',
     frameType: 'wolf-night',
-    level: 75,
-    charms: 45000,
-    coins: 150000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '🐺 WEREWOLF',
     voiceAccent: 'Hindi-Dramatic',
     status: 'online',
-    description: 'ESP PLAY Werewolf game master. Moderates night/day cycles, distributes secret roles, calls the villagers to vote, and hunts with the wolves.',
-    hindiDescription: 'ESP PLAY का प्रसिद्ध वेयरवुल्फ गेम संचालक। रात और दिन के चक्र चलाता है, गुप्त भूमिकाएं बांटता है और गांव वालों से वोटिंग करवाता है।',
+    description: 'Moderates Werewolf night/day game narration.',
+    hindiDescription: 'वेयरवुल्फ गेम का कथावाचक। रात और दिन के चक्र की घोषणा करता है।',
     superpowers: [
-      'वेयरवुल्फ गेम लाइव होस्टिंग',
-      'गुप्त भूमिका वितरण (Seer, Doctor, Wolf, Villager)',
-      'रात / दिन का नाटकीय कथावाचन',
-      'सोलो यूजर के साथ बॉट लॉबी मैचमेकिंग'
+      'वेयरवुल्फ गेम होस्टिंग',
+      'रात / दिन का कथावाचन',
     ],
     sampleDialogues: [
-      '🐺 रात हो चुकी है... सभी गांव वाले आंखें बंद कर सो जाएं!',
-      '🐺 भेड़िए जागें और आज रात का अपना शिकार चुनें!',
-      '🐺 सुबह हो चुकी है... गांव वाले जागें और तय करें कि आज किसे निष्कासित करना है!',
-      '🐺 ज्योतिषी (Seer) ने अपनी दिव्य दृष्टि से सच पहचान लिया है!'
+      '🐺 रात हो चुकी है... सभी खिलाड़ी अपनी भूमिका संभालें!',
+      '🐺 सुबह हो चुकी है... अब वोटिंग शुरू करें!',
     ]
   },
   {
     id: 'BOT-BHAI',
     code: 'we_bhai',
     name: 'We Bhai (वी भाई)',
-    hindiName: '🤝 वी भाई (देसी मददगार)',
-    roleTitle: 'Friendly Community Assistant',
-    hindiRole: 'कम्युनिटी गाइड व बोनस साथी',
+    hindiName: '🤝 वी भाई (गाइड)',
+    roleTitle: 'Community Guide Bot',
+    hindiRole: 'कम्युनिटी गाइड साथी',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
     frameType: 'vip-gold',
-    level: 70,
-    charms: 40000,
-    coins: 100000,
-    badge: '🤝 WE BHAI',
+    level: 1,
+    charms: 0,
+    coins: 0,
+    badge: '🤝 GUIDE',
     voiceAccent: 'Hindi-Friendly',
     status: 'online',
-    description: 'Warm, helpful Hindi & Bhojpuri friendly guide. Explains all 10 earning services, gives secret game tips, and hands out daily lucky coins.',
-    hindiDescription: 'सच्चा देसी दोस्त! 10 सर्विसेज से कमाई के सीक्रेट ट्रिक्स समझाता है, गेमिंग में हौसला बढ़ाता है और रोज़ फ्री लकी कॉइन्स देता है।',
+    description: 'Friendly guide that explains ESP plans, verified tasks, and coin store.',
+    hindiDescription: 'दोस्ताना गाइड जो 10 प्लान, असली टास्क सिस्टम और कॉइन शॉप की जानकारी देता है।',
     superpowers: [
-      '10 सर्विसेज अर्निंग गाइडेंस',
-      'डेली लकी कॉइन ड्रॉप (+100 Coins)',
-      'गेमिंग स्ट्रेटेजी व विनिंग टिप्स',
-      'स्टेज पर दोस्ताना हौसला अफजाई'
+      '10 सर्विसेज मार्गदर्शन',
+      'टास्क सिस्टम गाइड (+5 Coins)',
     ],
     sampleDialogues: [
-      '🤝 अरे भाई स्वागत बा! का हाल चाल? आज कौन सा गेम जीतना है?',
-      '🤝 टेंशन मत लो, वी भाई है ना! EMO और NWI से आज ही कमाई शुरू करो।',
-      '🤝 लो भाई, मेरी तरफ से 100 लकी कॉइन का तोहफा! धुआं उड़ा दो!',
-      '🤝 शर्मा जी का लेवल 99 है, उनके साथ मुकाबला करने के लिए रोज़ प्रैक्टिस करो!'
+      '🤝 नमस्ते! असली टास्क पूरे करें और हर टास्क पर +5 कॉइन्स व EXP पाएं।',
+      '🤝 फ्रेम और VIP अनलॉक करने के लिए कॉइन्स अर्न करें या UPI से खरीदें।',
     ]
   },
   {
@@ -529,121 +501,194 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
     name: 'We Chat (वी चैट AI)',
     hindiName: '💬 वी चैट (मनोरंजन साथी)',
     roleTitle: 'Voice & Banter Companion',
-    hindiRole: 'शायरी, संगीत व दिल की बातें',
+    hindiRole: 'शायरी व बातचीत साथी',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
     frameType: 'cosmic-neon',
-    level: 65,
-    charms: 38000,
-    coins: 80000,
+    level: 1,
+    charms: 0,
+    coins: 0,
     badge: '💬 COMPANION',
     voiceAccent: 'Hindi-Sweet',
     status: 'online',
-    description: 'Lively companion for solo players. Recites beautiful Hindi shayari, cracks witty jokes, reacts with emojis, and keeps the stage alive 24x7.',
-    hindiDescription: 'अकेलेपन का सबसे बड़ा तोड़! जब कोई ऑनलाइन न हो तो वी चैट शायरी सुनाता है, मज़ाकिया चुटकुले कहता है और मधुर महफ़िल सजाता है।',
+    description: 'Shares Hindi shayari and keeps the stage welcoming.',
+    hindiDescription: 'हिंदी शायरी और बातचीत से रूम का माहौल खुशनुमा बनाता है।',
     superpowers: [
       'खूबसूरत हिंदी व उर्दू शायरी',
-      'मज़ेदार देसी चुटकुले और किस्से',
-      'गिफ्ट्स पर म्यूजिकल व चार्मिंग रिएक्शन',
-      '24x7 कभी न रुकने वाली बातचीत'
+      'स्वस्थ मनोरंजन बातचीत',
     ],
     sampleDialogues: [
-      '💬 महफ़िल में जब आप आए, तो दिल बाग-बाग हो गया! स्वागत है आपका!',
-      '💬 "मंजिल उन्हीं को मिलती है, जिनके सपनों में जान होती है... पंखों से कुछ नहीं होता, हौसलों से उड़ान होती है!"',
-      '💬 एक चुटकुला सुनाऊं? जो गेम हार के मुस्कुरा दे, उससे दोबारा कोई नहीं जीत सकता!',
-      '💬 आज का समां बड़ा हसीन है, चलिए मिलकर कुछ नया खेलते हैं!'
+      '💬 महफ़िल में आपका स्वागत है! आइए सब मिलकर रूम चैट में बात करें।',
+      '💬 "मंजिल उन्हीं को मिलती है, जिनके सपनों में जान होती है... हौसलों से उड़ान होती है!"',
     ]
   },
-  {
-    id: 'BOT-ALERT',
-    code: 'alert_bot',
-    name: 'WeAlert (उद्घोषक बॉट)',
-    hindiName: '🔔 वी अलर्ट (शाही उद्घोषक)',
-    roleTitle: 'Royal Arrival & Event Announcer',
-    hindiRole: 'शाही आगमन व लाइव बिगुल उद्घोषणा',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeAlertRoyalHorn',
-    frameType: 'vip-gold',
-    level: 60,
-    charms: 30000,
-    coins: 50000,
-    badge: '🔔 VIP ALERT',
-    voiceAccent: 'Hindi-Announcer',
-    status: 'online',
-    description: 'Broadcasts royal trumpet horns, gift showers, Sharma Ji royal entries, and high-stakes tournament alerts in the room.',
-    hindiDescription: 'शाही आगमन पर बिगुल बजाता है, बड़े गिफ्ट्स (फरारी, ताज, महल) की लाइव घोषणा करता है और टूर्नामेंट अलर्ट भेजता है।',
-    superpowers: [
-      'शाही बिगुल और वीआईपी आगमन अलर्ट',
-      'मेगा गिफ्ट लाइव ब्रॉडकास्ट',
-      'टूर्नामेंट व जैकपॉट सायरन',
-      'रूम लाइव अलर्ट टूल'
-    ],
-    sampleDialogues: [
-      '🔔 🎺 सुनिए सुनिए! सर्वोच्च महाराजा शर्मा जी (Level 99, 98,765 Charms) का आगमन हो चुका है!',
-      '🔔 👑 कमरे में शाही ताज (Emperor Crown) का भव्य नजराना पेश किया गया है!',
-      '🔔 🚀 जैकपॉट राउंड शुरू होने वाला है! सभी खिलाड़ी तैयार रहें!',
-      '🔔 🌟 कमरे के सभी सदस्यों को बहुत-बहुत बधाई!'
-    ]
-  }
 ];
 
-function ensureSharmaJi(users: UserProfile[]) {
-  const sharmaJi = users.find(u => u.userId === 'SHARMA-JI-VIP' || u.userId === 'ESP-SHARMA-JI-VIP');
-  if (!sharmaJi) {
-    users.unshift({
-      id: 'usr-sharma-ji',
-      userId: 'SHARMA-JI-VIP',
-      fullName: '👑 Sharma Ji (शर्मा जी)',
-      phone: '9876598765',
-      email: 'sharmaji.royal@espgaming.in',
-      fullAddress: 'Royal Palace, New Delhi, India',
-      paymentAddress: 'sharmaji@upi',
-      payoutUpiId: 'sharmaji@upi',
-      password: 'password123',
-      sponsorId: 'FOUNDER',
-      sponsorName: 'SANTOSH KUMAR',
-      chosenServiceCode: 'OES',
-      chosenServiceName: 'ONLINE EARNING SYSTEM (OES)',
-      joiningFee: 10000,
-      joiningDate: '2024-01-01',
-      paymentUtr: 'SHARMA_ROYAL_GENESIS',
-      status: 'active',
-      verifiedAt: '2024-01-01T00:00:00.000Z',
-      balance: 550000,
-      totalEarnings: 890000,
-      referralEarnings: 650000,
-      promoEarnings: 240000,
-      totalWithdrawn: 340000,
-      coins: 999999,
-      charms: 98765,
-      gameLevel: 99,
-      gameXp: 99999,
-      crownPost: true,
-      frameType: 'royal-dragon-crown',
-      vipTitle: '👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)',
-      roomAddress: 'ESP-ROOM-SHARMAJI-ROYAL',
-      houseName: '👑 शर्मा जी का राजमहल (Sharma Ji Royal Palace)',
-      clanName: '👑 Sharma Ji Royals',
-      clanRole: 'Leader',
-      loginStreak: 7,
-      claimedDays: [1, 2, 3, 4, 5, 6, 7],
-      friendsCount: 2500,
-      visitorCount: 98765,
-      role: 'member',
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99',
-      bio: '👑 ESP PLAY & ESP के सबसे बड़े लेजेंड | Level 99 | 98,765 Charms | सभी गेम के बेताज बादशाह | क्राउन पोस्ट धारक',
-      createdAt: '2024-01-01T00:00:00.000Z',
-    });
-  } else {
-    sharmaJi.gameLevel = 99;
-    sharmaJi.charms = 98765;
-    sharmaJi.coins = Math.max(sharmaJi.coins || 0, 999999);
-    sharmaJi.crownPost = true;
-    sharmaJi.frameType = 'royal-dragon-crown';
-    sharmaJi.vipTitle = '👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)';
-    sharmaJi.houseName = '👑 शर्मा जी का राजमहल (Sharma Ji Royal Palace)';
-    sharmaJi.clanName = '👑 Sharma Ji Royals';
-    sharmaJi.clanRole = 'Leader';
-    sharmaJi.bio = '👑 ESP PLAY & ESP के सबसे बड़े लेजेंड | Level 99 | 98,765 Charms | सभी गेम के बेताज बादशाह | क्राउन पोस्ट धारक';
+const SYNTHETIC_USER_IDS = new Set(['SHARMA-JI-VIP', 'ESP-SHARMA-JI-VIP', 'ESP-GUEST-01', 'TEST-ESP-USER']);
+
+function getTodayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function ensureDailyTaskState(user: UserProfile) {
+  const today = getTodayDateString();
+  if (user.taskProgressDate !== today) {
+    user.taskProgressDate = today;
+    user.taskProgress = {};
+    user.claimedTaskIds = [];
+    user.claimedChestMilestones = [];
   }
+  if (!user.taskProgress || typeof user.taskProgress !== 'object') {
+    user.taskProgress = {};
+  }
+  if (!Array.isArray(user.claimedTaskIds)) {
+    user.claimedTaskIds = [];
+  }
+  if (!Array.isArray(user.claimedChestMilestones)) {
+    user.claimedChestMilestones = [];
+  }
+  if (user.tasksCompletedCount === undefined) {
+    user.tasksCompletedCount = 0;
+  }
+}
+
+function incrementUserTaskProgress(user: UserProfile, eventType: TaskEventType, inc = 1) {
+  ensureDailyTaskState(user);
+  const current = Number(user.taskProgress?.[eventType] || 0);
+  user.taskProgress![eventType] = current + Math.max(1, inc);
+}
+
+function getTasksStatusForUser(user: UserProfile) {
+  ensureDailyTaskState(user);
+  return REAL_TASKS_CATALOG.map(task => {
+    const progress = Number(user.taskProgress?.[task.eventType] || 0);
+    const isClaimed = (user.claimedTaskIds || []).includes(task.id);
+    const isCompleted = progress >= task.targetCount;
+    return {
+      ...task,
+      currentProgress: Math.min(progress, task.targetCount),
+      isCompleted,
+      isClaimed,
+    };
+  });
+}
+
+function logCoinTransaction(
+  database: Database,
+  user: UserProfile,
+  params: {
+    type: 'credit' | 'debit';
+    category: CoinTransactionRecord['category'];
+    categoryLabel: string;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    description: string;
+  }
+) {
+  if (!Array.isArray(database.coinTransactions)) database.coinTransactions = [];
+  database.coinTransactions.unshift({
+    id: `CTX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    userId: user.userId,
+    userName: user.fullName,
+    type: params.type,
+    category: params.category,
+    categoryLabel: params.categoryLabel,
+    amount: params.amount,
+    balanceBefore: params.balanceBefore,
+    balanceAfter: params.balanceAfter,
+    description: params.description,
+    timestamp: new Date().toISOString(),
+  });
+  if (database.coinTransactions.length > 5000) {
+    database.coinTransactions = database.coinTransactions.slice(0, 5000);
+  }
+}
+
+function normalizeUsername(raw: unknown): string {
+  return String(raw || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function isValidUsernameFormat(normalized: string): boolean {
+  return /^[a-z0-9]{3,24}$/.test(normalized);
+}
+
+function isUsernameTaken(users: UserProfile[], normalized: string, excludeUserId?: string): boolean {
+  if (!normalized) return false;
+  return users.some(
+    u =>
+      u.userId !== excludeUserId &&
+      (normalizeUsername(u.username) === normalized ||
+        String(u.userId || '').trim().toLowerCase() === normalized ||
+        String(u.gamingId || '').trim().toLowerCase() === normalized)
+  );
+}
+
+function findUserBySponsorRef(users: UserProfile[], rawRef: unknown): UserProfile | undefined {
+  const clean = String(rawRef || '').trim().toLowerCase();
+  const cleanHandle = normalizeUsername(rawRef);
+  if (!clean && !cleanHandle) return undefined;
+  return users.find(
+    u =>
+      (u.userId || '').trim().toLowerCase() === clean ||
+      (cleanHandle !== '' && normalizeUsername(u.username) === cleanHandle) ||
+      (u.gamingId || '').trim().toLowerCase() === clean
+  );
+}
+
+function normalizeUserRecord(u: any): UserProfile {
+  if (u.coins === undefined || u.coins === null || Number.isNaN(Number(u.coins))) u.coins = 0;
+  if (u.charms === undefined || u.charms === null) u.charms = 0;
+  if (u.gameXp === undefined || u.gameXp === null) u.gameXp = 0;
+  u.gameLevel = calculateLevelFromXp(u.gameXp || 0);
+  if (!u.vipTier) u.vipTier = 'none';
+  if (u.vipTier === 'none' && (!u.vipTitle || u.vipTitle.includes('शर्मा जी'))) u.vipTitle = '';
+  if (!Array.isArray(u.unlockedFrames) || u.unlockedFrames.length === 0) {
+    u.unlockedFrames = ['standard'];
+  }
+  if (!u.unlockedFrames.includes('standard')) {
+    u.unlockedFrames.unshift('standard');
+  }
+  if (!u.frameType || !u.unlockedFrames.includes(u.frameType)) {
+    u.frameType = 'standard';
+  }
+  if (!Array.isArray(u.unlockedRooms) || u.unlockedRooms.length === 0) {
+    u.unlockedRooms = ['default_dark'];
+  }
+  if (!u.unlockedRooms.includes('default_dark')) {
+    u.unlockedRooms.unshift('default_dark');
+  }
+  if (!u.roomTheme || !u.unlockedRooms.includes(u.roomTheme)) {
+    u.roomTheme = 'default_dark';
+  }
+  if (!Array.isArray(u.followedRooms)) u.followedRooms = [];
+  if (u.roomAddress && /[^A-Za-z0-9]/.test(String(u.roomAddress))) {
+    // Legacy alphanumeric roomAddress will be normalized to unique numeric counting ID (10001+) or VIP Room ID (1111) during room hydration
+    u.roomAddress = '';
+  }
+  if (u.roomAddress && !u.personalRoomId) {
+    u.personalRoomId = u.roomAddress;
+  }
+  if (!u.houseName) u.houseName = `${u.fullName || 'Member'} Gaming House`;
+  if (!u.clanName) u.clanName = 'Royal Warriors ESP';
+  if (!u.clanRole) u.clanRole = 'Member';
+  if (u.loginStreak === undefined) u.loginStreak = 0;
+  if (!Array.isArray(u.claimedDays)) u.claimedDays = [];
+  if (!Array.isArray(u.friendsList)) u.friendsList = [];
+  u.friendsCount = u.friendsList.length;
+  if (!u.receivedGifts || typeof u.receivedGifts !== 'object') u.receivedGifts = {};
+  if (u.username) u.username = normalizeUsername(u.username);
+  if (u.visitorCount === undefined) u.visitorCount = 0;
+  if (!Array.isArray(u.daysPlayed)) u.daysPlayed = [];
+  if (u.totalDaysPlayed === undefined) u.totalDaysPlayed = u.daysPlayed.length;
+  if (u.totalGamesPlayed === undefined) u.totalGamesPlayed = 0;
+  if (u.totalGamesWon === undefined) u.totalGamesWon = 0;
+  if (u.totalGamesLost === undefined) u.totalGamesLost = 0;
+  if (u.totalCoinsWon === undefined) u.totalCoinsWon = 0;
+  if (u.totalCoinsSpent === undefined) u.totalCoinsSpent = 0;
+  if (u.totalOnlineMinutes === undefined) u.totalOnlineMinutes = 0;
+  if (u.isOnline === undefined) u.isOnline = false;
+  ensureDailyTaskState(u);
+  return u;
 }
 
 function loadDatabase(): Database {
@@ -658,6 +703,8 @@ function loadDatabase(): Database {
       if (!data.chatMessages || !Array.isArray(data.chatMessages)) data.chatMessages = DEFAULT_CHAT_MESSAGES;
       if (!data.contacts || !Array.isArray(data.contacts)) data.contacts = [];
       if (!data.coinRecharges || !Array.isArray(data.coinRecharges)) data.coinRecharges = [];
+      if (!data.giftCardRedemptions || !Array.isArray(data.giftCardRedemptions)) data.giftCardRedemptions = [];
+      if (!data.activeGameWagers || typeof data.activeGameWagers !== 'object') data.activeGameWagers = {};
       if (!data.voiceRoomSeats || !Array.isArray(data.voiceRoomSeats) || data.voiceRoomSeats.length !== 8) {
         data.voiceRoomSeats = Array.from({ length: 8 }, (_, i) => ({
           seatNumber: i + 1,
@@ -680,30 +727,11 @@ function loadDatabase(): Database {
         ];
       }
       if (Array.isArray(data.users)) {
-        ensureSharmaJi(data.users);
-        data.users.forEach((u: any) => {
-          if (u.coins === undefined) u.coins = 5000;
-          if (u.charms === undefined) u.charms = 150;
-          if (u.gameLevel === undefined) u.gameLevel = 5;
-          if (u.gameXp === undefined) u.gameXp = 380;
-          if (!u.roomAddress) u.roomAddress = `ESP-ROOM-${(u.userId || 'USER').replace(/[^A-Za-z0-9]/g, '')}`;
-          if (!u.houseName) u.houseName = `${u.fullName || 'VIP'} Gaming House`;
-          if (!u.clanName) u.clanName = 'Royal Warriors ESP';
-          if (!u.clanRole) u.clanRole = 'Member';
-          if (u.loginStreak === undefined) u.loginStreak = 3;
-          if (!Array.isArray(u.claimedDays)) u.claimedDays = [1, 2];
-          if (u.friendsCount === undefined) u.friendsCount = 12;
-          if (u.visitorCount === undefined) u.visitorCount = 148;
-          if (!Array.isArray(u.daysPlayed)) u.daysPlayed = [];
-          if (u.totalDaysPlayed === undefined) u.totalDaysPlayed = u.daysPlayed.length;
-          if (u.totalGamesPlayed === undefined) u.totalGamesPlayed = 0;
-          if (u.totalGamesWon === undefined) u.totalGamesWon = 0;
-          if (u.totalGamesLost === undefined) u.totalGamesLost = 0;
-          if (u.totalCoinsWon === undefined) u.totalCoinsWon = 0;
-          if (u.totalCoinsSpent === undefined) u.totalCoinsSpent = 0;
-          if (u.totalOnlineMinutes === undefined) u.totalOnlineMinutes = 0;
-          if (u.isOnline === undefined) u.isOnline = false;
-        });
+        data.users = data.users
+          .filter((u: any) => !SYNTHETIC_USER_IDS.has(String(u.userId || '').toUpperCase()))
+          .map((u: any) => normalizeUserRecord(u));
+      } else {
+        data.users = [];
       }
       if (!Array.isArray(data.complaints)) data.complaints = [];
       if (!Array.isArray(data.gamePlayHistory)) data.gamePlayHistory = [];
@@ -712,7 +740,6 @@ function loadDatabase(): Database {
       if (!Array.isArray(data.activitySessions)) data.activitySessions = [];
       if (!Array.isArray(data.contactMessages)) data.contactMessages = [];
       if (!Array.isArray(data.homeSliderPhotos)) data.homeSliderPhotos = [];
-      if (!Array.isArray(data.giftCardVouchers)) data.giftCardVouchers = DEFAULT_GIFT_CARD_VOUCHERS;
       if (!Array.isArray(data.nwiTreeRecords)) data.nwiTreeRecords = [];
       if (!Array.isArray(data.planUpgrades)) data.planUpgrades = [];
       return data;
@@ -726,7 +753,7 @@ function loadDatabase(): Database {
     services: DEFAULT_SERVICES,
     adminMasterKey: 'ESP_Admin_9988#Secure',
     users: [
-      {
+      normalizeUserRecord({
         id: 'usr-admin',
         userId: 'EMO-MOM-MMO',
         gamingId: 'GAME-887749',
@@ -751,18 +778,28 @@ function loadDatabase(): Database {
         referralEarnings: 0,
         promoEarnings: 0,
         totalWithdrawn: 0,
-        coins: 50000,
-        charms: 12500,
-        gameLevel: 25,
-        gameXp: 4500,
-        roomAddress: 'ESP-ROOM-FOUNDER',
+        coins: 0,
+        charms: 0,
+        gameLevel: 1,
+        gameXp: 0,
+        vipTier: 'none',
+        vipTitle: '',
+        unlockedFrames: ['standard'],
+        frameType: 'standard',
+        unlockedRooms: ['default_dark'],
+        roomTheme: 'default_dark',
+        roomAddress: '1111',
+        personalRoomId: '1111',
+        isVipRoom: true,
+        vipRoomLabel: 'VIP Royal',
+        followedRooms: [],
         houseName: 'Royal House of Santosh',
         clanName: 'Royal Warriors ESP',
         clanRole: 'Leader',
-        loginStreak: 7,
-        claimedDays: [1, 2, 3, 4, 5, 6, 7],
-        friendsCount: 142,
-        visitorCount: 1850,
+        loginStreak: 0,
+        claimedDays: [],
+        friendsCount: 0,
+        visitorCount: 0,
         privacySettings: {
           showPhone: false,
           showEmail: false,
@@ -782,8 +819,7 @@ function loadDatabase(): Database {
         editHistory: [],
         role: 'admin',
         createdAt: '2024-03-01T00:00:00.000Z',
-      }
-
+      })
     ],
     referrals: [],
     transactions: [],
@@ -801,7 +837,9 @@ function loadDatabase(): Database {
     activitySessions: [],
     contactMessages: [],
     homeSliderPhotos: [],
-    giftCardVouchers: DEFAULT_GIFT_CARD_VOUCHERS,
+    giftCardVouchers: [],
+    giftCardRedemptions: [],
+    activeGameWagers: {},
     nwiTreeRecords: [],
     planUpgrades: [],
     voiceRoomSeats: Array.from({ length: 8 }, (_, i) => ({
@@ -823,14 +861,13 @@ function loadDatabase(): Database {
     ],
   };
 
-
   saveDatabase(initialDb);
   return initialDb;
 }
 
-function saveDatabase(db: Database) {
+function saveDatabase(database: Database) {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2), 'utf-8');
   } catch (e) {
     console.error('Failed to write database file', e);
   }
@@ -838,31 +875,195 @@ function saveDatabase(db: Database) {
 
 let db = loadDatabase();
 
-function generateUniqueUserId(fullName: string, joiningFee: number): string {
-  const words = fullName.trim().split(/\s+/).filter(Boolean);
+function extractUserInitials(fullName: string): string {
+  const cleaned = String(fullName || '').replace(/[^a-zA-Z\s]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
   let initials = '';
   if (words.length >= 2) {
     initials = (words[0][0] + words[words.length - 1][0]).toUpperCase();
   } else if (words.length === 1 && words[0].length >= 2) {
     initials = words[0].substring(0, 2).toUpperCase();
   } else if (words.length === 1) {
-    initials = (words[0][0] + 'K').toUpperCase();
+    initials = (words[0][0] + 'X').toUpperCase();
   } else {
-    initials = 'XX';
+    initials = 'ES';
   }
-  initials = initials.replace(/[^A-Z]/g, 'K');
+  initials = initials.replace(/[^A-Z]/g, 'X');
+  return initials.length === 2 ? initials : initials.padEnd(2, 'X').slice(0, 2);
+}
 
-  const basePrefix = `ESP${joiningFee}${initials}`;
-  const matching = db.users.filter(u => u.userId && u.userId.startsWith(basePrefix));
-  let counter = matching.length + 1;
+function isAnyIdTaken(candidate: string): boolean {
+  const lower = candidate.toLowerCase();
+  return db.users.some(
+    u =>
+      (u.userId || '').toLowerCase() === lower ||
+      (u.gamingId || '').toLowerCase() === lower ||
+      normalizeUsername(u.username) === lower
+  );
+}
+
+function generateUniqueGamerUserId(fullName: string): string {
+  const initials = extractUserInitials(fullName);
+  const basePrefix = `ESPGT${initials}`; // e.g. ESPGTRK01
+  const regex = new RegExp(`^${basePrefix}(\\d+)$`, 'i');
+  let maxSeq = 0;
+  for (const u of db.users) {
+    for (const idVal of [u.userId, u.gamingId]) {
+      const m = String(idVal || '').match(regex);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxSeq) maxSeq = n;
+      }
+    }
+  }
+  let counter = maxSeq + 1;
   let finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
-
-  while (db.users.some(u => u.userId === finalId)) {
+  while (isAnyIdTaken(finalId)) {
     counter++;
     finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
   }
-
   return finalId;
+}
+
+function generateUniqueUserId(fullName: string, chosenServiceCode: string = 'EMO'): string {
+  const initials = extractUserInitials(fullName);
+  const cleanService = String(chosenServiceCode || 'EMO').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'EMO';
+  const basePrefix = `${cleanService}${initials}ESP`; // e.g. EMORKESP01
+  const regex = new RegExp(`^${basePrefix}(\\d+)$`, 'i');
+  let maxSeq = 0;
+  for (const u of db.users) {
+    for (const idVal of [u.userId, u.gamingId]) {
+      const m = String(idVal || '').match(regex);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxSeq) maxSeq = n;
+      }
+    }
+  }
+  let counter = maxSeq + 1;
+  let finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  while (isAnyIdTaken(finalId)) {
+    counter++;
+    finalId = `${basePrefix}${String(counter).padStart(2, '0')}`;
+  }
+  return finalId;
+}
+
+function isNumericRoomId(val?: string): boolean {
+  if (!val) return false;
+  return /^\d{3,10}$/.test(String(val).trim());
+}
+
+function isVipFancyRoomNumber(val?: string): boolean {
+  const s = String(val || '').trim();
+  if (!/^\d{3,10}$/.test(s)) return false;
+  if (s.length <= 4) return true;
+  if (/^(\d)\1+$/.test(s)) return true;
+  if ('0123456789'.includes(s) || '9876543210'.includes(s)) return true;
+  if (s.length >= 6 && s.slice(0, 2).repeat(Math.floor(s.length / 2)) === s.slice(0, Math.floor(s.length / 2) * 2)) {
+    return true;
+  }
+  return false;
+}
+
+function findRoomConflictOwner(
+  candidate: string,
+  usersList: UserProfile[] = db?.users || [],
+  roomsList: any[] = db?.customVoiceRooms || [],
+  excludeUserId?: string
+): { conflict: boolean; ownerName?: string; ownerId?: string } {
+  const clean = String(candidate || '').trim();
+  const lower = clean.toLowerCase();
+  const userHit = usersList.find(u => {
+    if (excludeUserId && u.userId === excludeUserId) return false;
+    return (
+      String(u.roomAddress || '').trim() === clean ||
+      String(u.personalRoomId || '').trim() === clean ||
+      (u.userId || '').toLowerCase() === lower ||
+      (u.gamingId || '').toLowerCase() === lower ||
+      normalizeUsername(u.username) === lower
+    );
+  });
+  if (userHit) {
+    return { conflict: true, ownerName: userHit.fullName, ownerId: userHit.userId };
+  }
+  const roomHit = roomsList.find(r => {
+    if (excludeUserId && r.isPersonalFixed && r.hostUserId === excludeUserId) return false;
+    return (
+      String(r.roomAddress || '').trim() === clean ||
+      String(r.roomNumber || '').trim() === clean
+    );
+  });
+  if (roomHit) {
+    return { conflict: true, ownerName: roomHit.hostName || roomHit.title, ownerId: roomHit.hostUserId };
+  }
+  return { conflict: false };
+}
+
+function isRoomAddressTaken(
+  candidate: string,
+  usersList: UserProfile[] = db?.users || [],
+  roomsList: any[] = db?.customVoiceRooms || [],
+  excludeUserId?: string
+): boolean {
+  return findRoomConflictOwner(candidate, usersList, roomsList, excludeUserId).conflict;
+}
+
+function generateUniqueRoomId(
+  _fullName: string = '',
+  usersList: UserProfile[] = db?.users || [],
+  roomsList: any[] = db?.customVoiceRooms || [],
+  excludeUserId?: string
+): string {
+  // Sequential numeric counting IDs start at 10001 so 3-4 digit fancy numbers (1111, 2222, 1234) stay free for VIP assignment
+  let maxCount = 10000;
+
+  for (const u of usersList) {
+    for (const val of [u.roomAddress, u.personalRoomId]) {
+      const str = String(val || '').trim();
+      if (/^\d{5,10}$/.test(str)) {
+        const n = parseInt(str, 10);
+        if (n >= 10000 && n > maxCount) maxCount = n;
+      }
+    }
+  }
+  for (const r of roomsList) {
+    for (const val of [r.roomAddress, r.roomNumber]) {
+      const str = String(val || '').trim();
+      if (/^\d{5,10}$/.test(str)) {
+        const n = parseInt(str, 10);
+        if (n >= 10000 && n > maxCount) maxCount = n;
+      }
+    }
+  }
+
+  let counter = maxCount + 1;
+  let finalId = String(counter);
+  while (isRoomAddressTaken(finalId, usersList, roomsList, excludeUserId)) {
+    counter++;
+    finalId = String(counter);
+  }
+  return finalId;
+}
+
+function generateUniqueDefaultUsername(
+  fullName: string,
+  newUserId: string,
+  newGamingId: string = ''
+): string {
+  const cleanName = String(fullName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const base = (cleanName.length >= 3 ? cleanName : newUserId.toLowerCase()).slice(0, 16);
+  const forbidden = new Set([newUserId.toLowerCase(), newGamingId.toLowerCase()].filter(Boolean));
+  let seq = 1;
+  let candidate = `${base}${String(seq).padStart(2, '0')}`.slice(0, 24);
+  if (!isAnyIdTaken(candidate) && !forbidden.has(candidate) && isValidUsernameFormat(candidate)) {
+    return candidate;
+  }
+  while (isAnyIdTaken(candidate) || forbidden.has(candidate) || !isValidUsernameFormat(candidate)) {
+    seq++;
+    candidate = `${base.slice(0, 20)}${String(seq).padStart(2, '0')}`;
+  }
+  return candidate;
 }
 
 function verifyAdmin(pass: string | undefined): boolean {
@@ -1072,13 +1273,15 @@ app.delete('/api/services/:id', (req, res) => {
   res.json({ success: true, message: 'Service removed successfully', services: db.services });
 });
 
-// 3. Public Sponsor Lookup
+// 3. Public Sponsor Lookup (Works with BOTH User ID & Unique @Username)
 app.get('/api/sponsor/check', (req, res) => {
-  const sponsorId = (req.query.id as string || '').trim();
-  if (!sponsorId || sponsorId === db.settings.ownerSponsorId) {
+  const sponsorRef = (req.query.id as string || '').trim();
+  if (!sponsorRef || sponsorRef.toUpperCase() === db.settings.ownerSponsorId) {
+    const owner = db.users.find(u => u.userId === db.settings.ownerSponsorId);
     return res.json({
       valid: true,
       sponsorId: db.settings.ownerSponsorId,
+      sponsorUsername: owner?.username || '',
       sponsorName: db.settings.ownerName,
       isOwner: true,
       maskedPhone: maskString(db.settings.whatsappNumber, 'phone'),
@@ -1086,14 +1289,15 @@ app.get('/api/sponsor/check', (req, res) => {
     });
   }
 
-  const found = db.users.find(u => u.userId.toLowerCase() === sponsorId.toLowerCase());
+  const found = findUserBySponsorRef(db.users, sponsorRef);
   if (found) {
     const priv = found.privacySettings || { showPhone: false, showEmail: false, showAddress: false };
     return res.json({
       valid: true,
       sponsorId: found.userId,
+      sponsorUsername: found.username || '',
       sponsorName: found.fullName,
-      isOwner: false,
+      isOwner: found.userId === db.settings.ownerSponsorId,
       maskedPhone: priv.showPhone ? found.phone : maskString(found.phone, 'phone'),
       maskedEmail: priv.showEmail ? found.email : maskString(found.email, 'email'),
       planName: found.chosenServiceName,
@@ -1105,20 +1309,62 @@ app.get('/api/sponsor/check', (req, res) => {
 
   res.json({
     valid: false,
-    message: 'Sponsor ID not found. Using default Founder SANTOSH KUMAR',
+    message: 'Sponsor ID or Username not found. Using default Founder SANTOSH KUMAR',
     fallbackSponsorId: db.settings.ownerSponsorId,
     fallbackSponsorName: db.settings.ownerName,
   });
 });
 
-function createSessionForUser(user: UserProfile, req: express.Request): { sessionToken: string; session: UserSession } {
-  const clientInfo = req.body.deviceInfo;
+function normalizePhoneDigits(phoneRaw: string): string {
+  const digits = String(phoneRaw || '').replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+function matchesUserIdentifier(u: UserProfile, rawIdentifier: string): boolean {
+  const clean = String(rawIdentifier || '').trim().toLowerCase();
+  if (!clean) return false;
+  const cleanNoSpaces = clean.replace(/\s+/g, '');
+  const inputDigits = normalizePhoneDigits(clean);
+
+  const uid = (u.userId || '').trim().toLowerCase();
+  const gid = (u.gamingId || '').trim().toLowerCase();
+  const uname = normalizeUsername(u.username);
+  const cleanHandle = normalizeUsername(clean);
+  const email = (u.email || '').trim().toLowerCase();
+  const phone = (u.phone || '').trim().toLowerCase();
+  const phoneDigits = normalizePhoneDigits(u.phone || '');
+
+  return (
+    uid === clean ||
+    (uname !== '' && cleanHandle !== '' && uname === cleanHandle) ||
+    (cleanNoSpaces.length >= 3 && uid.replace(/\s+/g, '') === cleanNoSpaces) ||
+    (gid !== '' && (gid === clean || (cleanNoSpaces.length >= 3 && gid.replace(/\s+/g, '') === cleanNoSpaces))) ||
+    (email !== '' && email === clean) ||
+    (phone !== '' && phone === clean) ||
+    (inputDigits.length === 10 && phoneDigits.length === 10 && phoneDigits === inputDigits)
+  );
+}
+
+function isPasswordMatch(storedPassword: string | undefined, inputPassword: string): boolean {
+  if (!storedPassword) return true;
+  const rawInput = String(inputPassword ?? '');
+  if (storedPassword === rawInput) return true;
+  const trimmedInput = rawInput.trim();
+  return trimmedInput.length > 0 && storedPassword.trim() === trimmedInput;
+}
+
+function createSessionForUser(user: UserProfile, req: express.Request, preferredToken?: string): { sessionToken: string; session: UserSession } {
+  const clientInfo = req.body?.deviceInfo;
   const userAgent = (req.headers['user-agent'] as string) || '';
   const parsed = parseDeviceInfo(userAgent, clientInfo);
   const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || '127.0.0.1';
   const ipAddress = rawIp.replace('::ffff:', '');
 
-  const sessionToken = `esp_tok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+  const sessionToken =
+    preferredToken && preferredToken.trim()
+      ? preferredToken.trim()
+      : `esp_tok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
   const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
   const newSession: UserSession = {
@@ -1138,6 +1384,7 @@ function createSessionForUser(user: UserProfile, req: express.Request): { sessio
   }
 
   // Keep concurrent device sessions so user can be logged in on multiple phones / PCs!
+  user.activeSessions = user.activeSessions.filter(s => s.token !== sessionToken);
   user.activeSessions.unshift(newSession);
   if (user.activeSessions.length > 25) {
     user.activeSessions = user.activeSessions.slice(0, 25);
@@ -1151,6 +1398,7 @@ app.post('/api/auth/register', (req, res) => {
   try {
     const {
       fullName,
+      username,
       phone,
       email,
       fullAddress,
@@ -1172,6 +1420,30 @@ app.post('/api/auth/register', (req, res) => {
       return res.status(400).json({ success: false, message: 'कृपया नाम और मोबाइल नंबर दर्ज करें (Name & Mobile required)' });
     }
 
+    // Display name (fullName) CAN be the same across users; username & userId stay strictly unique
+    const cleanFullName = String(fullName).trim().replace(/\s+/g, ' ');
+
+    const normalizedInputUsername = username !== undefined ? normalizeUsername(username) : '';
+    if (normalizedInputUsername) {
+      if (!isValidUsernameFormat(normalizedInputUsername)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_USERNAME',
+          message: 'यूनिक यूज़रनेम में कोई Symbol (_ - . @) उपयोग न करें — केवल 3 से 24 अक्षर (a-z और 0-9) लिखें।',
+        });
+      }
+      if (isUsernameTaken(db.users, normalizedInputUsername)) {
+        return res.status(409).json({
+          success: false,
+          code: 'USERNAME_TAKEN',
+          message: `यूज़रनेम "@${normalizedInputUsername}" पहले से लिया जा चुका है! कृपया कोई दूसरा यूनिक नाम चुनें।`,
+        });
+      }
+    }
+
+    const normalizedPhone = normalizePhoneDigits(phone) || String(phone).trim();
+    const cleanEmail = email ? String(email).trim().toLowerCase() : `${normalizedPhone}@espgaming.club`;
+
     if (!isGamer) {
       if (!email || !paymentAddress) {
         return res.status(400).json({ success: false, message: 'बिजनेस प्लान हेतु ईमेल और UPI एड्रेस आवश्यक है' });
@@ -1182,23 +1454,25 @@ app.post('/api/auth/register', (req, res) => {
     }
 
     const existing = db.users.find(
-      u => u.phone === phone.trim() || (email && u.email.toLowerCase() === email.trim().toLowerCase())
+      u =>
+        normalizePhoneDigits(u.phone) === normalizedPhone ||
+        (email && (u.email || '').trim().toLowerCase() === cleanEmail)
     );
     if (existing) {
       return res.status(400).json({ 
         success: false, 
-        message: 'A member with this Phone or Email already exists. Please login.' 
+        message: 'इस मोबाइल नंबर या ईमेल से पहले से खाता पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।' 
       });
     }
 
     let resolvedSponsorId = (sponsorId || '').trim();
     let resolvedSponsorName = (sponsorName || '').trim();
 
-    if (!resolvedSponsorId || resolvedSponsorId === db.settings.ownerSponsorId) {
+    if (!resolvedSponsorId || resolvedSponsorId.toUpperCase() === db.settings.ownerSponsorId) {
       resolvedSponsorId = db.settings.ownerSponsorId;
       resolvedSponsorName = db.settings.ownerName;
     } else {
-      const sp = db.users.find(u => u.userId.toLowerCase() === resolvedSponsorId.toLowerCase());
+      const sp = findUserBySponsorRef(db.users, resolvedSponsorId);
       if (sp) {
         resolvedSponsorId = sp.userId;
         resolvedSponsorName = sp.fullName;
@@ -1213,13 +1487,19 @@ app.post('/api/auth/register', (req, res) => {
       ? { code: 'GAME', name: 'ESP GAMING & VOICE CLUB' }
       : (db.services.find(s => s.code === chosenServiceCode) || db.services[0]);
     const newUserId = isGamer 
-      ? `ESP-G-${Math.floor(100000 + Math.random() * 900000)}` 
-      : generateUniqueUserId(fullName, fee);
+      ? generateUniqueGamerUserId(cleanFullName)
+      : generateUniqueUserId(cleanFullName, serviceObj.code);
+    let newGamingId = isGamer ? newUserId : generateUniqueGamerUserId(cleanFullName);
+    if (!isGamer && newGamingId.toLowerCase() === newUserId.toLowerCase()) {
+      newGamingId = `${newGamingId}G`;
+    }
+    const finalUsername =
+      normalizedInputUsername || generateUniqueDefaultUsername(cleanFullName, newUserId, newGamingId);
 
     const initialFormData = {
-      fullName: fullName.trim(),
-      phone: phone.trim(),
-      email: email ? email.trim().toLowerCase() : `${phone.trim()}@espgaming.club`,
+      fullName: cleanFullName,
+      phone: normalizedPhone,
+      email: cleanEmail,
       fullAddress: fullAddress || '',
       paymentAddress: paymentAddress ? paymentAddress.trim() : '',
       chosenServiceCode: serviceObj.code,
@@ -1229,18 +1509,21 @@ app.post('/api/auth/register', (req, res) => {
       paymentScreenshot: paymentScreenshot || '',
     };
 
+    const newRoomAddress = generateUniqueRoomId(cleanFullName, db.users, db.customVoiceRooms || []);
+
     // Gamer accounts are instant active! Business accounts are pending until admin approval.
     const newUser: UserProfile = {
       id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       userId: newUserId,
-      gamingId: `GAME-${Math.floor(100000 + Math.random() * 900000)}`,
-      fullName: fullName.trim(),
-      phone: phone.trim(),
-      email: email ? email.trim().toLowerCase() : `${phone.trim()}@espgaming.club`,
+      gamingId: newGamingId,
+      username: finalUsername,
+      fullName: cleanFullName,
+      phone: normalizedPhone,
+      email: cleanEmail,
       fullAddress: fullAddress || '',
       paymentAddress: paymentAddress ? paymentAddress.trim() : '',
       payoutUpiId: paymentAddress ? paymentAddress.trim() : '',
-      password: password || '123456',
+      password: String(password || '123456').trim(),
       sponsorId: resolvedSponsorId,
       sponsorName: resolvedSponsorName,
       chosenServiceCode: serviceObj.code,
@@ -1256,18 +1539,31 @@ app.post('/api/auth/register', (req, res) => {
       referralEarnings: 0,
       promoEarnings: 0,
       totalWithdrawn: 0,
-      coins: isGamer ? 5500 : 5000, // 500 bonus coins for free gamer!
-      charms: 150,
-      gameLevel: 5,
-      gameXp: 750,
-      roomAddress: `ESP-ROOM-${newUserId}`,
+      coins: 0, // Every new player always starts strictly with 0 coins
+      charms: 0,
+      gameLevel: 1,
+      gameXp: 0,
+      vipTier: 'none',
+      vipTitle: '',
+      unlockedFrames: ['standard'],
+      frameType: 'standard',
+      unlockedRooms: ['default_dark'],
+      roomTheme: 'default_dark',
+      taskProgress: {},
+      taskProgressDate: getTodayDateString(),
+      claimedTaskIds: [],
+      claimedChestMilestones: [],
+      tasksCompletedCount: 0,
+      roomAddress: newRoomAddress,
+      personalRoomId: newRoomAddress,
+      followedRooms: [],
       houseName: `House of ${fullName.trim().split(' ')[0]}`,
       clanName: 'Royal Warriors ESP',
       clanRole: 'Member',
-      loginStreak: 1,
-      claimedDays: [1],
-      friendsCount: 5,
-      visitorCount: 12,
+      loginStreak: 0,
+      claimedDays: [],
+      friendsCount: 0,
+      visitorCount: 0,
       privacySettings: {
         showPhone: false,
         showEmail: false,
@@ -1275,6 +1571,7 @@ app.post('/api/auth/register', (req, res) => {
       },
 
       activeSessions: [],
+      terminatedTokens: [],
       initialFormData,
       editHistory: [],
       role: 'member',
@@ -1285,8 +1582,9 @@ app.post('/api/auth/register', (req, res) => {
     const { sessionToken } = createSessionForUser(newUser, req);
 
     db.users.push(newUser);
+    ensurePersonalRoomForUser(db, newUser);
 
-    // Track pending referral only for paid plans (fee > 0)
+    // Track referral: paid plans get pending commission, free gamer referrals (when referred via link) track ₹0 team entry
     if (!isGamer && fee > 0) {
       let l1Percent = ('referralBonusPercent' in serviceObj ? (serviceObj as any).referralBonusPercent : 0) || (db.settings.defaultReferralCommissionRate * 100);
       if (serviceObj.code === 'EMO' && fee < 100) l1Percent = 50; // EMO Normal 50%
@@ -1307,6 +1605,19 @@ app.post('/api/auth/register', (req, res) => {
         date: new Date().toISOString().split('T')[0],
       };
       db.referrals.push(referralRecord);
+    } else if (isGamer && sponsorId && String(sponsorId).trim()) {
+      db.referrals.push({
+        id: `ref-${Date.now()}`,
+        sponsorUserId: resolvedSponsorId,
+        downlineUserId: newUserId,
+        downlineName: newUser.fullName,
+        downlinePhone: newUser.phone,
+        serviceCode: 'GAME',
+        joiningFee: 0,
+        commissionAmount: 0,
+        status: 'credited',
+        date: new Date().toISOString().split('T')[0],
+      });
     }
 
     // Initial notification
@@ -1340,26 +1651,30 @@ app.post('/api/auth/register', (req, res) => {
   }
 });
 
-// 5. Multi-Device Login (Roll Number / Mobile / Email + Password)
+// 5. Multi-Device Login (Roll Number / Gaming ID / Mobile / Email + Password)
 app.post('/api/auth/login', (req, res) => {
   const { identifier, password } = req.body;
   if (!identifier || !password) {
-    return res.status(400).json({ success: false, message: 'Please enter Roll Number / Mobile / Email and Password' });
+    return res.status(400).json({ success: false, message: 'कृपया अपनी ESP ID / मोबाइल / ईमेल और पासवर्ड दर्ज करें।' });
   }
 
-  const clean = identifier.trim().toLowerCase();
-  const user = db.users.find(
-    u => u.userId.toLowerCase() === clean || 
-         u.email.toLowerCase() === clean || 
-         u.phone === clean
-  );
+  const candidates = db.users.filter(u => matchesUserIdentifier(u, identifier));
 
+  if (candidates.length === 0) {
+    return res.status(404).json({
+      success: false,
+      code: 'ACCOUNT_NOT_FOUND',
+      message: 'इस ESP ID, मोबाइल नंबर या ईमेल से सर्वर पर कोई खाता नहीं मिला। नीचे "Forget ID?" से अपना रोल नंबर खोजें।',
+    });
+  }
+
+  const user = candidates.find(u => isPasswordMatch(u.password, password));
   if (!user) {
-    return res.status(404).json({ success: false, message: 'Account not found with this Roll Number / Email / Mobile' });
-  }
-
-  if (user.password && user.password !== password) {
-    return res.status(401).json({ success: false, message: 'Incorrect Password' });
+    return res.status(401).json({
+      success: false,
+      code: 'PASSWORD_MISMATCH',
+      message: 'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या नीचे "Forget Password?" से नया पासवर्ड बनाएं।',
+    });
   }
 
   // Create device session for this login
@@ -1380,6 +1695,86 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
+// 5.0.0 Restore Persisted User Account / Session Across Container Restarts or Local Fallback Sync
+app.post('/api/auth/restore-account', (req, res) => {
+  try {
+    const { user: backupUser, password, preferredToken } = req.body || {};
+    if (!backupUser || !backupUser.userId) {
+      return res.status(400).json({ success: false, message: 'Valid backup user payload required' });
+    }
+
+    const existing = db.users.find(
+      u => u.userId.toLowerCase() === String(backupUser.userId).trim().toLowerCase()
+    );
+
+    if (existing) {
+      if (password !== undefined && !isPasswordMatch(existing.password, String(password))) {
+        return res.status(401).json({
+          success: false,
+          code: 'PASSWORD_MISMATCH',
+          message: 'पासवर्ड मेल नहीं खा रहा (Password mismatch)। कृपया सही पासवर्ड दर्ज करें।',
+        });
+      }
+      if (preferredToken && Array.isArray(existing.terminatedTokens) && existing.terminatedTokens.includes(preferredToken)) {
+        return res.json({
+          success: false,
+          valid: false,
+          sessionTerminated: true,
+          message: 'आपका यह डिवाइस किसी अन्य डिवाइस से रिमोटली लॉगआउट कर दिया गया है।',
+        });
+      }
+      const { sessionToken } = createSessionForUser(existing, req, preferredToken);
+      existing.lastLogin = new Date().toISOString();
+      saveDatabase(db);
+      return res.json({
+        success: true,
+        restored: false,
+        user: {
+          ...existing,
+          activeSessions: existing.activeSessions?.map(s => ({
+            ...s,
+            isCurrent: s.token === sessionToken,
+          })),
+        },
+        sessionToken,
+      });
+    }
+
+    // Re-hydrate account into running database
+    const restored = normalizeUserRecord({
+      ...backupUser,
+      id: backupUser.id || `usr-${Date.now()}-restored`,
+      userId: String(backupUser.userId).trim(),
+      fullName: String(backupUser.fullName || 'ESP Member').trim(),
+      phone: normalizePhoneDigits(backupUser.phone || '') || String(backupUser.phone || '').trim(),
+      email: String(backupUser.email || '').trim().toLowerCase(),
+      password: String(backupUser.password || password || '123456').trim(),
+      activeSessions: [],
+      terminatedTokens: Array.isArray(backupUser.terminatedTokens) ? backupUser.terminatedTokens : [],
+      lastLogin: new Date().toISOString(),
+    });
+
+    const { sessionToken } = createSessionForUser(restored, req, preferredToken);
+    db.users.push(restored);
+    saveDatabase(db);
+
+    res.json({
+      success: true,
+      restored: true,
+      user: {
+        ...restored,
+        activeSessions: restored.activeSessions?.map(s => ({
+          ...s,
+          isCurrent: s.token === sessionToken,
+        })),
+      },
+      sessionToken,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Restore failed' });
+  }
+});
+
 // 5.0.1 Forget ID Recovery (Lookup Roll No / ESP ID via registered Mobile or Email)
 app.post('/api/auth/forget-id', (req, res) => {
   const { phoneOrEmail } = req.body;
@@ -1388,31 +1783,39 @@ app.post('/api/auth/forget-id', (req, res) => {
   }
 
   const raw = String(phoneOrEmail).trim().toLowerCase();
-  const digitsOnly = raw.replace(/\D/g, '').slice(-10);
+  const digitsOnly = normalizePhoneDigits(raw);
 
-  const user = db.users.find(u => {
-    const userPhoneDigits = (u.phone || '').replace(/\D/g, '').slice(-10);
+  const matchedUsers = db.users.filter(u => {
+    const userPhoneDigits = normalizePhoneDigits(u.phone || '');
     return (
-      (u.email && u.email.toLowerCase() === raw) ||
-      (u.phone && u.phone.toLowerCase() === raw) ||
+      (u.email && u.email.trim().toLowerCase() === raw) ||
+      (u.phone && u.phone.trim().toLowerCase() === raw) ||
       (digitsOnly.length === 10 && userPhoneDigits === digitsOnly)
     );
   });
 
-  if (!user) {
+  if (matchedUsers.length === 0) {
     return res.status(404).json({
       success: false,
       message: 'इस मोबाइल नंबर या ईमेल से कोई खाता नहीं मिला। कृपया सही नंबर दर्ज करें या नया रजिस्ट्रेशन करें।'
     });
   }
 
+  const primary = matchedUsers[0];
   res.json({
     success: true,
-    userId: user.userId,
-    gamingId: user.gamingId || `GAME-${user.userId}`,
-    fullName: user.fullName,
-    accountType: user.accountType || 'business',
-    chosenServiceCode: user.chosenServiceCode || 'EMO',
+    userId: primary.userId,
+    gamingId: primary.gamingId || `GAME-${primary.userId}`,
+    fullName: primary.fullName,
+    accountType: primary.accountType || 'business',
+    chosenServiceCode: primary.chosenServiceCode || 'EMO',
+    accounts: matchedUsers.map(u => ({
+      userId: u.userId,
+      gamingId: u.gamingId || `GAME-${u.userId}`,
+      fullName: u.fullName,
+      accountType: u.accountType || 'business',
+      chosenServiceCode: u.chosenServiceCode || 'EMO',
+    })),
   });
 });
 
@@ -1433,43 +1836,36 @@ app.post('/api/auth/forget-password', (req, res) => {
     });
   }
 
-  const cleanId = String(identifier).trim().toLowerCase();
-  const idDigits = cleanId.replace(/\D/g, '').slice(-10);
   const cleanVerify = String(verifyPhone).trim().toLowerCase();
-  const verifyDigits = cleanVerify.replace(/\D/g, '').slice(-10);
+  const verifyDigits = normalizePhoneDigits(cleanVerify);
 
-  const user = db.users.find(u => {
-    const userPhoneDigits = (u.phone || '').replace(/\D/g, '').slice(-10);
-    return (
-      u.userId.toLowerCase() === cleanId ||
-      (u.gamingId && u.gamingId.toLowerCase() === cleanId) ||
-      (u.email && u.email.toLowerCase() === cleanId) ||
-      (idDigits.length === 10 && userPhoneDigits === idDigits)
-    );
-  });
+  const candidates = db.users.filter(u => matchesUserIdentifier(u, identifier));
 
-  if (!user) {
+  if (candidates.length === 0) {
     return res.status(404).json({
       success: false,
       message: 'इस आईडी या नंबर से कोई खाता नहीं मिला।'
     });
   }
 
-  const userPhoneDigits = (user.phone || '').replace(/\D/g, '').slice(-10);
-  const isPhoneMatch = verifyDigits.length === 10 && userPhoneDigits === verifyDigits;
-  const isExactPhoneMatch = (user.phone || '').trim().toLowerCase() === cleanVerify;
-  const isEmailMatch = (user.email || '').trim().toLowerCase() === cleanVerify;
+  const verifiedUser = candidates.find(u => {
+    const userPhoneDigits = normalizePhoneDigits(u.phone || '');
+    const isPhoneMatch = verifyDigits.length === 10 && userPhoneDigits === verifyDigits;
+    const isExactPhoneMatch = (u.phone || '').trim().toLowerCase() === cleanVerify;
+    const isEmailMatch = (u.email || '').trim().toLowerCase() === cleanVerify;
+    return isPhoneMatch || isExactPhoneMatch || isEmailMatch;
+  });
 
-  if (!isPhoneMatch && !isExactPhoneMatch && !isEmailMatch) {
+  if (!verifiedUser) {
     return res.status(403).json({
       success: false,
       message: 'वेरिफिकेशन असफल! दर्ज किया गया मोबाइल नंबर या ईमेल इस खाते से मेल नहीं खाता।'
     });
   }
 
-  user.password = String(newPassword).trim();
-  if (!user.editHistory) user.editHistory = [];
-  user.editHistory.unshift({
+  verifiedUser.password = String(newPassword).trim();
+  if (!verifiedUser.editHistory) verifiedUser.editHistory = [];
+  verifiedUser.editHistory.unshift({
     date: new Date().toISOString(),
     field: 'password',
     oldValue: '********',
@@ -1479,18 +1875,18 @@ app.post('/api/auth/forget-password', (req, res) => {
 
   res.json({
     success: true,
-    userId: user.userId,
-    fullName: user.fullName,
+    userId: verifiedUser.userId,
+    fullName: verifiedUser.fullName,
     message: 'पासवर्ड सफलतापूर्वक अपडेट हो गया! अब आप नए पासवर्ड से लॉगिन कर सकते हैं।'
   });
 });
 
-// 5.1 Multi-Device Session Verification (Keep profile & updates synced across all devices)
+// 5.1 Multi-Device Session Verification (Keep profile & updates synced across all devices, never false-logout on restart)
 app.get('/api/auth/verify-session', (req, res) => {
-  const sessionToken = (req.headers['x-session-token'] as string) || (req.query.token as string);
-  const userId = (req.query.userId as string || '').toLowerCase().trim();
+  const sessionToken = ((req.headers['x-session-token'] as string) || (req.query.token as string) || '').trim();
+  const userId = ((req.query.userId as string) || '').toLowerCase().trim();
 
-  let user = null;
+  let user: UserProfile | undefined;
   if (userId) {
     user = db.users.find(u => u.userId.toLowerCase() === userId);
   }
@@ -1502,25 +1898,31 @@ app.get('/api/auth/verify-session', (req, res) => {
     return res.status(404).json({ 
       success: false, 
       valid: false, 
-      sessionTerminated: true, 
-      message: 'Account not found or session expired.' 
+      accountMissing: true,
+      sessionTerminated: false, 
+      message: 'Account not found on current server instance.' 
     });
   }
 
   if (!user.activeSessions) user.activeSessions = [];
+  if (!Array.isArray(user.terminatedTokens)) user.terminatedTokens = [];
 
-  const currentSession = user.activeSessions.find(s => s.token === sessionToken);
-  if (sessionToken && !currentSession) {
-    // This session was terminated / logged out remotely from another device!
+  if (sessionToken && user.terminatedTokens.includes(sessionToken)) {
+    // Explicitly revoked from another device
     return res.json({
       success: false,
       valid: false,
       sessionTerminated: true,
-      message: 'This device has been logged out remotely from another device.',
+      message: 'आपका यह डिवाइस किसी अन्य डिवाइस से रिमोटली लॉगआउट कर दिया गया है।',
     });
   }
 
-  if (currentSession) {
+  const currentSession = sessionToken ? user.activeSessions.find(s => s.token === sessionToken) : undefined;
+  if (sessionToken && !currentSession) {
+    // Gracefully re-attach valid session after server restart / DB re-sync instead of auto-logging out
+    createSessionForUser(user, req, sessionToken);
+    saveDatabase(db);
+  } else if (currentSession) {
     currentSession.lastActive = new Date().toISOString();
     saveDatabase(db);
   }
@@ -1528,6 +1930,7 @@ app.get('/api/auth/verify-session', (req, res) => {
   res.json({
     success: true,
     valid: true,
+    sessionToken: sessionToken || undefined,
     user: {
       ...user,
       activeSessions: user.activeSessions.map(s => ({
@@ -1600,11 +2003,23 @@ app.post('/api/user/:userId/terminate-session', (req, res) => {
   }
 
   if (!user.activeSessions) user.activeSessions = [];
+  if (!Array.isArray(user.terminatedTokens)) user.terminatedTokens = [];
 
+  const removedTokens: string[] = [];
   if (terminateAllOthers && currentSessionToken) {
+    for (const s of user.activeSessions) {
+      if (s.token !== currentSessionToken && s.token) removedTokens.push(s.token);
+    }
     user.activeSessions = user.activeSessions.filter(s => s.token === currentSessionToken);
   } else if (sessionId) {
+    for (const s of user.activeSessions) {
+      if (s.sessionId === sessionId && s.token) removedTokens.push(s.token);
+    }
     user.activeSessions = user.activeSessions.filter(s => s.sessionId !== sessionId);
+  }
+
+  if (removedTokens.length > 0) {
+    user.terminatedTokens = Array.from(new Set([...removedTokens, ...user.terminatedTokens])).slice(0, 50);
   }
 
   saveDatabase(db);
@@ -1636,26 +2051,62 @@ app.put('/api/user/:userId', (req, res) => {
 
   const { 
     fullName, 
+    username,
     phone, 
     email, 
     avatar, 
+    coverPhoto,
     bio, 
     gender, 
+    location,
     fullAddress, 
     paymentAddress, 
     payoutUpiId, 
     password, 
-    privacySettings 
+    privacySettings,
+    accountType
   } = req.body;
 
-  if (fullName !== undefined && fullName.trim() && fullName !== user.fullName) {
-    user.editHistory.push({
-      date: now,
-      field: 'fullName',
-      oldValue: user.fullName || '',
-      newValue: fullName.trim(),
-    });
-    user.fullName = fullName.trim();
+  if (username !== undefined) {
+    const cleanUsername = normalizeUsername(username);
+    if (cleanUsername) {
+      if (!isValidUsernameFormat(cleanUsername)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_USERNAME',
+          message: 'यूनिक ID/यूज़रनेम में कोई Symbol (_ - . @) उपयोग न करें — केवल 3 से 24 अक्षर (a-z और 0-9) इस्तेमाल करें।',
+        });
+      }
+      if (isUsernameTaken(db.users, cleanUsername, user.userId)) {
+        return res.status(409).json({
+          success: false,
+          code: 'USERNAME_TAKEN',
+          message: `यूजरनेम "@${cleanUsername}" पहले से किसी दूसरे यूजर के पास है! एक ही यूजरनेम से 2 लोग नहीं हो सकते।`,
+        });
+      }
+      if (cleanUsername !== (user.username || '')) {
+        user.editHistory.push({
+          date: now,
+          field: 'username',
+          oldValue: user.username || '',
+          newValue: cleanUsername,
+        });
+        user.username = cleanUsername;
+      }
+    }
+  }
+
+  if (fullName !== undefined && fullName.trim()) {
+    const cleanUpdatedName = fullName.trim().replace(/\s+/g, ' ');
+    if (cleanUpdatedName !== user.fullName) {
+      user.editHistory.push({
+        date: now,
+        field: 'fullName',
+        oldValue: user.fullName || '',
+        newValue: cleanUpdatedName,
+      });
+      user.fullName = cleanUpdatedName;
+    }
   }
 
   if (phone !== undefined && phone.trim() && phone !== user.phone) {
@@ -1688,6 +2139,16 @@ app.put('/api/user/:userId', (req, res) => {
     user.avatar = avatar;
   }
 
+  if (coverPhoto !== undefined && coverPhoto !== user.coverPhoto) {
+    user.editHistory.push({
+      date: now,
+      field: 'coverPhoto',
+      oldValue: user.coverPhoto ? 'Custom Cover' : 'Default Cover',
+      newValue: coverPhoto ? 'Updated Cover Photo' : 'Removed',
+    });
+    user.coverPhoto = coverPhoto;
+  }
+
   if (bio !== undefined && bio !== user.bio) {
     user.editHistory.push({
       date: now,
@@ -1706,6 +2167,16 @@ app.put('/api/user/:userId', (req, res) => {
       newValue: gender,
     });
     user.gender = gender;
+  }
+
+  if (location !== undefined && location !== user.location) {
+    user.editHistory.push({
+      date: now,
+      field: 'location',
+      oldValue: user.location || '',
+      newValue: String(location).trim().slice(0, 80),
+    });
+    user.location = String(location).trim().slice(0, 80);
   }
 
   if (fullAddress !== undefined && fullAddress !== user.fullAddress) {
@@ -1756,6 +2227,22 @@ app.put('/api/user/:userId', (req, res) => {
     };
   }
 
+  if (accountType === 'business' || accountType === 'gamer') {
+    if (user.accountType !== accountType) {
+      user.editHistory.push({
+        date: now,
+        field: 'accountType',
+        oldValue: user.accountType || 'business',
+        newValue: accountType,
+      });
+    }
+    user.accountType = accountType;
+  }
+
+  if (fullName !== undefined || bio !== undefined || avatar !== undefined || coverPhoto !== undefined || username !== undefined || accountType !== undefined) {
+    incrementUserTaskProgress(user, 'profile_completed', 1);
+  }
+
   const sessionToken = req.headers['x-session-token'] as string;
   saveDatabase(db);
   const userToSend = {
@@ -1796,8 +2283,8 @@ app.post('/api/user/:userId/withdraw', (req, res) => {
     return res.status(400).json({ success: false, message: `Insufficient balance. Available: ₹${user.balance}` });
   }
 
+  // Hold requested funds in escrow (balance deducted); totalWithdrawn increases ONLY when Admin approves payout
   user.balance -= withdrawAmount;
-  user.totalWithdrawn += withdrawAmount;
 
   const payoutReq: PayoutRequest = {
     id: `po-${Date.now()}`,
@@ -1879,6 +2366,9 @@ app.get('/api/admin/overview', (req, res) => {
     return res.status(401).json({ success: false, message: 'Invalid Admin Security Key' });
   }
 
+  getOrCreateRooms(db);
+  saveDatabase(db);
+
   const totalUsers = db.users.length;
   const activeUsers = db.users.filter(u => u.status === 'active').length;
   const pendingUsers = db.users.filter(u => u.status === 'pending').length;
@@ -1886,6 +2376,8 @@ app.get('/api/admin/overview', (req, res) => {
   const totalVolume = db.users.filter(u => u.status === 'active').reduce((acc, u) => acc + (u.joiningFee || 0), 0);
   const totalPaidOut = db.payouts.filter(p => p.status === 'approved').reduce((acc, p) => acc + p.amount, 0);
   const pendingPayouts = db.payouts.filter(p => p.status === 'pending');
+
+  const pendingCoinRechargesCount = (db.coinRecharges || []).filter(r => r.status === 'pending').length;
 
   res.json({
     success: true,
@@ -1897,11 +2389,15 @@ app.get('/api/admin/overview', (req, res) => {
       totalVolume,
       totalPaidOut,
       pendingPayoutsCount: pendingPayouts.length,
+      pendingCoinRechargesCount,
       totalReferrals: db.referrals.length,
       activeServicesCount: db.services.filter(s => s.active).length,
     },
     users: db.users.slice().reverse(),
     payouts: db.payouts.slice().reverse(),
+    coinRecharges: (db.coinRecharges || []).slice(),
+    contactMessages: (db.contactMessages || []).slice(),
+    adminNotifications: (db.notifications || []).filter(n => n.userId === 'EMO-MOM-MMO').slice(0, 50),
     services: db.services,
     settings: db.settings,
   });
@@ -1958,22 +2454,6 @@ app.post('/api/admin/users/:userId/status', (req, res) => {
       user.swiAppLink = db.settings.swiSpecialAppLink;
       user.swiAppSharedAt = new Date().toISOString();
       user.swiAppNote = 'वेरिफिकेशन पूरा होने पर आपका 3.3% स्पेशल रिचार्ज ऐप लिंक सक्रिय कर दिया गया है।';
-    }
-    
-    // Give sustainable welcome bonus if not given (₹2 on ₹10 plan, ₹10 on ₹50+ plans)
-    if (user.accountType !== 'gamer' && user.balance === 0 && !db.transactions.some(t => t.userId === user.userId && t.type === 'signup_bonus')) {
-      const welcomeCash = (user.joiningFee || 0) >= 50 ? 10 : 2;
-      user.balance += welcomeCash;
-      user.totalEarnings += welcomeCash;
-      db.transactions.push({
-        id: `tx-${Date.now()}-wb`,
-        userId: user.userId,
-        amount: welcomeCash,
-        type: 'signup_bonus',
-        description: `ESP Welcome Joining Credit (₹${welcomeCash} Account Approved)`,
-        date: new Date().toISOString(),
-        status: 'completed',
-      });
     }
 
     // Credit Level-1 sponsor commission & Multi-Level upline distribution (EMO Fast, OES, MMS)
@@ -2271,15 +2751,35 @@ app.post('/api/admin/payouts/:payoutId/approve', (req, res) => {
     return res.status(404).json({ success: false, message: 'Payout request not found' });
   }
 
+  if (payout.status !== 'pending') {
+    return res.status(400).json({ success: false, message: `Payout already processed (${payout.status})` });
+  }
+
+  const cleanRef = String(transactionRef || '').trim();
+  if (cleanRef.length < 4) {
+    return res.status(400).json({ success: false, message: 'कृपया वैध Bank / UPI Transaction UTR Ref दर्ज करें' });
+  }
+
   payout.status = 'approved';
   payout.processedDate = new Date().toISOString().split('T')[0];
-  payout.transactionRef = transactionRef || `UPI_${Date.now()}`;
+  payout.transactionRef = cleanRef;
+
+  const user = db.users.find(u => u.userId.toLowerCase() === payout.userId.toLowerCase());
+  if (user) {
+    user.totalWithdrawn = (user.totalWithdrawn || 0) + payout.amount;
+  }
+
+  const linkedTx = db.transactions.find(t => t.referenceId === payout.id);
+  if (linkedTx) {
+    linkedTx.status = 'completed';
+    linkedTx.description = `UPI Payout Paid to ${payout.payoutAddress} (UTR: ${cleanRef})`;
+  }
 
   db.notifications.push({
     id: `notif-${Date.now()}-po-appr`,
     userId: payout.userId,
     title: '💰 Payout Sent Successfully!',
-    message: `₹${payout.amount} has been paid to your UPI ID ${payout.payoutAddress}. UTR: ${payout.transactionRef}`,
+    message: `₹${payout.amount} has been paid to your UPI ID ${payout.payoutAddress}. UTR: ${cleanRef}`,
     date: new Date().toISOString(),
     read: false,
     type: 'withdrawal',
@@ -2287,6 +2787,63 @@ app.post('/api/admin/payouts/:payoutId/approve', (req, res) => {
 
   saveDatabase(db);
   res.json({ success: true, message: 'Payout approved and marked completed', payout });
+});
+
+app.post('/api/admin/payouts/:payoutId/reject', (req, res) => {
+  const { payoutId } = req.params;
+  const { reason, adminPassword } = req.body;
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  const payout = db.payouts.find(p => p.id === payoutId);
+  if (!payout) {
+    return res.status(404).json({ success: false, message: 'Payout request not found' });
+  }
+
+  if (payout.status !== 'pending') {
+    return res.status(400).json({ success: false, message: `Payout already processed (${payout.status})` });
+  }
+
+  const rejectReason = String(reason || 'अमान्य UPI विवरण / भुगतान अस्वीकृत').trim();
+  payout.status = 'rejected';
+  payout.processedDate = new Date().toISOString().split('T')[0];
+  payout.transactionRef = rejectReason;
+
+  const user = db.users.find(u => u.userId.toLowerCase() === payout.userId.toLowerCase());
+  if (user) {
+    user.balance = (user.balance || 0) + payout.amount;
+  }
+
+  const linkedTx = db.transactions.find(t => t.referenceId === payout.id);
+  if (linkedTx) {
+    linkedTx.status = 'failed';
+    linkedTx.description = `Withdrawal Rejected & Refunded (${rejectReason})`;
+  }
+
+  db.transactions.unshift({
+    id: `tx-refund-${Date.now()}`,
+    userId: payout.userId,
+    amount: payout.amount,
+    type: 'payout_refund',
+    description: `Withdrawal Refund to Wallet (Payout #${payout.id}: ${rejectReason})`,
+    date: new Date().toISOString(),
+    status: 'completed',
+    referenceId: payout.id,
+  });
+
+  db.notifications.push({
+    id: `notif-${Date.now()}-po-rej`,
+    userId: payout.userId,
+    title: '↩️ Withdrawal Rejected & Refunded',
+    message: `₹${payout.amount} का निकासी अनुरोध अस्वीकृत हुआ (${rejectReason})। पूरी राशि आपके वॉलेट बैलेंस में वापस जोड़ दी गई है।`,
+    date: new Date().toISOString(),
+    read: false,
+    type: 'withdrawal',
+  });
+
+  saveDatabase(db);
+  res.json({ success: true, message: 'Payout rejected and balance refunded to user wallet', payout });
 });
 
 // ==========================================
@@ -2322,6 +2879,12 @@ app.post('/api/moments', (req, res) => {
 
     if (!db.moments) db.moments = [];
     db.moments.unshift(newMoment);
+
+    const momentAuthor = db.users.find(u => u.userId === userId || u.id === userId);
+    if (momentAuthor) {
+      incrementUserTaskProgress(momentAuthor, 'moment_posted', 1);
+    }
+
     saveDatabase(db);
 
     res.json({ success: true, message: 'Moment posted successfully!', moment: newMoment });
@@ -2402,7 +2965,12 @@ app.post('/api/moments/:id/share', (req, res) => {
 // ==========================================
 app.get('/api/chat/rooms', (_req, res) => {
   if (!db.chatRooms) db.chatRooms = DEFAULT_CHAT_ROOMS;
-  res.json({ success: true, rooms: db.chatRooms });
+  const realMemberTotal = db.users.length;
+  const roomsWithRealCount = db.chatRooms.map(r => ({
+    ...r,
+    membersCount: realMemberTotal,
+  }));
+  res.json({ success: true, rooms: roomsWithRealCount });
 });
 
 app.post('/api/chat/rooms', (req, res) => {
@@ -2457,6 +3025,11 @@ app.post('/api/chat/messages', (req, res) => {
 
   if (!db.chatMessages) db.chatMessages = [];
   db.chatMessages.push(newMsg);
+
+  const senderUser = db.users.find(u => u.userId === senderId || u.id === senderId);
+  if (senderUser) {
+    incrementUserTaskProgress(senderUser, 'chat_sent', 1);
+  }
 
   // Update room last message
   const room = db.chatRooms.find(r => r.id === roomId);
@@ -2538,24 +3111,76 @@ app.post('/api/admin/user-audits', (req, res) => {
   res.json({ success: true, userAudits: audits });
 });
 
-// ===================== ESP GAMING ROOM BACKEND APIS =====================
+// ===================== ESP GAMING ROOM & REAL COIN ECONOMY APIS =====================
 
-// 1. Play Coin Game (Spin & Win, Lucky Dice, Coin Flip)
+// 1. Play Coin Game (Spin & Win, Lucky Dice, Coin Flip, or Wager Reservation for Direct Arcade Games)
 app.post('/api/game/play', (req, res) => {
   const { userId, gameName, betAmount, choice } = req.body;
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const bet = Math.max(10, Number(betAmount) || 10);
-  if ((user.coins || 0) < bet) {
-    return res.status(400).json({ success: false, message: 'सिक्के (Coins) कम हैं! कृपया रिचार्ज करें।' });
+  const bet = Math.max(10, Math.round(Number(betAmount) || 10));
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < bet) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: bet,
+      currentCoins: balanceBefore,
+      message: `सिक्के (Coins) कम हैं! खेलने के लिए ${bet} Coins चाहिए, आपके पास ${balanceBefore} हैं। कृपया कॉइन्स खरीदें या असली टास्क पूरे करें।`,
+    });
   }
 
-  // Deduct bet amount
-  user.coins = (user.coins || 0) - bet;
+  user.coins = balanceBefore - bet;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + bet;
+
+  const today = getTodayDateString();
+  if (!Array.isArray(user.daysPlayed)) user.daysPlayed = [];
+  if (!user.daysPlayed.includes(today)) user.daysPlayed.push(today);
+  user.totalDaysPlayed = user.daysPlayed.length;
+  user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
+
+  incrementUserTaskProgress(user, 'game_played', 1);
+
+  if (choice === 'direct') {
+    if (!db.activeGameWagers || typeof db.activeGameWagers !== 'object') {
+      db.activeGameWagers = {};
+    }
+    db.activeGameWagers[user.userId] = {
+      gameName: String(gameName || 'Arcade Game'),
+      bet,
+      createdAt: new Date().toISOString(),
+    };
+
+    user.gameXp = (user.gameXp || 0) + 10;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+
+    logCoinTransaction(db, user, {
+      type: 'debit',
+      category: 'game_bet',
+      categoryLabel: String(gameName || 'Arcade Game'),
+      amount: bet,
+      balanceBefore,
+      balanceAfter: user.coins,
+      description: `${gameName || 'Arcade Game'} एंट्री बेट: -${bet} कॉइन्स`,
+    });
+
+    saveDatabase(db);
+    return res.json({
+      success: true,
+      result: 'wager_placed',
+      betAmount: bet,
+      winAmount: 0,
+      netChange: -bet,
+      newBalance: user.coins,
+      gameXp: user.gameXp,
+      gameLevel: user.gameLevel,
+      message: `${bet} कॉइन्स का बेट कन्फर्म हुआ। अब गेम खेलें!`,
+      user,
+    });
+  }
 
   let isWin = false;
   let multiplier = 0;
@@ -2565,7 +3190,6 @@ app.post('/api/game/play', (req, res) => {
   let coinResult: 'heads' | 'tails' = 'heads';
 
   if (gameName === 'Spin & Win') {
-    // 8 segments: [0x, 2x, 0x, 5x, 1.5x, 0x, 3x, 10x]
     const segments = [0, 2, 0, 5, 1.5, 0, 3, 10];
     wheelSegment = Math.floor(Math.random() * segments.length);
     multiplier = segments[wheelSegment];
@@ -2584,44 +3208,67 @@ app.post('/api/game/play', (req, res) => {
     } else if (choice === 'high' && sum >= 8 && sum <= 12) {
       isWin = true;
       multiplier = 2;
-    } else {
-      isWin = false;
-      multiplier = 0;
     }
   } else if (gameName === 'Coin Flip') {
     coinResult = Math.random() < 0.5 ? 'heads' : 'tails';
     if (choice === coinResult) {
       isWin = true;
       multiplier = 2;
-    } else {
-      isWin = false;
-      multiplier = 0;
     }
   }
 
   const winCoins = Math.round(bet * multiplier);
-  if (isWin) {
+  if (isWin && winCoins > 0) {
     user.coins = (user.coins || 0) + winCoins;
+    user.totalGamesWon = (user.totalGamesWon || 0) + 1;
+    user.totalCoinsWon = (user.totalCoinsWon || 0) + winCoins;
     gameOutcomeMessage = `बधाई हो! आप ${winCoins} सिक्के जीत गए! 🎉`;
   } else {
+    user.totalGamesLost = (user.totalGamesLost || 0) + 1;
     gameOutcomeMessage = `अफसोस! इस बार चूक गए (-${bet} Coins)। अगली बार प्रयास करें!`;
   }
 
+  const vipCfg = getVipConfig(user.vipTier);
+  const xpGain = Math.round((isWin ? 25 : 10) * (vipCfg?.bonusXpMultiplier || 1));
+  user.gameXp = (user.gameXp || 0) + xpGain;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
 
-  // Add Game XP & calculate level
-  user.gameXp = (user.gameXp || 0) + 25;
-  const newLevel = Math.min(50, Math.floor(user.gameXp / 150) + 1);
-  user.gameLevel = newLevel;
+  const netChange = winCoins - bet;
+  if (netChange !== 0) {
+    logCoinTransaction(db, user, {
+      type: netChange >= 0 ? 'credit' : 'debit',
+      category: netChange >= 0 ? 'game_win' : 'game_bet',
+      categoryLabel: String(gameName || 'Coin Game'),
+      amount: Math.abs(netChange),
+      balanceBefore,
+      balanceAfter: user.coins,
+      description: `${gameName}: बेट ${bet}, जीत ${winCoins} (${netChange > 0 ? '+' : ''}${netChange} कॉइन्स)`,
+    });
+  }
+
+  if (!Array.isArray(db.gamePlayHistory)) db.gamePlayHistory = [];
+  db.gamePlayHistory.unshift({
+    id: `GP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    userId: user.userId,
+    userName: user.fullName,
+    gameId: String(gameName || 'coin-game').toLowerCase().replace(/\s+/g, '-'),
+    gameName: String(gameName || 'Coin Game'),
+    betCoins: bet,
+    wonCoins: winCoins,
+    netChange,
+    result: isWin ? 'win' : 'loss',
+    durationSeconds: 15,
+    playedAt: new Date().toISOString(),
+  });
 
   saveDatabase(db);
-
   res.json({
     success: true,
     result: isWin ? 'win' : 'loss',
     multiplier,
     betAmount: bet,
     winAmount: winCoins,
-    netChange: winCoins - bet,
+    netChange,
     newBalance: user.coins,
     gameXp: user.gameXp,
     gameLevel: user.gameLevel,
@@ -2629,94 +3276,123 @@ app.post('/api/game/play', (req, res) => {
     diceValues,
     wheelSegment,
     coinResult,
-    user
+    user,
   });
 });
 
-// 2. Buy / Recharge Coins (Real UPI Payment with Admin Approval)
+// 2. Buy / Recharge Coins (Real 12-Digit Unique UPI UTR with Admin Approval)
 app.post('/api/game/recharge', (req, res) => {
   const { userId, packId, coins, bonusCoins, amount, paymentUtr, paymentScreenshot } = req.body;
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const utr = (paymentUtr || '').trim().toUpperCase();
-  if (!utr || utr.length < 6 || utr === 'INSTANT' || utr === 'INSTANT_MOBI') {
+  const utr = String(paymentUtr || '').replace(/\s+/g, '').toUpperCase();
+  if (!/^\d{12}$/.test(utr)) {
     return res.status(400).json({
       success: false,
-      message: 'कृपया PhonePe, Google Pay या Paytm से पेमेंट करने के बाद सही 12-अंकों का UPI UTR / Transaction No दर्ज करें।'
+      message: 'कृपया PhonePe, Google Pay या Paytm से भुगतान के बाद सही 12-अंकों का संख्यात्मक UPI UTR नंबर दर्ज करें।',
+    });
+  }
+
+  const cleanScreenshot = typeof paymentScreenshot === 'string' ? paymentScreenshot.trim() : '';
+  if (!cleanScreenshot || cleanScreenshot.length < 20) {
+    return res.status(400).json({
+      success: false,
+      message: 'कृपया UPI भुगतान के बाद पेमेंट स्क्रीनशॉट (Payment Screenshot) जरूर अपलोड करें।',
     });
   }
 
   if (!db.coinRecharges) db.coinRecharges = [];
-  const duplicate = db.coinRecharges.find(r => r.paymentUtr === utr && r.status === 'pending');
+  const duplicate = db.coinRecharges.find(
+    r => r.paymentUtr === utr && (r.status === 'pending' || r.status === 'approved')
+  );
   if (duplicate) {
     return res.status(400).json({
       success: false,
-      message: `यह UTR नंबर (${utr}) पहले से ही सत्यापन के लिए पेंडिंग है। कृपया एडमिन अप्रूवल की प्रतीक्षा करें।`
+      message: `यह UTR नंबर (${utr}) पहले से ही सिस्टम में दर्ज है। कृपया नया/असली भुगतान UTR दर्ज करें।`,
     });
   }
 
-  const baseCoins = Number(coins) || 100;
-  const bonus = Number(bonusCoins) || 0;
-  const payAmount = Number(amount) || 10;
+  const matchedPack = packId ? COIN_RECHARGE_PACKS.find(p => p.id === packId) : undefined;
+  const payAmount = matchedPack ? matchedPack.amount : Math.max(10, Math.round(Number(amount) || 10));
+  const baseCoins = matchedPack ? matchedPack.coins : payAmount * 10;
+  const bonus = matchedPack ? matchedPack.bonus : 0;
 
   const newRechargeOrder: CoinRechargeRequest = {
     id: `cr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     userId: user.userId,
     userName: user.fullName,
     userPhone: user.phone,
-    packId: packId || 'pack-custom',
+    packId: matchedPack ? matchedPack.id : (packId || 'pack-custom'),
     coins: baseCoins,
     bonusCoins: bonus,
     amount: payAmount,
     paymentUtr: utr,
-    paymentScreenshot: paymentScreenshot || '',
-    status: 'pending', // Awaiting Admin verification! Coins are NOT added until admin approves!
+    paymentScreenshot: cleanScreenshot,
+    status: 'pending',
     createdAt: new Date().toISOString(),
   };
 
   db.coinRecharges.unshift(newRechargeOrder);
 
-  // Add pending transaction record
   db.transactions.unshift({
     id: `tx-recharge-${Date.now()}`,
     userId: user.userId,
     amount: payAmount,
-    type: 'signup_bonus',
+    type: 'recharge_order',
     description: `Coins Recharge Order: ${baseCoins + bonus} Coins (UTR: ${utr})`,
     date: new Date().toISOString(),
     status: 'pending',
     referenceId: newRechargeOrder.id,
   });
 
-  // User notification
   db.notifications.unshift({
     id: `notif-cr-${Date.now()}`,
     userId: user.userId,
     title: '⏳ कॉइन रिचार्ज अनुरोध पेंडिंग',
-    message: `₹${payAmount} का पेमेंट UTR (${utr}) सत्यापन के लिए प्राप्त हुआ। एडमिन पुष्टि के बाद आपके प्रोफाइल में +${baseCoins + bonus} सिक्के जोड़ दिए जाएंगे।`,
+    message: `₹${payAmount} का पेमेंट UTR (${utr}) व स्क्रीनशॉट सत्यापन के लिए प्राप्त हुआ। एडमिन पुष्टि के बाद आपके वॉलेट में +${baseCoins + bonus} सिक्के जुड़ेंगे।`,
     date: new Date().toISOString(),
     read: false,
     type: 'payment',
   });
 
+  db.notifications.unshift({
+    id: `notif-admin-cr-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    userId: 'EMO-MOM-MMO',
+    title: `🪙 नया कॉइन खरीद अनुरोध: ₹${payAmount} (+${baseCoins + bonus} Coins)`,
+    message: `${user.fullName} (${user.userId}) ने ₹${payAmount} भुगतान कर ${baseCoins + bonus} कॉइन्स का अनुरोध भेजा है। 12-अंक UTR: ${utr} (पेमेंट स्क्रीनशॉट संलग्न है)।`,
+    date: new Date().toISOString(),
+    read: false,
+    type: 'payment',
+  });
+
+  if (!Array.isArray(db.contactMessages)) db.contactMessages = [];
+  db.contactMessages.unshift({
+    id: `CNT-CR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    name: user.fullName,
+    email: user.email || `${user.userId.toLowerCase()}@esp.local`,
+    phone: user.phone,
+    subject: `🪙 Coin Buy Request: ₹${payAmount} (+${baseCoins + bonus} Coins) | UTR: ${utr}`,
+    message: `यूजर ${user.fullName} (ID: ${user.userId}${user.username ? `, @${user.username}` : ''}) ने ₹${payAmount} भुगतान कर ${baseCoins + bonus} कॉइन्स के लिए अनुरोध भेजा है। 12-अंक UTR: ${utr} • पेमेंट स्क्रीनशॉट कॉइन रिचार्ज टैब में देखें।`,
+    createdAt: new Date().toISOString(),
+    status: 'unread',
+  });
+
   saveDatabase(db);
   res.json({
     success: true,
-    message: `पेमेंट UTR (${utr}) सफलतापूर्वक सबमिट हुआ! एडमिन सत्यापन के बाद +${baseCoins + bonus} सिक्के जुड़ेंगे।`,
+    message: `पेमेंट UTR (${utr}) व स्क्रीनशॉट सबमिट हुआ! एडमिन सत्यापन के बाद +${baseCoins + bonus} सिक्के जुड़ेंगे।`,
     order: newRechargeOrder,
     coins: user.coins,
-    user
+    user,
   });
 });
 
 // User's own coin recharge history
 app.get('/api/game/user-recharges/:userId', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
   const recharges = (db.coinRecharges || []).filter(r => r.userId.toLowerCase() === userId.toLowerCase());
   res.json({ success: true, recharges });
 });
@@ -2727,8 +3403,6 @@ app.post('/api/admin/coin-recharges', (req, res) => {
   if (!verifyAdmin(adminPassword)) {
     return res.status(401).json({ success: false, message: 'Unauthorized Admin' });
   }
-
-  const db = loadDatabase();
   res.json({
     success: true,
     coinRecharges: (db.coinRecharges || []).slice(),
@@ -2743,13 +3417,11 @@ app.post('/api/admin/coin-recharges/:id/approve', (req, res) => {
   }
 
   const { id } = req.params;
-  const db = loadDatabase();
   if (!db.coinRecharges) db.coinRecharges = [];
   const order = db.coinRecharges.find(r => r.id === id);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Recharge order not found' });
   }
-
   if (order.status === 'approved') {
     return res.status(400).json({ success: false, message: 'This recharge order is already approved' });
   }
@@ -2759,24 +3431,33 @@ app.post('/api/admin/coin-recharges/:id/approve', (req, res) => {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const totalCoinsToAdd = order.coins + order.bonusCoins;
-  user.coins = (user.coins || 0) + totalCoinsToAdd;
+  const totalCoinsToAdd = (order.coins || 0) + (order.bonusCoins || 0);
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + totalCoinsToAdd;
 
   order.status = 'approved';
   order.processedAt = new Date().toISOString();
 
-  // Update transaction status
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'recharge',
+    categoryLabel: 'UPI कॉइन रिचार्ज',
+    amount: totalCoinsToAdd,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `₹${order.amount} रिचार्ज स्वीकृत (UTR: ${order.paymentUtr}): +${totalCoinsToAdd} कॉइन्स`,
+  });
+
   const tx = db.transactions.find(t => t.referenceId === order.id);
   if (tx) {
     tx.status = 'completed';
   }
 
-  // Send approval notification
   db.notifications.unshift({
     id: `notif-cr-ok-${Date.now()}`,
     userId: user.userId,
     title: '🎉 कॉइन रिचार्ज स्वीकृत!',
-    message: `बधाई हो! आपके ₹${order.amount} के रिचार्ज (UTR: ${order.paymentUtr}) को एडमिन द्वारा सत्यापित कर लिया गया है। आपके वॉलेट में +${totalCoinsToAdd} सिक्के जोड़ दिए गए हैं!`,
+    message: `आपके ₹${order.amount} के रिचार्ज (UTR: ${order.paymentUtr}) को एडमिन द्वारा सत्यापित कर लिया गया है। आपके वॉलेट में +${totalCoinsToAdd} सिक्के जुड़ गए हैं!`,
     date: new Date().toISOString(),
     read: false,
     type: 'payment',
@@ -2787,7 +3468,7 @@ app.post('/api/admin/coin-recharges/:id/approve', (req, res) => {
     success: true,
     message: `सफलतापूर्वक ${user.fullName} (${user.userId}) के खाते में +${totalCoinsToAdd} सिक्के जोड़े गए!`,
     order,
-    user
+    user,
   });
 });
 
@@ -2799,7 +3480,6 @@ app.post('/api/admin/coin-recharges/:id/reject', (req, res) => {
   }
 
   const { id } = req.params;
-  const db = loadDatabase();
   if (!db.coinRecharges) db.coinRecharges = [];
   const order = db.coinRecharges.find(r => r.id === id);
   if (!order) {
@@ -2810,7 +3490,6 @@ app.post('/api/admin/coin-recharges/:id/reject', (req, res) => {
   order.processedAt = new Date().toISOString();
   order.rejectionReason = reason || 'अमान्य UTR नंबर / पेमेंट प्राप्त नहीं हुआ';
 
-  // Update transaction status
   const tx = db.transactions.find(t => t.referenceId === order.id);
   if (tx) {
     tx.status = 'failed';
@@ -2820,7 +3499,7 @@ app.post('/api/admin/coin-recharges/:id/reject', (req, res) => {
     id: `notif-cr-no-${Date.now()}`,
     userId: order.userId,
     title: '❌ कॉइन रिचार्ज अस्वीकृत',
-    message: `आपके ₹${order.amount} के कॉइन रिचार्ज (UTR: ${order.paymentUtr}) को अस्वीकार कर दिया गया। कारण: ${order.rejectionReason}। कृपया सही पेमेंट विवरण के साथ पुनः प्रयास करें।`,
+    message: `आपके ₹${order.amount} के कॉइन रिचार्ज (UTR: ${order.paymentUtr}) को अस्वीकार कर दिया गया। कारण: ${order.rejectionReason}।`,
     date: new Date().toISOString(),
     read: false,
     type: 'payment',
@@ -2830,93 +3509,88 @@ app.post('/api/admin/coin-recharges/:id/reject', (req, res) => {
   res.json({ success: true, message: 'रिचार्ज अनुरोध अस्वीकृत किया गया', order });
 });
 
+// 3. Coin-to-Cash Conversion Disabled (Coins are strictly for VIP, Frames, Gifts & Games)
+app.post('/api/game/convert', (_req, res) => {
+  return res.status(403).json({
+    success: false,
+    code: 'CONVERSION_DISABLED',
+    message: 'कॉइन्स को नकद (Cash) में बदलने का सिस्टम बंद कर दिया गया है। कॉइन्स केवल VIP, फ्रेम, वॉइस गिफ्ट्स व इन-ऐप गेम्स के लिए उपयोग होते हैं।',
+  });
+});
 
-// 3. Convert Coins to Real Cash Balance (Instant UPI withdrawable)
-app.post('/api/game/convert', (req, res) => {
-  const { userId, coinsAmount } = req.body;
-  const db = loadDatabase();
+// Claim Live Game Win (Verified against server-recorded activeGameWagers)
+app.post('/api/game/claim-win', (req, res) => {
+  const { userId, gameName, winAmount } = req.body;
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const coinsToConvert = Number(coinsAmount) || 100;
-  if ((user.coins || 0) < coinsToConvert) {
-    return res.status(400).json({ success: false, message: 'सिक्के पर्याप्त नहीं हैं।' });
+  const wager = db.activeGameWagers?.[user.userId];
+  if (!wager) {
+    return res.status(400).json({
+      success: false,
+      message: 'इस जीत के लिए कोई सक्रिय कॉइन बेट (Wager) नहीं मिला। पहले कॉइन्स से मैच शुरू करें।',
+    });
   }
 
-  // Conversion rate: 100 coins = ₹10 cash balance
-  const cashAmount = Math.floor(coinsToConvert / 10);
-  user.coins = (user.coins || 0) - coinsToConvert;
-  user.balance = (user.balance || 0) + cashAmount;
+  const maxAllowedWin = wager.bet * 5;
+  const win = Math.min(Math.max(0, Math.round(Number(winAmount) || 0)), maxAllowedWin);
+  delete db.activeGameWagers![user.userId];
 
-  user.totalEarnings = (user.totalEarnings || 0) + cashAmount;
+  if (win > 0) {
+    const balanceBefore = user.coins || 0;
+    user.coins = balanceBefore + win;
+    user.totalCoinsWon = (user.totalCoinsWon || 0) + win;
+    user.totalGamesWon = (user.totalGamesWon || 0) + 1;
+    user.gameXp = (user.gameXp || 0) + Math.min(100, Math.max(10, Math.floor(win / 5)));
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
 
-  db.transactions.unshift({
-    id: `tx-convert-${Date.now()}`,
-    userId: user.userId,
-    amount: cashAmount,
-    type: 'promo_bonus',
-    description: `Coins Convert to Cash: ${coinsToConvert} Coins -> ₹${cashAmount}`,
-    date: new Date().toISOString(),
-    status: 'completed',
-  });
+    logCoinTransaction(db, user, {
+      type: 'credit',
+      category: 'game_win',
+      categoryLabel: String(gameName || wager.gameName),
+      amount: win,
+      balanceBefore,
+      balanceAfter: user.coins,
+      description: `${gameName || wager.gameName} जीत (बेट ${wager.bet}): +${win} कॉइन्स`,
+    });
+
+    if (!Array.isArray(db.gamePlayHistory)) db.gamePlayHistory = [];
+    db.gamePlayHistory.unshift({
+      id: `GP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      userId: user.userId,
+      userName: user.fullName,
+      gameId: String(gameName || wager.gameName).toLowerCase().replace(/\s+/g, '-'),
+      gameName: String(gameName || wager.gameName),
+      betCoins: wager.bet,
+      wonCoins: win,
+      netChange: win - wager.bet,
+      result: 'win',
+      durationSeconds: 30,
+      playedAt: new Date().toISOString(),
+    });
+  }
 
   saveDatabase(db);
   res.json({
     success: true,
-    message: `${coinsToConvert} Coins सफलतापूर्वक ₹${cashAmount} नकद वॉलेट में बदल दिए गए!`,
-    coins: user.coins,
-    balance: user.balance,
-    user
-  });
-});
-
-// Claim Live Game Win (Snake, Bingo, Oh My Card)
-app.post('/api/game/claim-win', (req, res) => {
-  const { userId, gameName, winAmount } = req.body;
-  const db = loadDatabase();
-  const user = db.users.find(u => u.userId === userId || u.id === userId);
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User not found' });
-  }
-
-  const win = Number(winAmount) || 0;
-  if (win > 0) {
-    user.coins = (user.coins || 0) + win;
-    user.gameXp = (user.gameXp || 0) + Math.floor(win / 5);
-    user.gameLevel = Math.max(1, Math.floor((user.gameXp || 0) / 100) + 1);
-
-    db.transactions.unshift({
-      id: `tx-win-${Date.now()}`,
-      userId: user.userId,
-      amount: win,
-      type: 'promo_bonus',
-      description: `Won in ${gameName}: +${win} Coins`,
-      date: new Date().toISOString(),
-      status: 'completed',
-    });
-    saveDatabase(db);
-  }
-
-  res.json({
-    success: true,
     currentCoins: user.coins,
     coins: user.coins,
-    user
+    gameXp: user.gameXp,
+    gameLevel: user.gameLevel,
+    user,
   });
 });
 
-// Daily Lucky Spin (Once every 24 hours, cost 50 coins)
+// Daily Lucky Spin (Once every 24 hours, strict 50 coins real fee, server-authoritative roll)
 app.post('/api/game/daily-lucky-spin', (req, res) => {
-  const { userId, targetSectorIndex } = req.body;
-  const db = loadDatabase();
+  const { userId } = req.body;
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  // 1. Check 24-hour cooldown
   const now = Date.now();
   if (user.lastDailySpin) {
     const lastSpinTime = new Date(user.lastDailySpin).getTime();
@@ -2935,59 +3609,67 @@ app.post('/api/game/daily-lucky-spin', (req, res) => {
     }
   }
 
-  // 2. Check 50 coins cost
   const SPIN_COST = 50;
-  if ((user.coins || 0) < SPIN_COST) {
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < SPIN_COST) {
     return res.status(400).json({
       success: false,
-      message: `स्पिन करने के लिए 50 कॉइन्स की आवश्यकता है। आपके पास केवल ${user.coins || 0} कॉइन्स हैं।`,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: SPIN_COST,
+      currentCoins: balanceBefore,
+      message: `स्पिन करने के लिए ${SPIN_COST} कॉइन्स आवश्यक हैं। आपके पास केवल ${balanceBefore} कॉइन्स हैं। कृपया कॉइन्स खरीदें या टास्क पूरे करें।`,
     });
   }
 
-  // Deduct 50 coins
-  user.coins = (user.coins || 0) - SPIN_COST;
+  user.coins = balanceBefore - SPIN_COST;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + SPIN_COST;
 
-  // 8 Sectors configuration
   const SECTORS = [
-    { id: 0, title: '100 Coins', label: '🪙 +100 Coins', type: 'coins', value: 100, charms: 0, xp: 20 },
-    { id: 1, title: '50 Charms', label: '✨ +50 Charms', type: 'charms', value: 0, charms: 50, xp: 30 },
-    { id: 2, title: '150 XP', label: '⚡ +150 XP', type: 'xp', value: 0, charms: 10, xp: 150 },
-    { id: 3, title: '300 Coins Jackpot', label: '👑 +300 Coins', type: 'coins', value: 300, charms: 50, xp: 100 },
-    { id: 4, title: 'Lucky Combo', label: '💎 50 Coins + 25 Charms', type: 'combo', value: 50, charms: 25, xp: 25 },
-    { id: 5, title: '250 XP Surge', label: '⚡ +250 XP', type: 'xp', value: 0, charms: 15, xp: 250 },
-    { id: 6, title: '500 Coins Super Jackpot', label: '🌟 +500 Coins', type: 'coins', value: 500, charms: 100, xp: 200 },
-    { id: 7, title: 'Mystery Gift', label: '🎁 80 Coins + 30 Charms', type: 'combo', value: 80, charms: 30, xp: 50 },
+    { id: 0, title: '100 Coins', label: '🪙 +100 Coins', type: 'coins', value: 100, charms: 0, xp: 20, weight: 0.25 },
+    { id: 1, title: '50 Charms', label: '✨ +50 Charms', type: 'charms', value: 0, charms: 50, xp: 30, weight: 0.20 },
+    { id: 2, title: '150 XP', label: '⚡ +150 XP', type: 'xp', value: 0, charms: 10, xp: 150, weight: 0.18 },
+    { id: 3, title: '300 Coins Jackpot', label: '👑 +300 Coins', type: 'coins', value: 300, charms: 50, xp: 100, weight: 0.04 },
+    { id: 4, title: 'Lucky Combo', label: '💎 50c + 25 Charms', type: 'combo', value: 50, charms: 25, xp: 25, weight: 0.14 },
+    { id: 5, title: '250 XP Surge', label: '⚡ +250 XP', type: 'xp', value: 0, charms: 15, xp: 250, weight: 0.11 },
+    { id: 6, title: '500 Coins Super Jackpot', label: '🌟 +500 Coins', type: 'coins', value: 500, charms: 100, xp: 200, weight: 0.02 },
+    { id: 7, title: 'Mystery Box', label: '🎁 80c + 30 Charms', type: 'combo', value: 80, charms: 30, xp: 50, weight: 0.06 },
   ];
 
-  // Pick sector if specified or random
-  let sectorIndex = typeof targetSectorIndex === 'number' && targetSectorIndex >= 0 && targetSectorIndex < 8
-    ? targetSectorIndex
-    : Math.floor(Math.random() * SECTORS.length);
-
+  let r = Math.random();
+  let sectorIndex = 0;
+  for (let i = 0; i < SECTORS.length; i++) {
+    r -= SECTORS[i].weight;
+    if (r <= 0) {
+      sectorIndex = i;
+      break;
+    }
+  }
   const reward = SECTORS[sectorIndex];
 
-  // Apply rewards
   user.coins = (user.coins || 0) + (reward.value || 0);
   user.charms = (user.charms || 0) + (reward.charms || 0);
   user.gameXp = (user.gameXp || 0) + (reward.xp || 0);
-  user.gameLevel = Math.max(1, Math.floor((user.gameXp || 0) / 100) + 1);
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
   user.lastDailySpin = new Date().toISOString();
+  incrementUserTaskProgress(user, 'game_played', 1);
 
-  db.transactions.unshift({
-    id: `tx-spin-${Date.now()}`,
-    userId: user.userId,
-    amount: (reward.value || 0) - SPIN_COST,
-    type: 'promo_bonus',
-    description: `Daily Lucky Spin: Paid 50 Coins, Won ${reward.label}`,
-    date: new Date().toISOString(),
-    status: 'completed',
-  });
+  const net = (reward.value || 0) - SPIN_COST;
+  if (net !== 0) {
+    logCoinTransaction(db, user, {
+      type: net >= 0 ? 'credit' : 'debit',
+      category: 'fortune_spin',
+      categoryLabel: 'डेली फॉर्च्यून स्पिन',
+      amount: Math.abs(net),
+      balanceBefore,
+      balanceAfter: user.coins,
+      description: `डेली स्पिन (शुल्क ${SPIN_COST} Coins) -> जीता ${reward.label}`,
+    });
+  }
 
   saveDatabase(db);
-
   res.json({
     success: true,
-    message: `बधाई हो! आपने जीता: ${reward.label}! 🎉`,
+    message: `स्पिन पूरा! आपको मिला: ${reward.label}! 🎉`,
     reward,
     sectorIndex,
     coins: user.coins,
@@ -2999,68 +3681,496 @@ app.post('/api/game/daily-lucky-spin', (req, res) => {
   });
 });
 
-// 4. Claim 7-Day Login Reward
-app.post('/api/game/claim-login', (req, res) => {
-  const { userId, day } = req.body;
-  const db = loadDatabase();
+// Helper: Build Daily Game Hub Payload
+function buildDailyHubPayload(user: UserProfile) {
+  const today = getTodayDateString();
+  const yesterday = getYesterdayDateString(today);
+  const intel = getDailyIntelForDate(today);
+  const fullQuiz = getDailyQuizForDate(today);
+  const spotlightGame = getSpotlightGameForDate(today);
+
+  const lastCheckIn = user.lastDailyCheckInDate || '';
+  const claimedToday = lastCheckIn === today;
+  const rawStreak = Number(user.loginStreak || 0);
+  const streakAtRisk = Boolean(lastCheckIn && lastCheckIn !== today && lastCheckIn !== yesterday && rawStreak > 0);
+  const effectiveStreak = claimedToday
+    ? rawStreak
+    : lastCheckIn === yesterday
+    ? rawStreak
+    : streakAtRisk
+    ? rawStreak
+    : 0;
+  const nextDayNumber = claimedToday
+    ? Math.max(1, ((effectiveStreak - 1) % 7) + 1)
+    : (effectiveStreak % 7) + 1;
+
+  const schedule = SEVEN_DAY_CHECKIN_REWARDS.map(item => {
+    const completedDaysInCycle = claimedToday
+      ? ((effectiveStreak - 1) % 7) + 1
+      : (effectiveStreak % 7);
+    const isClaimedInCycle = !streakAtRisk && item.day <= completedDaysInCycle;
+    const isToday = !claimedToday && item.day === nextDayNumber;
+    return {
+      ...item,
+      claimed: isClaimedInCycle,
+      isToday,
+    };
+  });
+
+  const playedToday = user.dailyFreeGameDate === today ? Number(user.dailyFreeGamesPlayed || 0) : 0;
+  const coinBoosterActive = Boolean(
+    user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+  );
+
+  const topDailyPlayers = [...db.users]
+    .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.coins || 0) - (a.coins || 0))
+    .slice(0, 5)
+    .map(u => ({
+      userId: u.userId,
+      fullName: u.fullName,
+      username: u.username,
+      avatar: u.avatar,
+      gameLevel: u.gameLevel || 1,
+      gameXp: u.gameXp || 0,
+      coins: u.coins || 0,
+      totalGamesWon: u.totalGamesWon || 0,
+    }));
+
+  return {
+    today,
+    intel,
+    quiz: {
+      id: fullQuiz.id,
+      topic: fullQuiz.topic,
+      question: fullQuiz.question,
+      options: fullQuiz.options,
+      coinReward: coinBoosterActive ? fullQuiz.coinReward * 2 : fullQuiz.coinReward,
+      xpReward: fullQuiz.xpReward,
+      alreadyAnswered: user.dailyQuizDate === today,
+    },
+    spotlightGame,
+    checkIn: {
+      canClaimToday: !claimedToday,
+      currentStreak: effectiveStreak,
+      nextDayNumber,
+      streakAtRisk,
+      streakShields: Number(user.streakShields || 0),
+      schedule,
+    },
+    freePlay: {
+      playedToday,
+      dailyLimit: FREE_SKILL_PLAY_DAILY_LIMIT,
+      remaining: Math.max(0, FREE_SKILL_PLAY_DAILY_LIMIT - playedToday),
+      coinBoosterActive,
+      coinBoosterUntil: coinBoosterActive ? user.coinBoosterUntil : null,
+    },
+    topDailyPlayers,
+  };
+}
+
+// 3A. GET Daily Fresh Hub (Rotating Knowledge Intel, Daily Quiz, 7-Day Streak, Free Play Cap, Leaderboard)
+app.get('/api/game/daily-hub/:userId', (req, res) => {
+  const uid = decodeURIComponent(req.params.userId || '').trim();
+  const user = db.users.find(u => u.userId.toLowerCase() === uid.toLowerCase() || u.id === uid);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  const hub = buildDailyHubPayload(user);
+  res.json({ success: true, hub, user });
+});
+
+// 3B. Claim Daily 7-Day Check-In Streak (+5c -> +50c Mega Chest, supports Streak Shield)
+app.post('/api/game/daily-checkin', (req, res) => {
+  const { userId, useShield } = req.body;
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const claimDay = Number(day) || 1;
-  if (!user.claimedDays) user.claimedDays = [];
-  if (user.claimedDays.includes(claimDay)) {
-    return res.status(400).json({ success: false, message: `दिन ${claimDay} का रिवॉर्ड पहले ही क्लेम किया जा चुका है!` });
+  const today = getTodayDateString();
+  const yesterday = getYesterdayDateString(today);
+  if (user.lastDailyCheckInDate === today) {
+    return res.status(400).json({
+      success: false,
+      message: 'आज का डेली चेक-इन रिवॉर्ड पहले ही क्लेम किया जा चुका है! कल फिर आएं।',
+    });
   }
 
-  const rewardCoinsMap: Record<number, number> = {
-    1: 50,
-    2: 100,
-    3: 150,
-    4: 200,
-    5: 350,
-    6: 500,
-    7: 1000,
-  };
+  let newStreak = 1;
+  let shieldConsumed = false;
+  const prevDate = user.lastDailyCheckInDate || '';
+  const prevStreak = Number(user.loginStreak || 0);
 
-  const rewardCoins = rewardCoinsMap[claimDay] || 50;
-  user.coins = (user.coins || 0) + rewardCoins;
-  user.claimedDays.push(claimDay);
-  user.loginStreak = Math.min(7, (user.loginStreak || 0) + 1);
-  user.lastLoginClaimDate = new Date().toISOString().slice(0, 10);
+  if (prevDate === yesterday) {
+    newStreak = prevStreak + 1;
+  } else if (prevDate && prevStreak > 0) {
+    // Missed at least one day
+    if (useShield && Number(user.streakShields || 0) > 0) {
+      user.streakShields = Number(user.streakShields || 0) - 1;
+      newStreak = prevStreak + 1;
+      shieldConsumed = true;
+    } else {
+      newStreak = 1;
+    }
+  }
+
+  const dayIndex = (newStreak - 1) % 7;
+  const rewardDef = SEVEN_DAY_CHECKIN_REWARDS[dayIndex];
+  const boosterActive = Boolean(
+    user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+  );
+  const vipCfg = getVipConfig(user.vipTier);
+  const coinsEarned = rewardDef.coins + (boosterActive ? 5 : 0);
+  const xpEarned = Math.round(rewardDef.xp * (vipCfg?.bonusXpMultiplier || 1) * (boosterActive ? 1.5 : 1));
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + coinsEarned;
+  user.gameXp = (user.gameXp || 0) + xpEarned;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.loginStreak = newStreak;
+  user.lastDailyCheckInDate = today;
+  if (!Array.isArray(user.daysPlayed)) user.daysPlayed = [];
+  if (!user.daysPlayed.includes(today)) user.daysPlayed.push(today);
+  user.totalDaysPlayed = user.daysPlayed.length;
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_checkin',
+    categoryLabel: `Day ${rewardDef.day} Check-In Streak`,
+    amount: coinsEarned,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `${rewardDef.label} (Streak #${newStreak}${shieldConsumed ? ' · 🛡️ Shield Used' : ''}): +${coinsEarned} कॉइन्स व +${xpEarned} EXP`,
+  });
 
   saveDatabase(db);
+  const hub = buildDailyHubPayload(user);
   res.json({
     success: true,
-    message: `दिन ${claimDay} का दैनिक पुरस्कार +${rewardCoins} Coins प्राप्त हुआ! 🎁`,
-    coins: user.coins,
-    claimedDays: user.claimedDays,
-    loginStreak: user.loginStreak,
-    user
+    message: `🎉 ${rewardDef.label} पूरा! +${coinsEarned} कॉइन्स और +${xpEarned} EXP मिले!${shieldConsumed ? ' (🛡️ स्ट्रीक शील्ड से स्ट्रीक सुरक्षित रही!)' : ''}`,
+    coinsEarned,
+    xpEarned,
+    newStreak,
+    shieldConsumed,
+    hub,
+    user,
   });
 });
 
-// 5. Send Room Gift (WePlay Voice Stage)
+// 3C. Answer Today's Fresh Knowledge Trivia Quiz (+10 Coins + 25 EXP, 2x with Booster)
+app.post('/api/game/daily-quiz', (req, res) => {
+  const { userId, selectedIndex } = req.body;
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const today = getTodayDateString();
+  if (user.dailyQuizDate === today) {
+    return res.status(400).json({
+      success: false,
+      message: 'आज का डेली नॉलेज क्विज़ पहले ही पूरा हो चुका है! कल नया सवाल मिलेगा।',
+    });
+  }
+
+  const quiz = getDailyQuizForDate(today);
+  const idx = Number(selectedIndex);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= quiz.options.length) {
+    return res.status(400).json({ success: false, message: 'कृपया एक मान्य विकल्प चुनें।' });
+  }
+
+  const isCorrect = idx === quiz.correctIndex;
+  const boosterActive = Boolean(
+    user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+  );
+  const vipCfg = getVipConfig(user.vipTier);
+
+  const baseCoins = isCorrect ? quiz.coinReward : 2; // Learning bonus even on attempt
+  const coinsEarned = boosterActive ? baseCoins * 2 : baseCoins;
+  const baseXp = isCorrect ? quiz.xpReward : 10;
+  const xpEarned = Math.round(baseXp * (vipCfg?.bonusXpMultiplier || 1) * (boosterActive ? 1.5 : 1));
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + coinsEarned;
+  user.gameXp = (user.gameXp || 0) + xpEarned;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.dailyQuizDate = today;
+  if (isCorrect) {
+    user.dailyQuizCorrectCount = (user.dailyQuizCorrectCount || 0) + 1;
+  }
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_quiz',
+    categoryLabel: isCorrect ? 'डेली क्विज़ सही जवाब' : 'डेली क्विज़ प्रयास बोनस',
+    amount: coinsEarned,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `${quiz.topic} — ${isCorrect ? 'सही जवाब!' : 'सीखने का बोनस'}: +${coinsEarned} कॉइन्स व +${xpEarned} EXP`,
+  });
+
+  saveDatabase(db);
+  const hub = buildDailyHubPayload(user);
+  res.json({
+    success: true,
+    isCorrect,
+    correctIndex: quiz.correctIndex,
+    explanation: quiz.explanation,
+    coinsEarned,
+    xpEarned,
+    message: isCorrect
+      ? `🧠 शानदार! सही जवाब — +${coinsEarned} कॉइन्स और +${xpEarned} EXP प्राप्त हुए!`
+      : `💡 ${quiz.explanation} (प्रयास बोनस: +${coinsEarned} कॉइन्स व +${xpEarned} EXP)`,
+    hub,
+    user,
+  });
+});
+
+// 3D. Free-to-Earn Skill Play (0-Coin players can play real matches & win Coins + EXP!)
+app.post('/api/game/skill-play', (req, res) => {
+  const { userId, gameName, outcome, score } = req.body;
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const today = getTodayDateString();
+  if (user.dailyFreeGameDate !== today) {
+    user.dailyFreeGameDate = today;
+    user.dailyFreeGamesPlayed = 0;
+  }
+
+  const playedSoFar = Number(user.dailyFreeGamesPlayed || 0);
+  const withinDailyRewardCap = playedSoFar < FREE_SKILL_PLAY_DAILY_LIMIT;
+
+  const isWin = outcome === 'win';
+  const spotlight = getSpotlightGameForDate(today);
+  const cleanGameKey = String(gameName || 'skill').toLowerCase().trim();
+  const isSpotlightMatch = spotlight.key === cleanGameKey;
+  const boosterActive = Boolean(
+    user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+  );
+  const vipCfg = getVipConfig(user.vipTier);
+
+  let coinsEarned = 0;
+  let xpEarned = 8;
+
+  if (withinDailyRewardCap) {
+    const baseCoins = isWin ? 10 : 3;
+    const spotlightBonus = isWin && isSpotlightMatch ? spotlight.extraCoins : 0;
+    coinsEarned = (baseCoins + spotlightBonus) * (boosterActive ? 2 : 1);
+    xpEarned = Math.round((isWin ? 25 : 10) * (isSpotlightMatch ? 1.5 : 1) * (vipCfg?.bonusXpMultiplier || 1) * (boosterActive ? 1.5 : 1));
+    user.dailyFreeGamesPlayed = playedSoFar + 1;
+  } else {
+    xpEarned = 5;
+  }
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + coinsEarned;
+  user.gameXp = (user.gameXp || 0) + xpEarned;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
+  if (isWin) {
+    user.totalGamesWon = (user.totalGamesWon || 0) + 1;
+    user.totalCoinsWon = (user.totalCoinsWon || 0) + coinsEarned;
+  }
+  if (!Array.isArray(user.daysPlayed)) user.daysPlayed = [];
+  if (!user.daysPlayed.includes(today)) user.daysPlayed.push(today);
+  user.totalDaysPlayed = user.daysPlayed.length;
+  incrementUserTaskProgress(user, 'game_played', 1);
+
+  if (coinsEarned > 0) {
+    logCoinTransaction(db, user, {
+      type: 'credit',
+      category: 'skill_game_reward',
+      categoryLabel: `${String(gameName || 'Skill Match')} (Free Earn)`,
+      amount: coinsEarned,
+      balanceBefore,
+      balanceAfter: user.coins,
+      description: `${String(gameName || 'Skill Game')} ${isWin ? 'जीत' : 'भागीदारी'}${isSpotlightMatch ? ' · ⭐ 2x Spotlight' : ''}${boosterActive ? ' · ⚡ 2x Pass' : ''}: +${coinsEarned} कॉइन्स`,
+    });
+  }
+
+  if (!Array.isArray(db.gamePlayHistory)) db.gamePlayHistory = [];
+  db.gamePlayHistory.unshift({
+    id: `GP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    userId: user.userId,
+    userName: user.fullName,
+    gameId: cleanGameKey,
+    gameName: `${String(gameName || 'Skill Game')} (Free)`,
+    betCoins: 0,
+    wonCoins: coinsEarned,
+    netChange: coinsEarned,
+    result: isWin ? 'win' : 'reward',
+    durationSeconds: 20,
+    playedAt: new Date().toISOString(),
+    details: score !== undefined ? `Score: ${score}` : undefined,
+  });
+  if (db.gamePlayHistory.length > 3000) db.gamePlayHistory = db.gamePlayHistory.slice(0, 3000);
+
+  saveDatabase(db);
+  const hub = buildDailyHubPayload(user);
+  res.json({
+    success: true,
+    isWin,
+    withinDailyRewardCap,
+    isSpotlightMatch,
+    boosterActive,
+    coinsEarned,
+    xpEarned,
+    currentCoins: user.coins,
+    newBalance: user.coins,
+    message: withinDailyRewardCap
+      ? `${isWin ? '🎉 शानदार जीत!' : '👏 बढ़िया प्रयास!'} +${coinsEarned} कॉइन्स और +${xpEarned} EXP मिले! (आज ${user.dailyFreeGamesPlayed}/${FREE_SKILL_PLAY_DAILY_LIMIT} फ्री रिवॉर्ड राउंड)`
+      : `प्रैक्टिस राउंड पूरा! आज के ${FREE_SKILL_PLAY_DAILY_LIMIT} फ्री कॉइन राउंड पूरे हो चुके हैं — प्रो कॉइन टेबल खेलें या कल फिर आएं! (+${xpEarned} EXP)`,
+    hub,
+    user,
+  });
+});
+
+// 3E. Buy Coin Power-Up / Utility Booster (2x Coin Surge Pass or Streak Shield)
+app.post('/api/game/buy-booster', (req, res) => {
+  const { userId, boosterId } = req.body;
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const booster = COIN_UTILITY_BOOSTERS.find(b => b.id === boosterId);
+  if (!booster) {
+    return res.status(404).json({ success: false, message: 'Booster not found' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < booster.coinPrice) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: booster.coinPrice,
+      currentCoins: balanceBefore,
+      message: `${booster.hindiName} के लिए ${booster.coinPrice} कॉइन्स चाहिए (आपके पास: ${balanceBefore})। पहले फ्री स्किल गेम या डेली क्विज़ से कॉइन्स जीतें!`,
+    });
+  }
+
+  user.coins = balanceBefore - booster.coinPrice;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + booster.coinPrice;
+
+  if (booster.id === 'booster_2x_24h') {
+    const currentExpiry = user.coinBoosterUntil && new Date(user.coinBoosterUntil).getTime() > Date.now()
+      ? new Date(user.coinBoosterUntil).getTime()
+      : Date.now();
+    user.coinBoosterUntil = new Date(currentExpiry + 24 * 60 * 60 * 1000).toISOString();
+  } else if (booster.id === 'streak_shield') {
+    user.streakShields = Number(user.streakShields || 0) + 1;
+  }
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'coin_booster',
+    categoryLabel: booster.name,
+    amount: booster.coinPrice,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `${booster.hindiName} सक्रिय (-${booster.coinPrice} Coins)`,
+  });
+
+  saveDatabase(db);
+  const hub = buildDailyHubPayload(user);
+  res.json({
+    success: true,
+    message: `⚡ ${booster.hindiName} सफलतापूर्वक अनलॉक हो गया!`,
+    booster,
+    hub,
+    user,
+  });
+});
+
+// 4. Send Room Gift (WePlay Voice Stage)
+const SERVER_LEGACY_GIFT_MAP: Record<string, { id: string; name: string; icon: string }> = {
+  g1: { id: 'pop_2', name: 'Red Rose', icon: '🌹' },
+  g2: { id: 'pop_4', name: 'Choco Delight', icon: '🍫' },
+  g3: { id: 'pop_5', name: 'Diamond Ring', icon: '💍' },
+  g4: { id: 'lux_1', name: 'Super Ferrari', icon: '🏎️' },
+  g5: { id: 'diwali_4', name: 'Sky Rocket Dhamaka', icon: '🚀' },
+  g6: { id: 'lux_2', name: 'Emperor Crown', icon: '👑' },
+  g7: { id: 'lux_3', name: 'Magic Castle', icon: '🏰' },
+};
+
 app.post('/api/game/send-gift', (req, res) => {
-  const { senderId, targetName, giftId, giftName, coinCost, charmValue } = req.body;
-  const db = loadDatabase();
+  const { senderId, targetName, targetUserId, giftId, giftName, giftIcon, coinCost, charmValue, quantity } = req.body;
   const sender = db.users.find(u => u.userId === senderId || u.id === senderId);
   if (!sender) {
     return res.status(404).json({ success: false, message: 'Sender not found' });
   }
 
-  const cost = Number(coinCost) || 10;
-  if ((sender.coins || 0) < cost) {
-    return res.status(400).json({ success: false, message: 'गिफ्ट भेजने के लिए पर्याप्त सिक्के नहीं हैं!' });
+  const cost = Math.max(1, Math.round(Number(coinCost) || 10));
+  const qty = Math.max(1, Math.round(Number(quantity) || 1));
+  const balanceBefore = sender.coins || 0;
+  if (balanceBefore < cost) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: cost,
+      currentCoins: balanceBefore,
+      message: `गिफ्ट भेजने के लिए ${cost} सिक्के चाहिए! आपके पास केवल ${balanceBefore} सिक्के हैं।`,
+    });
   }
 
-  sender.coins = (sender.coins || 0) - cost;
-  sender.charms = (sender.charms || 0) + Math.round(Number(charmValue) * 0.2); // Giver gets charm karma
+  const charmsVal = Math.max(1, Math.round(Number(charmValue) || cost));
+  sender.coins = balanceBefore - cost;
+  sender.totalCoinsSpent = (sender.totalCoinsSpent || 0) + cost;
+  sender.charms = (sender.charms || 0) + Math.round(charmsVal * 0.2);
+  sender.gameXp = (sender.gameXp || 0) + Math.max(10, Math.round(cost * 0.5));
+  sender.gameLevel = calculateLevelFromXp(sender.gameXp);
+  incrementUserTaskProgress(sender, 'gift_sent', 1);
 
-  sender.gameXp = (sender.gameXp || 0) + 50; // XP for gifting
+  const cleanTargetName = String(targetName || '').trim().replace(/^@+/, '').toLowerCase();
+  const recipient = targetUserId
+    ? db.users.find(u => u.userId === targetUserId || u.id === targetUserId)
+    : cleanTargetName
+      ? db.users.find(
+          u =>
+            u.userId.toLowerCase() === cleanTargetName ||
+            (u.username || '').toLowerCase() === cleanTargetName ||
+            (u.fullName || '').trim().toLowerCase() === cleanTargetName
+        )
+      : undefined;
 
-  // Broadcast in room chat
+  if (recipient) {
+    if (recipient.userId !== sender.userId) {
+      recipient.charms = (recipient.charms || 0) + charmsVal;
+    }
+    if (!recipient.receivedGifts || typeof recipient.receivedGifts !== 'object') {
+      recipient.receivedGifts = {};
+    }
+    const rawKey = String(giftId || giftName || 'pop_2').trim();
+    const mapped = SERVER_LEGACY_GIFT_MAP[rawKey];
+    const gKey = mapped ? mapped.id : rawKey;
+    const canonicalName = mapped ? mapped.name : String(giftName || 'Gift').replace(/^\d+x\s+/i, '');
+    const canonicalIcon = mapped ? mapped.icon : String(giftIcon || '🎁');
+    const prevGift = recipient.receivedGifts[gKey];
+    recipient.receivedGifts[gKey] = {
+      id: gKey,
+      name: canonicalName,
+      icon: canonicalIcon,
+      count: (prevGift?.count || 0) + qty,
+      coinCost: Math.round(cost / qty),
+      charmValue: Math.round(charmsVal / qty),
+      lastReceivedAt: new Date().toISOString(),
+      lastSenderName: sender.fullName,
+    };
+  }
+
+  logCoinTransaction(db, sender, {
+    type: 'debit',
+    category: 'gift_sent',
+    categoryLabel: 'रूम गिफ्ट भेंट',
+    amount: cost,
+    balanceBefore,
+    balanceAfter: sender.coins,
+    description: `${targetName || 'रूम स्टेज'} को ${giftName} भेंट किया (-${cost} कॉइन्स)`,
+  });
+
   db.chatMessages.push({
     id: `gift-${Date.now()}`,
     roomId: 'room-global',
@@ -3068,7 +4178,7 @@ app.post('/api/game/send-gift', (req, res) => {
     senderName: sender.fullName,
     senderRollNumber: sender.userId,
     senderAvatar: sender.avatar,
-    text: `🎁 [गिफ्ट भेजा] ${sender.fullName} ने ${targetName || 'पूरे रूम'} को ${giftName} भेंट किया! (+${charmValue} Charms ✨)`,
+    text: `🎁 [गिफ्ट भेजा] ${sender.fullName} ने ${targetName || 'रूम स्टेज'} को ${giftName} भेंट किया! (+${charmsVal} Charms ✨)`,
     createdAt: new Date().toISOString(),
   });
 
@@ -3078,7 +4188,415 @@ app.post('/api/game/send-gift', (req, res) => {
     message: `${giftName} सफलतापूर्वक भेजा गया! ✨`,
     coins: sender.coins,
     charms: sender.charms,
-    user: sender
+    gameXp: sender.gameXp,
+    gameLevel: sender.gameLevel,
+    user: sender,
+  });
+});
+
+// ==============================================================
+// REAL DAILY TASKS (+5 COINS & EXP), QUALITY FRAME STORE & VIP BUY SYSTEM
+// ==============================================================
+
+app.get('/api/tasks/:userId', (req, res) => {
+  const { userId } = req.params;
+  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const tasks = getTasksStatusForUser(user);
+  const claimedCount = (user.claimedTaskIds || []).length;
+  const chests = CHEST_MILESTONES.map(ch => ({
+    ...ch,
+    isUnlocked: claimedCount >= ch.requiredTasksCompleted,
+    isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
+  }));
+  saveDatabase(db);
+
+  res.json({
+    success: true,
+    tasks,
+    chests,
+    claimedTodayCount: claimedCount,
+    tasksCompletedCount: user.tasksCompletedCount || 0,
+    user,
+  });
+});
+
+app.post('/api/tasks/track', (req, res) => {
+  const { userId, eventType, increment } = req.body;
+  const allowedEvents: TaskEventType[] = ['profile_completed', 'chat_sent', 'moment_posted', 'voice_joined', 'game_played', 'gift_sent'];
+  if (!userId || !allowedEvents.includes(eventType)) {
+    return res.status(400).json({ success: false, message: 'Valid userId and task eventType required' });
+  }
+
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  incrementUserTaskProgress(user, eventType, Number(increment) || 1);
+  const tasks = getTasksStatusForUser(user);
+  saveDatabase(db);
+
+  res.json({ success: true, tasks, user });
+});
+
+app.post('/api/tasks/claim', (req, res) => {
+  const { userId, taskId } = req.body;
+  if (!userId || !taskId) {
+    return res.status(400).json({ success: false, message: 'userId and taskId are required' });
+  }
+
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  ensureDailyTaskState(user);
+  const taskDef = REAL_TASKS_CATALOG.find(t => t.id === taskId);
+  if (!taskDef) {
+    return res.status(404).json({ success: false, message: 'Task not found' });
+  }
+
+  const currentProgress = Number(user.taskProgress?.[taskDef.eventType] || 0);
+  if (currentProgress < taskDef.targetCount) {
+    return res.status(400).json({
+      success: false,
+      code: 'TASK_NOT_COMPLETED',
+      message: `टास्क अभी पूरा नहीं हुआ है! पहले "${taskDef.hindiTitle}" (${currentProgress}/${taskDef.targetCount}) पूरा करें तभी +5 कॉइन्स और EXP मिलेंगे।`,
+    });
+  }
+
+  if ((user.claimedTaskIds || []).includes(taskDef.id)) {
+    return res.status(400).json({
+      success: false,
+      message: 'इस टास्क का रिवॉर्ड आज पहले ही क्लेम किया जा चुका है!',
+    });
+  }
+
+  const balanceBefore = user.coins || 0;
+  const coinsEarned = taskDef.coinReward; // Strictly +5 Coins per completed task!
+  const vipCfg = getVipConfig(user.vipTier);
+  const xpEarned = Math.round(taskDef.xpReward * (vipCfg?.bonusXpMultiplier || 1));
+
+  const newCoins = balanceBefore + coinsEarned;
+  user.coins = newCoins;
+  user.gameXp = (user.gameXp || 0) + xpEarned;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedTaskIds!.push(taskDef.id);
+  user.tasksCompletedCount = (user.tasksCompletedCount || 0) + 1;
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_task',
+    categoryLabel: 'रियल टास्क पूर्ण रिवॉर्ड',
+    amount: coinsEarned,
+    balanceBefore,
+    balanceAfter: newCoins,
+    description: `टास्क "${taskDef.hindiTitle}" पूर्ण: +${coinsEarned} कॉइन्स व +${xpEarned} EXP`,
+  });
+
+  const tasks = getTasksStatusForUser(user);
+  const claimedCount = (user.claimedTaskIds || []).length;
+  const chests = CHEST_MILESTONES.map(ch => ({
+    ...ch,
+    isUnlocked: claimedCount >= ch.requiredTasksCompleted,
+    isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
+  }));
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🎉 टास्क पूरा! +${coinsEarned} कॉइन्स और +${xpEarned} EXP आपके खाते में जुड़े!`,
+    coinsEarned,
+    xpEarned,
+    newBalance: user.coins,
+    gameXp: user.gameXp,
+    gameLevel: user.gameLevel,
+    tasks,
+    chests,
+    user,
+  });
+});
+
+app.post('/api/tasks/claim-chest', (req, res) => {
+  const { userId, chestId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  ensureDailyTaskState(user);
+  const chest = CHEST_MILESTONES.find(c => c.id === chestId);
+  if (!chest) {
+    return res.status(404).json({ success: false, message: 'Milestone chest not found' });
+  }
+
+  const claimedTasksToday = (user.claimedTaskIds || []).length;
+  if (claimedTasksToday < chest.requiredTasksCompleted) {
+    return res.status(400).json({
+      success: false,
+      message: `इस चेस्ट के लिए पहले आज के ${chest.requiredTasksCompleted} असली टास्क पूरे करें (अभी ${claimedTasksToday}/${chest.requiredTasksCompleted} पूर्ण)।`,
+    });
+  }
+
+  if ((user.claimedChestMilestones || []).includes(chest.id)) {
+    return res.status(400).json({ success: false, message: 'यह माइलस्टोन चेस्ट आज पहले ही खोला जा चुका है!' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  const newCoins = balanceBefore + chest.coinReward;
+  user.coins = newCoins;
+  user.gameXp = (user.gameXp || 0) + chest.xpReward;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedChestMilestones!.push(chest.id);
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'task_chest',
+    categoryLabel: 'टास्क माइलस्टोन चेस्ट',
+    amount: chest.coinReward,
+    balanceBefore,
+    balanceAfter: newCoins,
+    description: `${chest.hindiLabel} अनलॉक: +${chest.coinReward} कॉइन्स व +${chest.xpReward} EXP`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🎁 ${chest.hindiLabel} खुला! +${chest.coinReward} कॉइन्स व +${chest.xpReward} EXP प्राप्त हुए!`,
+    coinsEarned: chest.coinReward,
+    xpEarned: chest.xpReward,
+    newBalance: newCoins,
+    user,
+  });
+});
+
+// Buy Avatar Frame (Quality-Tiered Coins System)
+app.post('/api/store/buy-frame', (req, res) => {
+  const { userId, frameId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const frame = getFrameByVariant(frameId);
+  if (!Array.isArray(user.unlockedFrames)) user.unlockedFrames = ['standard'];
+
+  if (user.unlockedFrames.includes(frame.variant) || frame.coinPrice === 0) {
+    if (!user.unlockedFrames.includes(frame.variant)) user.unlockedFrames.push(frame.variant);
+    user.frameType = frame.variant;
+    saveDatabase(db);
+    return res.json({
+      success: true,
+      message: `${frame.hindiName} फ्रेम सफलतापूर्वक सक्रिय हो गया!`,
+      user,
+    });
+  }
+
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < frame.coinPrice) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: frame.coinPrice,
+      currentCoins: balanceBefore,
+      message: `${frame.hindiName} (${frame.quality}) फ्रेम के लिए ${frame.coinPrice} कॉइन्स चाहिए। आपके पास केवल ${balanceBefore} कॉइन्स हैं! कृपया कॉइन्स खरीदें या टास्क पूरे करें।`,
+    });
+  }
+
+  const newCoins = balanceBefore - frame.coinPrice;
+  user.coins = newCoins;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + frame.coinPrice;
+  user.unlockedFrames.push(frame.variant);
+  user.frameType = frame.variant;
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'frame_purchase',
+    categoryLabel: 'अवतार फ्रेम खरीद',
+    amount: frame.coinPrice,
+    balanceBefore,
+    balanceAfter: newCoins,
+    description: `${frame.hindiName} [${frame.quality}] फ्रेम खरीदा (-${frame.coinPrice} कॉइन्स)`,
+  });
+
+  db.notifications.unshift({
+    id: `notif-frame-${Date.now()}`,
+    userId: user.userId,
+    title: `🖼️ ${frame.quality} फ्रेम अनलॉक!`,
+    message: `आपने ${frame.coinPrice} कॉइन्स से "${frame.hindiName}" फ्रेम खरीदा और प्रोफाइल पर लगाया।`,
+    date: new Date().toISOString(),
+    read: false,
+    type: 'system',
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🎉 ${frame.hindiName} (${frame.quality}) फ्रेम सफलतापूर्वक खरीदा और सेट हो गया!`,
+    newBalance: newCoins,
+    user,
+  });
+});
+
+// Equip Already-Owned Frame
+app.post('/api/store/equip-frame', (req, res) => {
+  const { userId, frameId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const frame = getFrameByVariant(frameId);
+  const owned = Array.isArray(user.unlockedFrames) ? user.unlockedFrames : ['standard'];
+  if (frame.coinPrice > 0 && !owned.includes(frame.variant)) {
+    return res.status(400).json({
+      success: false,
+      code: 'FRAME_LOCKED',
+      requiredCoins: frame.coinPrice,
+      currentCoins: user.coins || 0,
+      message: `${frame.hindiName} फ्रेम लॉक है! इसे लगाने के लिए पहले ${frame.coinPrice} कॉइन्स से खरीदें।`,
+    });
+  }
+
+  user.frameType = frame.variant;
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🖼️ ${frame.hindiName} फ्रेम आपकी प्रोफाइल पर लागू हो गया!`,
+    user,
+  });
+});
+
+// Buy VIP Pass with Real Coins
+app.post('/api/store/buy-vip', (req, res) => {
+  const { userId, vipTier } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const targetVip = VIP_TIERS.find(v => v.id === vipTier);
+  if (!targetVip) {
+    return res.status(400).json({ success: false, message: 'अमान्य VIP प्लान चयनित किया गया।' });
+  }
+
+  const tierOrder: Record<string, number> = { none: 0, silver: 1, gold: 2, diamond: 3 };
+  const currentRank = tierOrder[user.vipTier || 'none'] || 0;
+  const targetRank = tierOrder[targetVip.id] || 0;
+
+  if (currentRank === targetRank) {
+    return res.status(400).json({ success: false, message: `आपके पास पहले से ही ${targetVip.hindiName} सक्रिय है!` });
+  }
+  if (currentRank > targetRank) {
+    return res.status(400).json({ success: false, message: 'आप इससे उच्च स्तर के VIP प्लान पर पहले से हैं।' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < targetVip.coinPrice) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: targetVip.coinPrice,
+      currentCoins: balanceBefore,
+      message: `${targetVip.hindiName} खरीदने के लिए ${targetVip.coinPrice} कॉइन्स चाहिए। आपके पास ${balanceBefore} कॉइन्स हैं! कृपया कॉइन्स खरीदें या टास्क पूरे करें।`,
+    });
+  }
+
+  const newCoins = balanceBefore - targetVip.coinPrice;
+  user.coins = newCoins;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + targetVip.coinPrice;
+  user.vipTier = targetVip.id;
+  user.vipTitle = targetVip.badgeText;
+  user.vipPurchasedAt = new Date().toISOString();
+  if (targetVip.id === 'diamond') user.crownPost = true;
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'vip_purchase',
+    categoryLabel: 'VIP मेंबरशिप खरीद',
+    amount: targetVip.coinPrice,
+    balanceBefore,
+    balanceAfter: newCoins,
+    description: `${targetVip.hindiName} खरीदा (-${targetVip.coinPrice} कॉइन्स)`,
+  });
+
+  db.notifications.unshift({
+    id: `notif-vip-${Date.now()}`,
+    userId: user.userId,
+    title: `👑 ${targetVip.hindiName} सक्रिय हुआ!`,
+    message: `बधाई! आपने ${targetVip.coinPrice} कॉइन्स से ${targetVip.hindiName} खरीदा। अब आपका एक्सक्लूसिव बैज व बोनस EXP पावर सक्रिय है!`,
+    date: new Date().toISOString(),
+    read: false,
+    type: 'system',
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `👑 बधाई हो! ${targetVip.hindiName} सफलतापूर्वक सक्रिय हो गया!`,
+    newBalance: newCoins,
+    user,
+  });
+});
+
+// Buy Room Theme with Real Coins
+app.post('/api/store/buy-room', (req, res) => {
+  const { userId, roomId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const theme = ADVANCE_ROOM_THEMES.find(t => t.id === roomId);
+  if (!theme) {
+    return res.status(404).json({ success: false, message: 'Room theme not found' });
+  }
+
+  if (!Array.isArray(user.unlockedRooms)) user.unlockedRooms = ['default_dark'];
+  if (user.unlockedRooms.includes(theme.id) || theme.coinPrice === 0) {
+    if (!user.unlockedRooms.includes(theme.id)) user.unlockedRooms.push(theme.id);
+    user.roomTheme = theme.id;
+    saveDatabase(db);
+    return res.json({ success: true, message: `${theme.name} थीम सक्रिय हो गई!`, user });
+  }
+
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < theme.coinPrice) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: theme.coinPrice,
+      currentCoins: balanceBefore,
+      message: `"${theme.name}" रूम थीम के लिए ${theme.coinPrice} कॉइन्स चाहिए। आपके पास केवल ${balanceBefore} कॉइन्स हैं!`,
+    });
+  }
+
+  const newCoins = balanceBefore - theme.coinPrice;
+  user.coins = newCoins;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + theme.coinPrice;
+  user.unlockedRooms.push(theme.id);
+  user.roomTheme = theme.id;
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'room_purchase',
+    categoryLabel: 'रूम थीम खरीद',
+    amount: theme.coinPrice,
+    balanceBefore,
+    balanceAfter: newCoins,
+    description: `${theme.name} रूम थीम खरीदी (-${theme.coinPrice} कॉइन्स)`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🏛️ "${theme.name}" रूम थीम अनलॉक होकर सक्रिय हो गई!`,
+    newBalance: newCoins,
+    user,
   });
 });
 
@@ -3086,30 +4604,161 @@ app.post('/api/game/send-gift', (req, res) => {
 // MULTI-ROOM VOICE STAGE & REAL AUDIO STREAMING SYSTEM
 // ==============================================================
 
-function getOrCreateRooms(db: Database) {
-  if (!db.customVoiceRooms || db.customVoiceRooms.length === 0) {
-    const founder = db.users.find(u => u.role === 'admin' || u.userId === 'EMO-MOM-MMO') || {
-      userId: 'EMO-MOM-MMO',
-      fullName: 'SANTOSH KUMAR',
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
-      gameLevel: 25,
-      charms: 12500,
-    };
+function ensureUserRoomAddress(database: Database, user: UserProfile): string {
+  const roomsList = database.customVoiceRooms || [];
+  if (!isNumericRoomId(user.roomAddress)) {
+    let candidate = '';
+    if (
+      (user.userId === 'EMO-MOM-MMO' || user.role === 'admin') &&
+      !isRoomAddressTaken('1111', database.users, roomsList, user.userId)
+    ) {
+      candidate = '1111';
+      user.isVipRoom = true;
+      user.vipRoomLabel = user.vipRoomLabel || 'VIP Royal';
+    } else {
+      candidate = generateUniqueRoomId(user.fullName || user.userId, database.users, roomsList, user.userId);
+    }
+    user.roomAddress = candidate;
+    user.personalRoomId = candidate;
+  } else {
+    user.roomAddress = String(user.roomAddress).trim();
+    user.personalRoomId = user.roomAddress;
+    if (user.isVipRoom === undefined && isVipFancyRoomNumber(user.roomAddress)) {
+      user.isVipRoom = true;
+    }
+  }
+  return user.roomAddress!;
+}
 
-    db.customVoiceRooms = [
+function ensurePersonalRoomForUser(database: Database, user: UserProfile): NonNullable<Database['customVoiceRooms']>[number] {
+  if (!Array.isArray(database.customVoiceRooms)) {
+    database.customVoiceRooms = [];
+  }
+  const fixedRoomIdCode = ensureUserRoomAddress(database, user);
+  const isFounder = user.userId === 'EMO-MOM-MMO' || user.role === 'admin';
+  const cleanTag = String(user.userId || 'USR').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+  const targetId = isFounder ? 'room-founder' : `roompersonal${cleanTag}`;
+
+  let existing = database.customVoiceRooms.find(
+    r =>
+      r.id === targetId ||
+      (r.isPersonalFixed && r.hostUserId === user.userId) ||
+      (isFounder && r.id === 'room-founder')
+  );
+
+  if (!existing) {
+    existing = {
+      id: targetId,
+      title: isFounder ? 'ESP Royal Voice Stage (Official)' : `${user.fullName}'s Voice Room`,
+      topic: isFounder
+        ? 'ESP 10 Services Discussion & Real Gaming Club'
+        : `Welcome to ${user.fullName}'s Personal Fixed Voice Room`,
+      category: user.accountType === 'gamer' ? 'gaming' : 'earning',
+      roomAddress: fixedRoomIdCode,
+      roomNumber: fixedRoomIdCode,
+      isPersonalFixed: true,
+      isVipRoom: Boolean(user.isVipRoom || isVipFancyRoomNumber(fixedRoomIdCode)),
+      vipRoomLabel: user.vipRoomLabel || (isFounder ? 'VIP Royal' : ''),
+      hostUserId: user.userId,
+      hostName: user.fullName,
+      hostUsername: user.username || '',
+      hostAvatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
+      hostLevel: user.gameLevel || 1,
+      hostCharms: user.charms || 0,
+      wallpaperId: 'castle_night',
+      customWallpaperUrl: '',
+      stageLayout: 'classic_8',
+      youtubeVideoUrl: '',
+      youtubeVideoTitle: '',
+      lockedSeats: [],
+      followers: [],
+      roomCharms: user.charms || 0,
+      createdAt: user.createdAt || new Date().toISOString(),
+      seats:
+        isFounder && Array.isArray(database.voiceRoomSeats) && database.voiceRoomSeats.length === 8
+          ? database.voiceRoomSeats
+          : Array.from({ length: 8 }, (_, i) => ({
+              seatNumber: i + 1,
+              seatNumberLabel: String(i + 1),
+              isMuted: false,
+              isSpeaking: false,
+              charms: 0,
+            })),
+      chatMessages: [
+        {
+          id: `msg-init-${cleanTag}`,
+          senderId: 'SYSTEM',
+          sender: 'System',
+          senderRoll: 'STAGE',
+          text: isFounder
+            ? '🔔 System: Welcome to ESP Official Voice Stage! Join, follow, or tap an empty mic seat.'
+            : `🔔 System: ${user.fullName}'s personal fixed room (ID: ${fixedRoomIdCode}) is live! Invite friends to join & follow.`,
+          time: 'Live',
+        },
+      ],
+      audience: [user.userId],
+    };
+    if (isFounder) {
+      database.customVoiceRooms.unshift(existing);
+    } else {
+      database.customVoiceRooms.push(existing);
+    }
+  } else {
+    existing.roomAddress = fixedRoomIdCode;
+    existing.roomNumber = fixedRoomIdCode;
+    existing.isPersonalFixed = true;
+    existing.isVipRoom = Boolean(user.isVipRoom || isVipFancyRoomNumber(fixedRoomIdCode));
+    existing.vipRoomLabel = user.vipRoomLabel || existing.vipRoomLabel || '';
+    existing.hostName = user.fullName;
+    existing.hostUsername = user.username || existing.hostUsername || '';
+    existing.hostAvatar = user.avatar || existing.hostAvatar;
+    existing.hostLevel = user.gameLevel || existing.hostLevel || 1;
+    existing.hostCharms = user.charms ?? existing.hostCharms ?? 0;
+    if (!existing.wallpaperId) existing.wallpaperId = 'castle_night';
+    if (!existing.stageLayout) existing.stageLayout = 'classic_8';
+    if (!Array.isArray(existing.lockedSeats)) existing.lockedSeats = [];
+    if (!Array.isArray(existing.followers)) existing.followers = [];
+    if (!Array.isArray(existing.audience)) existing.audience = [user.userId];
+  }
+
+  return existing;
+}
+
+function getOrCreateRooms(database: Database): NonNullable<Database['customVoiceRooms']> {
+  if (!Array.isArray(database.customVoiceRooms)) {
+    database.customVoiceRooms = [];
+  }
+  const rooms = database.customVoiceRooms;
+
+  if (Array.isArray(database.users) && database.users.length > 0) {
+    for (const u of database.users) {
+      ensurePersonalRoomForUser(database, u);
+    }
+  } else if (database.customVoiceRooms.length === 0) {
+    database.customVoiceRooms = [
       {
         id: 'room-founder',
-        title: 'ESP Royal Voice Stage #1 (Official Stage)',
-        topic: 'Daily ₹500 - ₹2000 Earnings with 10 ESP Services & Games',
+        title: 'ESP Royal Voice Stage (Official)',
+        topic: 'ESP 10 Services Discussion & Real Gaming Club',
         category: 'earning',
-        roomAddress: 'ESP-ROOM-FOUNDER-01',
-        hostUserId: founder.userId,
-        hostName: founder.fullName,
-        hostAvatar: (founder as any).avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
-        hostLevel: (founder as any).gameLevel || 25,
-        hostCharms: (founder as any).charms || 12500,
+        roomAddress: '1111',
+        roomNumber: '1111',
+        isPersonalFixed: true,
+        isVipRoom: true,
+        vipRoomLabel: 'VIP Royal',
+        hostUserId: 'EMO-MOM-MMO',
+        hostName: 'SANTOSH KUMAR',
+        hostAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
+        hostLevel: 1,
+        hostCharms: 0,
+        wallpaperId: 'castle_night',
+        customWallpaperUrl: '',
+        stageLayout: 'classic_8',
+        lockedSeats: [],
+        followers: [],
+        roomCharms: 0,
         createdAt: new Date().toISOString(),
-        seats: db.voiceRoomSeats || Array.from({ length: 8 }, (_, i) => ({
+        seats: database.voiceRoomSeats || Array.from({ length: 8 }, (_, i) => ({
           seatNumber: i + 1,
           seatNumberLabel: String(i + 1),
           isMuted: false,
@@ -3120,120 +4769,277 @@ function getOrCreateRooms(db: Database) {
           {
             id: 'msg-init',
             senderId: 'SYSTEM',
-            sender: 'STAGE HOST',
+            sender: 'System',
             senderRoll: 'STAGE',
-            text: '🎙️ Welcome to ESP Royal Voice Stage! Enable mic to talk, grab empty seat or listen live.',
+            text: '🔔 System: Welcome to ESP Royal Voice Stage! Tap + to grab an empty seat.',
             time: 'Live',
           }
         ],
-        audience: [founder.userId],
+        audience: ['EMO-MOM-MMO'],
       }
     ];
   }
-  return db.customVoiceRooms;
+
+  // Migrate any extra custom rooms with non-numeric roomAddress to sequential counting Room IDs
+  for (const r of rooms) {
+    if (!isNumericRoomId(r.roomAddress)) {
+      const cleanAddr = generateUniqueRoomId(r.hostName || r.title || 'ESP', database.users, rooms);
+      r.roomAddress = cleanAddr;
+      r.roomNumber = cleanAddr;
+    }
+    if (!r.roomNumber) r.roomNumber = r.roomAddress;
+    if (r.isVipRoom === undefined) {
+      const hostUser = database.users.find(u => u.userId === r.hostUserId);
+      r.isVipRoom = Boolean(hostUser?.isVipRoom || isVipFancyRoomNumber(r.roomAddress));
+      r.vipRoomLabel = hostUser?.vipRoomLabel || '';
+    }
+    if (!r.wallpaperId) r.wallpaperId = 'castle_night';
+    if (!r.stageLayout) r.stageLayout = 'classic_8';
+    if (!Array.isArray(r.lockedSeats)) r.lockedSeats = [];
+    if (!Array.isArray(r.followers)) r.followers = [];
+    if (!Array.isArray(r.audience)) r.audience = [r.hostUserId];
+  }
+
+  return rooms;
 }
 
-// 6. Get List of All Active Voice Rooms (Community Voice Hub)
-app.get('/api/game/voice-rooms', (_req, res) => {
-  const db = loadDatabase();
-  const rooms = getOrCreateRooms(db);
-
-  const roomsSummary = rooms.map(r => ({
+function buildRoomSummary(r: any, viewerId?: string) {
+  const followers = Array.isArray(r.followers) ? r.followers : [];
+  const audience = Array.isArray(r.audience) ? r.audience : [];
+  const lockedSeats = Array.isArray(r.lockedSeats) ? r.lockedSeats : [];
+  const seats = Array.isArray(r.seats) ? r.seats : [];
+  return {
     id: r.id,
     title: r.title,
     topic: r.topic,
     category: r.category,
     roomAddress: r.roomAddress,
+    roomNumber: r.roomNumber || r.roomAddress,
+    isPersonalFixed: Boolean(r.isPersonalFixed),
+    isVipRoom: Boolean(r.isVipRoom || isVipFancyRoomNumber(r.roomAddress)),
+    vipRoomLabel: r.vipRoomLabel || '',
     hostUserId: r.hostUserId,
     hostName: r.hostName,
+    hostUsername: r.hostUsername || '',
     hostAvatar: r.hostAvatar,
-    hostLevel: r.hostLevel || 5,
-    hostCharms: r.hostCharms || 100,
+    hostLevel: r.hostLevel || 1,
+    hostCharms: r.hostCharms || 0,
+    wallpaperId: r.wallpaperId || 'castle_night',
+    customWallpaperUrl: r.customWallpaperUrl || '',
+    stageLayout: r.stageLayout || 'classic_8',
+    youtubeVideoUrl: r.youtubeVideoUrl || '',
+    youtubeVideoTitle: r.youtubeVideoTitle || '',
+    lockedSeats,
+    followers,
+    followersCount: followers.length,
+    isFollowed: Boolean(viewerId && followers.includes(viewerId)),
+    roomCharms: r.roomCharms || r.hostCharms || 0,
     isPrivate: Boolean(r.isPrivate),
-    occupiedSeatsCount: r.seats.filter(s => Boolean(s.userId)).length,
-    listenersCount: Math.max(1, (r.audience || []).length, db.users.length),
+    occupiedSeatsCount: seats.filter((s: any) => Boolean(s.userId)).length,
+    listenersCount: Math.max(1, audience.length),
+    audience,
+    seats,
     createdAt: r.createdAt,
+  };
+}
+
+function buildRoomDetailPayload(room: any, viewerId?: string) {
+  const hostUser = db.users.find(u => u.userId === room.hostUserId) || {
+    userId: room.hostUserId,
+    username: room.hostUsername || '',
+    fullName: room.hostName,
+    avatar: room.hostAvatar,
+    gameLevel: room.hostLevel || 1,
+    charms: room.hostCharms || 0,
+    roomAddress: room.roomAddress,
+  };
+
+  const host = {
+    userId: hostUser.userId,
+    userName: hostUser.fullName,
+    username: (hostUser as any).username || room.hostUsername || '',
+    gameLevel: (hostUser as any).gameLevel || 1,
+    charms: (hostUser as any).charms || 0,
+    userAvatar: (hostUser as any).avatar || room.hostAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
+    isSpeaking: true,
+    isMuted: false,
+    roleTitle: room.id === 'room-founder' ? 'ESP Founder & Room Host' : 'Room Owner & Host',
+  };
+
+  const realAudience = db.users.map(u => ({
+    userId: u.userId,
+    username: u.username || '',
+    fullName: u.fullName,
+    chosenServiceName: u.chosenServiceName || u.chosenServiceCode,
+    joiningDate: u.joiningDate,
+    status: u.status,
+    coins: u.coins || 0,
+    charms: u.charms || 0,
+    gameLevel: u.gameLevel || 1,
+    vipTier: u.vipTier || 'none',
+    frameType: u.frameType || 'standard',
+    roomAddress: ensureUserRoomAddress(db, u),
+    clanName: u.clanName || 'Royal Warriors ESP',
+    avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
   }));
 
+  const topContributors = [...db.users]
+    .filter(u => (u.charms || 0) > 0 || (room.audience || []).includes(u.userId) || u.userId === room.hostUserId)
+    .sort((a, b) => (b.charms || 0) - (a.charms || 0) || (b.gameXp || 0) - (a.gameXp || 0))
+    .slice(0, 3)
+    .map(u => ({
+      userId: u.userId,
+      fullName: u.fullName,
+      avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+      coins: Math.max(0, u.charms || 0),
+    }));
+
+  const lockedSet = new Set<number>(Array.isArray(room.lockedSeats) ? room.lockedSeats : []);
+  const enrichedSeats = (room.seats || []).map((s: any, idx: number) => ({
+    ...s,
+    isLocked: lockedSet.has(idx),
+  }));
+
+  return {
+    success: true,
+    room: {
+      ...buildRoomSummary(room, viewerId),
+      seats: enrichedSeats,
+      topContributors,
+    },
+    host,
+    seats: enrichedSeats,
+    audience: realAudience,
+    audienceCount: Math.max(1, (room.audience || []).length),
+    chatMessages: room.chatMessages || [],
+  };
+}
+
+// 6. Get List of All Active Voice Rooms (Includes every user's Fixed Personal Room)
+app.get('/api/game/voice-rooms', (req, res) => {
+  const viewerId = String(req.query.viewerId || '').trim();
+  const rawQ = String(req.query.q || '').trim().replace(/^(id:|room:|#)/i, '').trim();
+  const q = rawQ.toLowerCase();
+  const rooms = getOrCreateRooms(db);
+  saveDatabase(db);
+
+  let filtered = rooms;
+  if (q) {
+    const cleanQ = q.replace(/[^a-z0-9]/g, '');
+    filtered = rooms.filter(r => {
+      const addr = String(r.roomAddress || '').toLowerCase();
+      const title = String(r.title || '').toLowerCase();
+      const host = String(r.hostName || '').toLowerCase();
+      const hostId = String(r.hostUserId || '').toLowerCase();
+      const hostUname = String(r.hostUsername || '').toLowerCase();
+      return (
+        addr.includes(q) ||
+        (cleanQ && addr.includes(cleanQ)) ||
+        title.includes(q) ||
+        host.includes(q) ||
+        hostId.includes(q) ||
+        (cleanQ && hostUname.includes(cleanQ))
+      );
+    }).sort((a, b) => {
+      const aExact = String(a.roomAddress || '').toLowerCase() === cleanQ ? 1 : 0;
+      const bExact = String(b.roomAddress || '').toLowerCase() === cleanQ ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      const aVip = (a.isVipRoom || isVipFancyRoomNumber(a.roomAddress)) ? 1 : 0;
+      const bVip = (b.isVipRoom || isVipFancyRoomNumber(b.roomAddress)) ? 1 : 0;
+      return bVip - aVip;
+    });
+  } else {
+    filtered = [...rooms].sort((a, b) => {
+      const aVip = (a.isVipRoom || isVipFancyRoomNumber(a.roomAddress)) ? 1 : 0;
+      const bVip = (b.isVipRoom || isVipFancyRoomNumber(b.roomAddress)) ? 1 : 0;
+      return bVip - aVip;
+    });
+  }
+
+  const roomsSummary = filtered.map(r => buildRoomSummary(r, viewerId));
   res.json({ success: true, rooms: roomsSummary });
 });
 
-// 6.1 Create New Custom Voice Room (Any Member or Guest Can Create!)
+// 6.0 Get or Auto-Provision a User's Fixed Personal Voice Room
+app.get('/api/game/voice-rooms/my-room/:userId', (req, res) => {
+  const { userId } = req.params;
+  const viewerId = String(req.query.viewerId || userId || '').trim();
+  const user = db.users.find(
+    u =>
+      u.userId.toLowerCase() === userId.toLowerCase() ||
+      u.id.toLowerCase() === userId.toLowerCase() ||
+      (normalizeUsername(userId) && normalizeUsername(u.username) === normalizeUsername(userId))
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  const room = ensurePersonalRoomForUser(db, user);
+  saveDatabase(db);
+  return res.json(buildRoomDetailPayload(room, viewerId));
+});
+
+// 6.05 Lookup Voice Room by Numeric/VIP Room ID (e.g. 1111, 10001), roomId, hostUserId, or @username
+app.get('/api/game/voice-rooms/lookup/:query', (req, res) => {
+  const rawQuery = decodeURIComponent(String(req.params.query || '')).trim().replace(/^(id:|room:|#)/i, '').trim();
+  const viewerId = String(req.query.viewerId || '').trim();
+  const rooms = getOrCreateRooms(db);
+  const qLower = rawQuery.toLowerCase();
+  const qClean = rawQuery.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+  // Prioritize exact Room ID match (critical for quick VIP numeric lookup like 1111, 2222, 1234)
+  const match =
+    rooms.find(r => String(r.roomAddress || '').toLowerCase() === qLower || String(r.roomAddress || '').toLowerCase() === qClean) ||
+    rooms.find(r => r.id.toLowerCase() === qLower) ||
+    rooms.find(r => String(r.hostUserId || '').toLowerCase() === qLower) ||
+    rooms.find(r => qClean && String(r.hostUsername || '').toLowerCase() === qClean);
+
+  if (!match) {
+    return res.status(404).json({ success: false, message: `रूम ID "${rawQuery}" नहीं मिला।` });
+  }
+  return res.json(buildRoomDetailPayload(match, viewerId));
+});
+
+// 6.1 Create New Custom Voice Room (With Custom Wallpaper & Stage Layout)
 app.post('/api/game/voice-rooms/create', (req, res) => {
-  const { userId, title, topic, category, isPrivate, passcode, hostName, hostAvatar, hostLevel, hostCharms } = req.body;
-  const db = loadDatabase();
-  
-  const foundUser = db.users.find(u => 
-    (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) || 
-    (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase()) ||
-    (u.phone && userId && u.phone === String(userId))
+  const {
+    userId,
+    title,
+    topic,
+    category,
+    isPrivate,
+    passcode,
+    hostName,
+    hostAvatar,
+    wallpaperId,
+    customWallpaperUrl,
+    stageLayout,
+    youtubeVideoUrl,
+  } = req.body;
+  const user = db.users.find(u =>
+    (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+    (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
   );
 
-  // If user is not yet in db.users (e.g. guest, visitor, newly initialized session),
-  // register/resolve reliable user record so room creation NEVER fails!
-  const user: UserProfile = foundUser || (() => {
-    const rawId = String(userId || '').trim();
-    const fallbackId = (rawId && rawId !== 'undefined' && rawId !== 'null') ? rawId : `ESP-${Date.now().toString(36).toUpperCase()}`;
-    const fallbackName = (hostName || (fallbackId.startsWith('ESP') ? `Member ${fallbackId}` : 'ESP Player')).trim();
-    const newUser: UserProfile = {
-      id: fallbackId,
-      userId: fallbackId,
-      fullName: fallbackName,
-      phone: '8877490845',
-      email: `${fallbackId.toLowerCase()}@esp.com`,
-      fullAddress: 'India',
-      paymentAddress: 'member@upi',
-      payoutUpiId: 'member@upi',
-      sponsorId: 'EMO-MOM-MMO',
-      sponsorName: 'SANTOSH KUMAR',
-      chosenServiceCode: 'EMO',
-      chosenServiceName: 'Earn Money Online',
-      joiningFee: 10,
-      joiningDate: new Date().toISOString().slice(0, 10),
-      paymentUtr: 'ACTIVE',
-      status: 'active',
-      balance: 0,
-      totalEarnings: 0,
-      referralEarnings: 0,
-      promoEarnings: 0,
-      totalWithdrawn: 0,
-      coins: 5000,
-      charms: Number(hostCharms) || 150,
-      gameLevel: Number(hostLevel) || 5,
-      gameXp: 500,
-      roomAddress: `ESP-ROOM-${fallbackId.replace(/[^a-zA-Z0-9]/g, '')}`,
-      houseName: `${fallbackName} Gaming House`,
-      clanName: 'Royal Warriors ESP',
-      clanRole: 'Member',
-      avatar: hostAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${fallbackId}`,
-      loginStreak: 1,
-      claimedDays: [1],
-      role: 'member',
-      createdAt: new Date().toISOString(),
-      editHistory: [],
-      activeSessions: [],
-    };
-    db.users.push(newUser);
-    return newUser;
-  })();
+  if (!user) {
+    return res.status(401).json({ success: false, message: 'वॉइस रूम बनाने के लिए कृपया पहले लॉगिन करें।' });
+  }
 
   const cleanTitle = (title || `${user.fullName}'s Voice Room`).trim();
   const cleanTopic = (topic || 'General Voice Discussion & Strategy').trim();
   const rooms = getOrCreateRooms(db);
 
   const cleanUserTag = user.userId.toLowerCase().replace(/[^a-z0-9]/g, '') || 'usr';
-  const roomId = `room-${cleanUserTag}-${Date.now().toString(36)}`;
-  const roomAddress = user.roomAddress || `ESP-ROOM-${user.userId}`;
+  const roomId = `room${cleanUserTag}${Date.now().toString(36)}`;
+  const roomAddress = generateUniqueRoomId(user.fullName || cleanTitle, db.users, rooms);
 
-  // Automatically seat the creator as Host on Seat #1
   const initialSeats = [
     {
       seatNumber: 1,
       seatNumberLabel: '1 (Host)',
       userId: user.userId,
       userName: user.fullName,
-      gameLevel: user.gameLevel || 5,
-      charms: user.charms || 150,
+      gameLevel: user.gameLevel || 1,
+      charms: user.charms || 0,
       isMuted: false,
       isSpeaking: true,
       userAvatar: user.avatar || hostAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
@@ -3253,11 +5059,22 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
     topic: cleanTopic,
     category: (category as any) || 'earning',
     roomAddress,
+    roomNumber: roomAddress,
+    isPersonalFixed: false,
     hostUserId: user.userId,
-    hostName: user.fullName,
+    hostName: hostName || user.fullName,
+    hostUsername: user.username || '',
     hostAvatar: user.avatar || hostAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
-    hostLevel: user.gameLevel || 5,
-    hostCharms: user.charms || 150,
+    hostLevel: user.gameLevel || 1,
+    hostCharms: user.charms || 0,
+    wallpaperId: wallpaperId || 'castle_night',
+    customWallpaperUrl: typeof customWallpaperUrl === 'string' ? customWallpaperUrl : '',
+    stageLayout: stageLayout || 'classic_8',
+    youtubeVideoUrl: typeof youtubeVideoUrl === 'string' ? youtubeVideoUrl.trim() : '',
+    youtubeVideoTitle: '',
+    lockedSeats: [],
+    followers: [user.userId],
+    roomCharms: user.charms || 0,
     createdAt: new Date().toISOString(),
     isPrivate: Boolean(isPrivate),
     passcode: passcode || '',
@@ -3266,128 +5083,315 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
       {
         id: `msg-${Date.now()}`,
         senderId: 'SYSTEM',
-        sender: 'ROOM STAGE',
+        sender: 'System',
         senderRoll: 'STAGE',
-        text: `👑 ${user.fullName} ने अपना नया वॉइस रूम "${cleanTitle}" शुरू किया! सभी दोस्तों का स्वागत है।`,
+        text: `🔔 System: ${user.fullName} started voice room "${cleanTitle}" (ID: ${roomAddress})!`,
         time: 'Live',
       }
     ],
     audience: [user.userId],
   };
 
+  incrementUserTaskProgress(user, 'voice_joined', 1);
   rooms.unshift(newRoom);
   saveDatabase(db);
 
   res.json({
     success: true,
-    message: `🎉 आपका वॉइस रूम "${cleanTitle}" सफलतापूर्वक तैयार हो गया!`,
-    room: newRoom,
+    message: `🎉 आपका वॉइस रूम "${cleanTitle}" (ID: ${roomAddress}) तैयार हो गया!`,
+    room: buildRoomSummary(newRoom, user.userId),
     roomId: newRoom.id,
   });
 });
 
-// 6.2 Get Specific Room State
+// 6.2 Get Specific Room State (Matches by room.id OR symbol-free roomAddress)
 app.get('/api/game/voice-rooms/:roomId', (req, res) => {
   const { roomId } = req.params;
-  const db = loadDatabase();
+  const viewerId = String(req.query.viewerId || '').trim();
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  const qLower = roomId.toLowerCase();
+  const room =
+    rooms.find(
+      r =>
+        r.id.toLowerCase() === qLower ||
+        String(r.roomAddress || '').toLowerCase() === qLower
+    ) || rooms[0];
 
-  const hostUser = db.users.find(u => u.userId === room.hostUserId) || {
-    userId: room.hostUserId,
-    fullName: room.hostName,
-    avatar: room.hostAvatar,
-    gameLevel: room.hostLevel || 25,
-    charms: room.hostCharms || 12500,
-  };
-
-  const host = {
-    userId: hostUser.userId,
-    userName: hostUser.fullName,
-    gameLevel: hostUser.gameLevel || 25,
-    charms: hostUser.charms || 12500,
-    userAvatar: hostUser.avatar || room.hostAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
-    isSpeaking: true,
-    isMuted: false,
-    roleTitle: room.id === 'room-founder' ? 'ESP Founder & Room Host' : 'Room Host & Creator',
-  };
-
-  const realAudience = db.users.map(u => ({
-    userId: u.userId,
-    fullName: u.fullName,
-    chosenServiceName: u.chosenServiceName || u.chosenServiceCode,
-    joiningDate: u.joiningDate,
-    status: u.status,
-    coins: u.coins || 0,
-    charms: u.charms || 0,
-    gameLevel: u.gameLevel || 1,
-    roomAddress: u.roomAddress || `ESP-ROOM-${u.userId}`,
-    clanName: u.clanName || 'ESP Royals',
-    avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
-  }));
-
-  res.json({
-    success: true,
-    room,
-    host,
-    seats: room.seats,
-    audience: realAudience,
-    audienceCount: Math.max(1, (room.audience || []).length, db.users.length),
-    chatMessages: room.chatMessages || [],
-  });
+  res.json(buildRoomDetailPayload(room, viewerId));
 });
 
 // Backward-compatible default room endpoint
-app.get('/api/game/voice-room', (_req, res) => {
-  const db = loadDatabase();
+app.get('/api/game/voice-room', (req, res) => {
+  const viewerId = String(req.query.viewerId || '').trim();
   const rooms = getOrCreateRooms(db);
   const room = rooms[0];
+  res.json(buildRoomDetailPayload(room, viewerId));
+});
 
-  const hostUser = db.users.find(u => u.userId === room.hostUserId) || {
-    userId: room.hostUserId,
-    fullName: room.hostName,
-    avatar: room.hostAvatar,
-    gameLevel: room.hostLevel || 25,
-    charms: room.hostCharms || 12500,
-  };
+// 6.3 Join Room (Explicit Join + Task tracking + Audience tracking)
+app.post('/api/game/voice-rooms/:roomId/join', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, passcode } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const qLower = roomId.toLowerCase();
+  const room = rooms.find(
+    r => r.id.toLowerCase() === qLower || String(r.roomAddress || '').toLowerCase() === qLower
+  );
+  if (!room) {
+    return res.status(404).json({ success: false, message: 'Voice room not found' });
+  }
+  const user = db.users.find(
+    u =>
+      (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+      (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'कृपया पहले लॉगिन करें।' });
+  }
+  if (room.isPrivate && room.passcode && room.hostUserId !== user.userId && String(passcode || '') !== String(room.passcode)) {
+    return res.status(403).json({
+      success: false,
+      requiresPasscode: true,
+      message: '🔒 यह प्राइवेट रूम है! प्रवेश के लिए सही पासकोड दर्ज करें।',
+    });
+  }
 
-  const host = {
-    userId: hostUser.userId,
-    userName: hostUser.fullName,
-    gameLevel: hostUser.gameLevel || 25,
-    charms: hostUser.charms || 12500,
-    userAvatar: hostUser.avatar || room.hostAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
-    isSpeaking: true,
-    isMuted: false,
-    roleTitle: 'ESP Founder & Room Host',
-  };
+  if (!Array.isArray(room.audience)) room.audience = [];
+  const firstJoin = !room.audience.includes(user.userId);
+  if (firstJoin) {
+    room.audience.push(user.userId);
+    incrementUserTaskProgress(user, 'voice_joined', 1);
+    if (!room.chatMessages) room.chatMessages = [];
+    room.chatMessages.push({
+      id: `join-${Date.now()}`,
+      senderId: 'SYSTEM',
+      sender: 'System',
+      senderRoll: 'STAGE',
+      text: `🔔 System: ${user.fullName} joined the room`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+    if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+  }
 
-  const realAudience = db.users.map(u => ({
-    userId: u.userId,
-    fullName: u.fullName,
-    chosenServiceName: u.chosenServiceName || u.chosenServiceCode,
-    joiningDate: u.joiningDate,
-    status: u.status,
-    coins: u.coins || 0,
-    charms: u.charms || 0,
-    gameLevel: u.gameLevel || 1,
-    roomAddress: u.roomAddress || `ESP-ROOM-${u.userId}`,
-    clanName: u.clanName || 'ESP Royals',
-    avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
-  }));
-
+  saveDatabase(db);
   res.json({
-    success: true,
-    room,
-    host,
-    seats: room.seats,
-    audience: realAudience,
-    audienceCount: Math.max(1, db.users.length),
-    chatMessages: room.chatMessages || [],
+    ...buildRoomDetailPayload(room, user.userId),
+    user,
+    message: `✅ आप "${room.title}" (${room.roomAddress}) में जुड़ गए!`,
   });
 });
 
-// 7. Take Mic Seat in Room
+// 6.4 Leave Room Audience
+app.post('/api/game/voice-rooms/:roomId/leave', (req, res) => {
+  const { roomId } = req.params;
+  const { userId } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId);
+  if (!room) return res.json({ success: true });
+  if (Array.isArray(room.audience) && userId && userId !== room.hostUserId) {
+    room.audience = room.audience.filter(id => id !== userId);
+  }
+  room.seats = (room.seats || []).map(s =>
+    s.userId === userId
+      ? ({ seatNumber: s.seatNumber, seatNumberLabel: String(s.seatNumber), isMuted: false, isSpeaking: false, charms: 0 } as any)
+      : s
+  );
+  saveDatabase(db);
+  res.json({ success: true });
+});
+
+// 6.5 Follow / Unfollow Room
+app.post('/api/game/voice-rooms/:roomId/follow', (req, res) => {
+  const { roomId } = req.params;
+  const { userId } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase());
+  const user = db.users.find(
+    u =>
+      (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+      (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
+  );
+  if (!room || !user) {
+    return res.status(404).json({ success: false, message: 'Room or user not found' });
+  }
+  if (!Array.isArray(room.followers)) room.followers = [];
+  if (!Array.isArray(user.followedRooms)) user.followedRooms = [];
+
+  const currentlyFollowing = room.followers.includes(user.userId);
+  if (currentlyFollowing) {
+    room.followers = room.followers.filter(id => id !== user.userId);
+    user.followedRooms = user.followedRooms.filter(id => id !== room.id);
+  } else {
+    room.followers.push(user.userId);
+    if (!user.followedRooms.includes(room.id)) {
+      user.followedRooms.push(room.id);
+    }
+    if (!room.chatMessages) room.chatMessages = [];
+    room.chatMessages.push({
+      id: `follow-${Date.now()}`,
+      senderId: 'SYSTEM',
+      sender: 'System',
+      senderRoll: 'STAGE',
+      text: `🔔 System: ${user.fullName} followed this room!`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+    if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+  }
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    isFollowed: !currentlyFollowing,
+    followersCount: room.followers.length,
+    room: buildRoomSummary(room, user.userId),
+    user,
+    message: !currentlyFollowing ? `⭐ आपने "${room.title}" को फॉलो किया!` : `रूम अनफॉलो किया गया।`,
+  });
+});
+
+// 6.6 Update Personal/Owned Room Design (Name, Topic, Wallpaper Preset or Custom Upload, Stage Layout, YouTube URL, Privacy)
+app.post('/api/game/voice-rooms/:roomId/update-design', (req, res) => {
+  const { roomId } = req.params;
+  const {
+    userId,
+    title,
+    topic,
+    category,
+    wallpaperId,
+    customWallpaperUrl,
+    stageLayout,
+    youtubeVideoUrl,
+    youtubeVideoTitle,
+    isPrivate,
+    passcode,
+  } = req.body || {};
+
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase());
+  if (!room) {
+    return res.status(404).json({ success: false, message: 'Voice room not found' });
+  }
+  const requester = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!requester || (room.hostUserId !== requester.userId && requester.role !== 'admin')) {
+    return res.status(403).json({ success: false, message: 'केवल रूम के मालिक (Owner) ही रूम डिजाइन बदल सकते हैं।' });
+  }
+
+  let themeChanged = false;
+  if (typeof title === 'string' && title.trim()) {
+    room.title = title.trim().slice(0, 80);
+  }
+  if (typeof topic === 'string') {
+    room.topic = topic.trim().slice(0, 140) || 'Community Discussion';
+  }
+  if (typeof category === 'string' && ['earning', 'gaming', 'chitchat', 'clan', 'help'].includes(category)) {
+    room.category = category as any;
+  }
+  if (typeof wallpaperId === 'string' && wallpaperId.trim()) {
+    if (room.wallpaperId !== wallpaperId) themeChanged = true;
+    room.wallpaperId = wallpaperId.trim();
+    if (wallpaperId !== 'custom_upload' && customWallpaperUrl === undefined) {
+      room.customWallpaperUrl = '';
+    }
+  }
+  if (typeof customWallpaperUrl === 'string') {
+    if (customWallpaperUrl && customWallpaperUrl !== room.customWallpaperUrl) themeChanged = true;
+    room.customWallpaperUrl = customWallpaperUrl;
+    if (customWallpaperUrl) {
+      room.wallpaperId = 'custom_upload';
+    }
+  }
+  if (typeof stageLayout === 'string' && ['classic_8', 'heart_stage', 'event_hall', 'watch_party'].includes(stageLayout)) {
+    if (room.stageLayout !== stageLayout) themeChanged = true;
+    room.stageLayout = stageLayout as any;
+  }
+  if (typeof youtubeVideoUrl === 'string') {
+    room.youtubeVideoUrl = youtubeVideoUrl.trim();
+  }
+  if (typeof youtubeVideoTitle === 'string') {
+    room.youtubeVideoTitle = youtubeVideoTitle.trim();
+  }
+  if (typeof isPrivate === 'boolean') {
+    room.isPrivate = isPrivate;
+  }
+  if (typeof passcode === 'string') {
+    room.passcode = passcode.trim().slice(0, 12);
+  }
+
+  if (!room.chatMessages) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `design-${Date.now()}`,
+    senderId: 'SYSTEM',
+    sender: 'System',
+    senderRoll: 'STAGE',
+    text: themeChanged
+      ? '🔔 System: Owner changed the theme'
+      : `🔔 System: Owner updated room settings (${room.title})`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+
+  saveDatabase(db);
+  res.json({
+    ...buildRoomDetailPayload(room, requester.userId),
+    message: '🎨 आपका पर्सनल वॉइस रूम डिज़ाइन व वॉलपेपर सेव हो गया!',
+  });
+});
+
+// 6.7 Send Room Invite Notification to Real Friends / Players
+app.post('/api/game/voice-rooms/:roomId/invite', (req, res) => {
+  const { roomId } = req.params;
+  const { senderUserId, targetUserIds } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase());
+  const sender = db.users.find(u => u.userId === senderUserId || u.id === senderUserId);
+  if (!room || !sender) {
+    return res.status(404).json({ success: false, message: 'Room or sender not found' });
+  }
+
+  const targets = Array.isArray(targetUserIds) ? targetUserIds : [];
+  let sentCount = 0;
+  for (const tid of targets) {
+    const targetUser = db.users.find(
+      u => u.userId === tid || u.id === tid || (normalizeUsername(tid) && normalizeUsername(u.username) === normalizeUsername(tid))
+    );
+    if (targetUser && targetUser.userId !== sender.userId) {
+      db.notifications.unshift({
+        id: `notif-rm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        userId: targetUser.userId,
+        title: `🎙️ Voice Room Invite from ${sender.fullName}`,
+        message: `${sender.fullName} invited you to "${room.title}" (Room ID: ${room.roomAddress}). Open Gaming Room -> Enter ID ${room.roomAddress}!`,
+        type: 'system',
+        read: false,
+        date: new Date().toISOString().split('T')[0],
+      });
+      sentCount++;
+    }
+  }
+
+  if (!room.chatMessages) room.chatMessages = [];
+  if (sentCount > 0) {
+    room.chatMessages.push({
+      id: `inv-${Date.now()}`,
+      senderId: 'SYSTEM',
+      sender: 'System',
+      senderRoll: 'STAGE',
+      text: `🔔 System: ${sender.fullName} sent room invites to ${sentCount} friend(s)!`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+  }
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    sentCount,
+    roomAddress: room.roomAddress,
+    message: sentCount > 0
+      ? `✅ ${sentCount} दोस्तों को रूम इनवाइट (${room.roomAddress}) भेज दिया गया!`
+      : `📋 रूम ID ${room.roomAddress} शेयर करने के लिए तैयार है!`,
+  });
+});
+
+// 7. Take Mic Seat in Room (Checks lockedSeats!)
 app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-seat'], (req, res) => {
   const roomId = req.params.roomId || req.body.roomId || 'room-founder';
   const { userId, seatIndex } = req.body;
@@ -3396,32 +5400,24 @@ app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-
     return res.status(400).json({ success: false, message: 'Invalid seat index' });
   }
 
-  const db = loadDatabase();
-  const foundUser = db.users.find(u => 
-    (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) || 
-    (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase()) ||
-    (u.phone && userId && u.phone === String(userId))
+  const user = db.users.find(u =>
+    (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+    (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
   );
-
-  const user: UserProfile = foundUser || (() => {
-    const rawId = String(userId || 'ESP-GUEST-01').trim();
-    const newUser: UserProfile = {
-      id: rawId,
-      userId: rawId,
-      fullName: req.body.userName || 'ESP Player',
-      phone: '8877490845',
-      status: 'active',
-      coins: 5000,
-      charms: 100,
-      gameLevel: 5,
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${rawId}`,
-    } as any;
-    db.users.push(newUser);
-    return newUser;
-  })();
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'माइक सीट लेने के लिए पहले लॉगिन करें।' });
+  }
 
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()) || rooms[0];
+
+  const lockedSet = new Set<number>(Array.isArray(room.lockedSeats) ? room.lockedSeats : []);
+  if (lockedSet.has(idx) && room.hostUserId !== user.userId) {
+    return res.status(403).json({
+      success: false,
+      message: `🔒 सीट #${idx + 1} रूम के मालिक द्वारा लॉक है।`,
+    });
+  }
 
   if (!room.seats || room.seats.length !== 8) {
     room.seats = Array.from({ length: 8 }, (_, i) => ({
@@ -3433,7 +5429,6 @@ app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-
     }));
   }
 
-  // Clear existing seat user occupies in this room
   room.seats = room.seats.map(s => {
     if (s.userId && user.userId && s.userId.toLowerCase() === user.userId.toLowerCase()) {
       return {
@@ -3447,7 +5442,6 @@ app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-
     return s;
   });
 
-  // Seat the user
   room.seats[idx] = {
     seatNumber: idx + 1,
     userId: user.userId,
@@ -3459,21 +5453,27 @@ app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-
     userAvatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`,
   };
 
+  if (!Array.isArray(room.audience)) room.audience = [];
+  if (!room.audience.includes(user.userId)) room.audience.push(user.userId);
+
+  incrementUserTaskProgress(user, 'voice_joined', 1);
+
   if (!room.chatMessages) room.chatMessages = [];
   room.chatMessages.push({
     id: `seat-${Date.now()}`,
     senderId: 'SYSTEM',
-    sender: 'ROOM STAGE',
+    sender: 'System',
     senderRoll: 'STAGE',
-    text: `🎙️ ${user.fullName} (${user.userId}) ने सीट #${idx + 1} ग्रैब की!`,
+    text: `🎙️ ${user.fullName} (${user.userId}) took mic seat #${idx + 1}`,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   });
 
   saveDatabase(db);
   res.json({
     success: true,
-    seats: room.seats,
+    seats: room.seats.map((s: any, sIdx: number) => ({ ...s, isLocked: lockedSet.has(sIdx) })),
     chatMessages: room.chatMessages,
+    user,
   });
 });
 
@@ -3481,9 +5481,8 @@ app.post(['/api/game/voice-rooms/:roomId/take-seat', '/api/game/voice-room/take-
 app.post(['/api/game/voice-rooms/:roomId/leave-seat', '/api/game/voice-room/leave-seat'], (req, res) => {
   const roomId = req.params.roomId || req.body.roomId || 'room-founder';
   const { userId } = req.body;
-  const db = loadDatabase();
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()) || rooms[0];
 
   if (!room.seats) {
     return res.json({ success: true, seats: [] });
@@ -3502,8 +5501,12 @@ app.post(['/api/game/voice-rooms/:roomId/leave-seat', '/api/game/voice-room/leav
     return s;
   });
 
+  const lockedSet = new Set<number>(Array.isArray(room.lockedSeats) ? room.lockedSeats : []);
   saveDatabase(db);
-  res.json({ success: true, seats: room.seats });
+  res.json({
+    success: true,
+    seats: room.seats.map((s: any, idx: number) => ({ ...s, isLocked: lockedSet.has(idx) })),
+  });
 });
 
 // 9. Send Real Voice Room Chat Message
@@ -3515,14 +5518,13 @@ app.post(['/api/game/voice-rooms/:roomId/chat', '/api/game/voice-room/chat'], (r
     return res.status(400).json({ success: false, message: 'Message cannot be empty' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()) || rooms[0];
 
   if (!room.chatMessages) room.chatMessages = [];
   const newMsg = {
@@ -3541,6 +5543,8 @@ app.post(['/api/game/voice-rooms/:roomId/chat', '/api/game/voice-room/chat'], (r
     room.chatMessages = room.chatMessages.slice(-80);
   }
 
+  incrementUserTaskProgress(user, 'chat_sent', 1);
+
   saveDatabase(db);
   res.json({ success: true, message: newMsg, chatMessages: room.chatMessages });
 });
@@ -3554,16 +5558,15 @@ app.post(['/api/game/voice-rooms/:roomId/voice-audio', '/api/game/voice-room/voi
     return res.status(400).json({ success: false, message: 'Audio data is required' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId === userId || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()) || rooms[0];
 
-  const effectLabel = voiceEffect && voiceEffect.name 
+  const effectLabel = voiceEffect && voiceEffect.name
     ? `${voiceEffect.icon || '🎭'} [${voiceEffect.name} Effect - Voice Note (${durationSec || 3}s)]`
     : `🎙️ [लाइव आवाज़ / Voice Note (${durationSec || 3}s)]`;
 
@@ -3587,9 +5590,8 @@ app.post(['/api/game/voice-rooms/:roomId/voice-audio', '/api/game/voice-room/voi
     room.chatMessages = room.chatMessages.slice(-80);
   }
 
-  // Also award charms/XP for speaking live
-  user.charms = (user.charms || 0) + 5;
-  user.gameXp = (user.gameXp || 0) + 10;
+  incrementUserTaskProgress(user, 'chat_sent', 1);
+  incrementUserTaskProgress(user, 'voice_joined', 1);
 
   saveDatabase(db);
   res.json({
@@ -3599,24 +5601,29 @@ app.post(['/api/game/voice-rooms/:roomId/voice-audio', '/api/game/voice-room/voi
   });
 });
 
-// 9.2 Host Action (Mute/Unmute seat, Kick from seat, Update Topic)
+// 9.2 Host Action (Mute/Unmute seat, Kick, Lock/Unlock Seat, Update Topic, Set YouTube Video)
 app.post('/api/game/voice-rooms/:roomId/host-action', (req, res) => {
   const { roomId } = req.params;
-  const { hostUserId, action, seatIndex, newTopic } = req.body;
+  const { hostUserId, action, seatIndex, newTopic, youtubeVideoUrl, youtubeVideoTitle } = req.body;
 
-  const db = loadDatabase();
   const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase());
   if (!room) {
     return res.status(404).json({ success: false, message: 'Room not found' });
   }
 
   if (room.hostUserId !== hostUserId && hostUserId !== 'EMO-MOM-MMO') {
-    return res.status(403).json({ success: false, message: 'Only room host can perform this action' });
+    return res.status(403).json({ success: false, message: 'Only room owner can perform this action' });
   }
+
+  if (!Array.isArray(room.lockedSeats)) room.lockedSeats = [];
 
   if (action === 'update_topic' && newTopic) {
     room.topic = newTopic.trim();
+  } else if (action === 'set_youtube') {
+    room.youtubeVideoUrl = String(youtubeVideoUrl || '').trim();
+    room.youtubeVideoTitle = String(youtubeVideoTitle || '').trim();
+    room.stageLayout = 'watch_party';
   } else if (typeof seatIndex === 'number' && room.seats[seatIndex]) {
     if (action === 'mute') {
       room.seats[seatIndex].isMuted = true;
@@ -3631,197 +5638,65 @@ app.post('/api/game/voice-rooms/:roomId/host-action', (req, res) => {
         isSpeaking: false,
         charms: 0,
       } as any;
-    }
-  }
-
-  saveDatabase(db);
-  res.json({ success: true, room, seats: room.seats });
-});
-
-// 9.3 Get All WePlay Agent Bots
-app.get('/api/game/bots', (_req, res) => {
-  const db = loadDatabase();
-  const sharmaJi = db.users.find(u => u.userId === 'SHARMA-JI-VIP') || {
-    userId: 'SHARMA-JI-VIP',
-    fullName: '👑 Sharma Ji (शर्मा जी)',
-    gameLevel: 99,
-    charms: 98765,
-    crownPost: true,
-    frameType: 'royal-dragon-crown',
-    vipTitle: '👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)',
-  };
-
-  res.json({
-    success: true,
-    bots: DEFAULT_WEPLAY_BOTS,
-    sharmaJiLegend: sharmaJi,
-  });
-});
-
-// 9.4 Invite Bot to Room Mic Seat
-app.post(['/api/game/voice-rooms/:roomId/invite-bot', '/api/game/voice-room/invite-bot'], (req, res) => {
-  const roomId = req.params.roomId || req.body.roomId || 'room-founder';
-  const { botId, seatIndex } = req.body;
-  const db = loadDatabase();
-  const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
-
-  const bot = DEFAULT_WEPLAY_BOTS.find(b => b.id === botId || b.code === botId);
-  const isSharmaJi = botId === 'SHARMA-JI-VIP' || botId === 'sharma_ji';
-
-  const avatar = isSharmaJi 
-    ? 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99'
-    : (bot ? bot.avatar : 'https://api.dicebear.com/7.x/bottts/svg?seed=BotESP');
-  const name = isSharmaJi ? '👑 Sharma Ji (शर्मा जी)' : (bot ? bot.hindiName : 'AI Bot');
-  const level = isSharmaJi ? 99 : (bot ? bot.level : 50);
-  const charms = isSharmaJi ? 98765 : (bot ? bot.charms : 10000);
-  const badge = isSharmaJi ? '👑 EMPEROR' : (bot ? bot.badge : '🤖 BOT');
-  const targetId = isSharmaJi ? 'SHARMA-JI-VIP' : (bot ? bot.id : `BOT-${Date.now()}`);
-
-  if (!room.seats || room.seats.length !== 8) {
-    room.seats = Array.from({ length: 8 }, (_, i) => ({
-      seatNumber: i + 1,
-      seatNumberLabel: String(i + 1),
-      isMuted: false,
-      isSpeaking: false,
-      charms: 0,
-    }));
-  }
-
-  // Find target seat
-  let targetIdx = typeof seatIndex === 'number' && seatIndex >= 0 && seatIndex < 8 ? seatIndex : -1;
-  if (targetIdx === -1 || (room.seats[targetIdx] && room.seats[targetIdx].userId)) {
-    targetIdx = room.seats.findIndex(s => !s.userId);
-  }
-
-  if (targetIdx === -1) {
-    return res.status(400).json({ success: false, message: 'स्टेज पर कोई खाली सीट उपलब्ध नहीं है!' });
-  }
-
-  room.seats[targetIdx] = {
-    seatNumber: targetIdx + 1,
-    seatNumberLabel: String(targetIdx + 1),
-    userId: targetId,
-    userName: name,
-    gameLevel: level,
-    charms: charms,
-    isMuted: false,
-    isSpeaking: true,
-    userAvatar: avatar,
-    userRollNumber: badge,
-  };
-
-  if (!room.chatMessages) room.chatMessages = [];
-  const greeting = isSharmaJi 
-    ? '👑 नमस्ते महफ़िल! मैं शर्मा जी (Level 99) आप सभी के साथ स्टेज पर आ चुका हूँ। खूब खेलो, खूब जीतो!'
-    : (bot && bot.sampleDialogues ? bot.sampleDialogues[0] : `🤖 ${name} ने सीट #${targetIdx + 1} संभाली!`);
-
-  room.chatMessages.push({
-    id: `bot-seat-${Date.now()}`,
-    senderId: targetId,
-    sender: name,
-    senderRoll: badge,
-    senderAvatar: avatar,
-    text: greeting,
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  });
-
-  saveDatabase(db);
-  res.json({
-    success: true,
-    message: `${name} सीट #${targetIdx + 1} पर आ चुके हैं!`,
-    seats: room.seats,
-    chatMessages: room.chatMessages,
-  });
-});
-
-// 9.5 Summon All WePlay Bots (Solo User Instant Room Fill)
-app.post(['/api/game/voice-rooms/:roomId/summon-all-bots', '/api/game/voice-room/summon-all-bots'], (req, res) => {
-  const roomId = req.params.roomId || req.body.roomId || 'room-founder';
-  const db = loadDatabase();
-  const rooms = getOrCreateRooms(db);
-  const room = rooms.find(r => r.id === roomId) || rooms[0];
-
-  if (!room.seats || room.seats.length !== 8) {
-    room.seats = Array.from({ length: 8 }, (_, i) => ({
-      seatNumber: i + 1,
-      seatNumberLabel: String(i + 1),
-      isMuted: false,
-      isSpeaking: false,
-      charms: 0,
-    }));
-  }
-
-  const botsToSeat = [
-    { ...DEFAULT_WEPLAY_BOTS[0] }, // Nyayadhish
-    { ...DEFAULT_WEPLAY_BOTS[1] }, // Wolf
-    { ...DEFAULT_WEPLAY_BOTS[2] }, // We Bhai
-    { ...DEFAULT_WEPLAY_BOTS[3] }, // We Chat
-    { 
-      id: 'SHARMA-JI-VIP', 
-      hindiName: '👑 Sharma Ji (शर्मा जी)', 
-      level: 99, 
-      charms: 98765, 
-      badge: '👑 EMPEROR', 
-      avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99' 
-    },
-  ];
-
-  let seatedCount = 0;
-  for (let i = 0; i < room.seats.length; i++) {
-    if (!room.seats[i].userId && botsToSeat.length > 0) {
-      const b = botsToSeat.shift()!;
-      room.seats[i] = {
-        seatNumber: i + 1,
-        seatNumberLabel: String(i + 1),
-        userId: b.id,
-        userName: b.hindiName,
-        gameLevel: b.level,
-        charms: b.charms,
+    } else if (action === 'lock_seat') {
+      if (!room.lockedSeats.includes(seatIndex)) {
+        room.lockedSeats.push(seatIndex);
+      }
+      room.seats[seatIndex] = {
+        seatNumber: seatIndex + 1,
+        seatNumberLabel: String(seatIndex + 1),
         isMuted: false,
-        isSpeaking: true,
-        userAvatar: b.avatar,
-        userRollNumber: b.badge,
-      };
-      seatedCount++;
+        isSpeaking: false,
+        charms: 0,
+      } as any;
+    } else if (action === 'unlock_seat') {
+      room.lockedSeats = room.lockedSeats.filter(i => i !== seatIndex);
     }
   }
 
-  if (!room.chatMessages) room.chatMessages = [];
-  room.chatMessages.push({
-    id: `summon-${Date.now()}`,
-    senderId: 'BOT-ALERT',
-    sender: '🔔 WeAlert (शाही बिगुल)',
-    senderRoll: '🔔 ALERT',
-    senderAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeAlertRoyalHorn',
-    text: '🎺 सुनिए सुनिए! न्यायाधीश, भेड़िया बॉट, वी भाई, वी चैट और स्वयं शर्मा जी (Lvl 99, 98,765 Charms) स्टेज पर उपस्थित हैं! अकेला कोई नहीं रहेगा!',
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  });
-
+  const lockedSet = new Set<number>(room.lockedSeats);
   saveDatabase(db);
   res.json({
     success: true,
-    message: `${seatedCount} AI बॉट्स व शर्मा जी ने स्टेज जॉइन कर लिया!`,
-    seats: room.seats,
-    chatMessages: room.chatMessages,
+    room: buildRoomSummary(room, hostUserId),
+    seats: room.seats.map((s: any, idx: number) => ({ ...s, isLocked: lockedSet.has(idx) })),
   });
 });
 
-// 9.6 Bot Interaction Trigger (Judge Verdict, Shayari, Coins Booster)
+// 9.3 Real Members Stage Policy (Bots removed - only real verified members take voice seats)
+app.get('/api/game/bots', (_req, res) => {
+  res.json({
+    success: true,
+    bots: [],
+    realMembersOnly: true,
+  });
+});
+
+// 9.4-9.5 Bot seating disabled (Voice stage supports real registered members only)
+app.post(['/api/game/voice-rooms/:roomId/invite-bot', '/api/game/voice-room/invite-bot', '/api/game/voice-rooms/:roomId/summon-all-bots', '/api/game/voice-room/summon-all-bots'], (req, res) => {
+  const roomId = req.params.roomId || req.body.roomId || 'room-founder';
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId) || rooms[0];
+  res.status(400).json({
+    success: false,
+    message: 'ESP PLAY वॉइस रूम में केवल रियल रजिस्टर्ड मेंबर्स ही सीट ले सकते हैं। कृपया अपने दोस्तों को रूम एड्रेस से आमंत्रित करें!',
+    seats: room.seats || [],
+    chatMessages: room.chatMessages || [],
+  });
+});
+
+// 9.6 Bot Interaction Trigger (Banter, Shayari, Rules Only - Zero Free Coins)
 app.post(['/api/game/voice-rooms/:roomId/bot-interact', '/api/game/voice-room/bot-interact'], (req, res) => {
   const roomId = req.params.roomId || req.body.roomId || 'room-founder';
-  const { botCode, userId, actionType } = req.body;
-  const db = loadDatabase();
+  const { botCode } = req.body;
   const rooms = getOrCreateRooms(db);
   const room = rooms.find(r => r.id === roomId) || rooms[0];
-  const callerUser = db.users.find(u => u.userId === userId || u.id === userId);
 
   let replyText = '';
   let botName = 'AI Bot';
   let botId = 'BOT-AI';
   let botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=BotESP';
-  let botRoll = '🤖 AI BOT';
-  let coinsAwarded = 0;
+  let botRoll = '🤖 BOT';
 
   if (botCode === 'judge') {
     botName = '⚖️ न्यायाधीश (Judge Bot)';
@@ -3829,63 +5704,41 @@ app.post(['/api/game/voice-rooms/:roomId/bot-interact', '/api/game/voice-room/bo
     botRoll = '⚖️ JUSTICE';
     botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99';
     const rulings = [
-      '⚖️ अदालत का फैसला: सभी खिलाड़ियों ने निष्पक्ष खेल दिखाया है। 50 इंसाफ कॉइन्स रिवॉर्ड स्वीकृत!',
-      '⚖️ फैसला: नियम 7 के अनुसार रूम में किसी भी विवाद का समाधान आपसी भाईचारे से होगा। सम्मान बनाए रखें!',
-      '⚖️ निष्पक्ष ऑडिट पूर्ण हुआ! इस कमरे की रैंकिंग और चार्म्स 100% वेरिफाइड हैं।',
-      '⚖️ हर खेल में सच्चाई और ईमानदारी ही सबसे बड़ा ताज है। फैसला आपके पक्ष में!',
+      '⚖️ नियम सूचना: सभी खिलाड़ियों के साथ निष्पक्ष नियम लागू होंगे। कोई भी फ्री/फेक कॉइन नहीं बांटा जाएगा।',
+      '⚖️ फैसला: केवल असली टास्क पूरे करने और रियल गेम्स खेलने पर ही कॉइन्स व EXP मिलेंगे!',
+      '⚖️ सम्मान बनाए रखें और स्वस्थ प्रतियोगिता में भाग लें!',
     ];
     replyText = rulings[Math.floor(Math.random() * rulings.length)];
-    coinsAwarded = 50;
   } else if (botCode === 'we_bhai') {
     botName = '🤝 We Bhai (वी भाई)';
     botId = 'BOT-BHAI';
     botRoll = '🤝 WE BHAI';
     botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother';
     const advices = [
-      '🤝 अरे भाई! EMO और NWI ऑटो पूल चेक किया? रोज़ का टास्क पूरा करो, बहुत तगड़ी कमाई होगी! लो 100 लकी कॉइन्स!',
-      '🤝 वी भाई की सीक्रेट टिप: स्नेक गेम में कॉर्नर संभाल के खेलो, स्कोर 5,000 पार हो जाएगा! लो 100 कॉइन्स बोनस!',
-      '🤝 अरे अपने भाई के रहते कोई अकेला कैसे रह सकता है? जमके खेलो, 100 कॉइन्स गिफ्ट मेरी तरफ से!',
+      '🤝 अरे भाई! रोज़ का टास्क सेक्शन पूरा करो — हर टास्क पूरा होने पर +5 असली कॉइन्स और EXP मिलते हैं!',
+      '🤝 सीक्रेट टिप: VIP और बढ़िया फ्रेम अनलॉक करने के लिए टास्क व गेम से कॉइन्स कमाएं या UPI रिचार्ज करें!',
     ];
     replyText = advices[Math.floor(Math.random() * advices.length)];
-    coinsAwarded = 100;
   } else if (botCode === 'we_chat') {
     botName = '💬 We Chat (वी चैट AI)';
     botId = 'BOT-CHAT';
     botRoll = '💬 COMPANION';
     botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet';
     const shayaris = [
-      '💬 "तारों में अकेला चांद जगमगाता है, मुश्किलों में अकेला इंसान डगमगाता है... कांटों से मत घबराना मेरे दोस्त, क्योंकि कांटों में ही अकेला गुलाब मुस्कुराता है!" 🌹',
+      '💬 "तारों में अकेला चांद जगमगाता है, मुश्किलों में अकेला इंसान डगमगाता है... कांटों में ही अकेला गुलाब मुस्कुराता है!" 🌹',
       '💬 "हौसलों के तरकश में कोशिश का वो तीर जिंदा रखो, हार जाओ चाहे जिंदगी में सब कुछ मगर जीतने की उम्मीद जिंदा रखो!" 🎯',
-      '💬 एक चुटकुला: संता ने बंता से पूछा - "यार जिंदगी में सबसे मुश्किल काम क्या है?" बंता बोला - "शर्मा जी से ज्यादा लेवल बनाना!" 😂',
-      '💬 "खुशियों की कोई दुकान नहीं होती, दिल से मुस्कुराओ तो कोई बात अनजान नहीं होती!" आपके लिए ढेर सारा प्यार! ✨',
     ];
     replyText = shayaris[Math.floor(Math.random() * shayaris.length)];
-    coinsAwarded = 25;
-  } else if (botCode === 'wolf') {
+  } else {
     botName = '🐺 Werewolf Host (भेड़िया बॉट)';
     botId = 'BOT-WOLF';
     botRoll = '🐺 WEREWOLF';
     botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=WerewolfHostWolf';
     const wolfQuotes = [
-      '🐺 ध्यान दें गांव वालो! रात ढल चुकी है... पूर्णिमा का चांद निकल आया है। भेड़िए शिकार की तलाश में हैं!',
-      '🐺 ज्योतिषी ने आंखें मूंदीं और एक रहस्य देखा... क्या डॉक्टर सही इंसान को बचा पाएगा? दिन होने तक प्रतीक्षा करें!',
-      '🐺 गांव की पंचायत बुलाई जाती है! सभी लोग मिलकर फैसला करें कि असली भेड़िया कौन है!',
-      '🐺 संभल कर रहें! भेड़िया मासूम का चोला पहन कर भी घूम सकता है!',
+      '🐺 ध्यान दें गांव वालो! रात ढल चुकी है... भेड़िया गेम में सोच-समझकर वोट करें!',
+      '🐺 गांव की पंचायत बुलाई जाती है! सभी खिलाड़ी मिलकर तय करें कि असली भेड़िया कौन है!',
     ];
     replyText = wolfQuotes[Math.floor(Math.random() * wolfQuotes.length)];
-    coinsAwarded = 30;
-  } else if (botCode === 'sharma_ji') {
-    botName = '👑 Sharma Ji (शर्मा जी)';
-    botId = 'SHARMA-JI-VIP';
-    botRoll = '👑 EMPEROR';
-    botAvatar = 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiRoyalLegend99';
-    replyText = '👑 अरे वाह! मैं शर्मा जी आप सबकी लगन देखकर बहुत खुश हूँ। पूरे 98,765 चार्म्स का आशीर्वाद और 200 कॉइन्स मेरी तरफ से इस कमरे को!';
-    coinsAwarded = 200;
-  }
-
-  if (callerUser && coinsAwarded > 0) {
-    callerUser.coins = (callerUser.coins || 0) + coinsAwarded;
-    callerUser.charms = (callerUser.charms || 0) + Math.floor(coinsAwarded / 2);
   }
 
   if (!room.chatMessages) room.chatMessages = [];
@@ -3905,18 +5758,17 @@ app.post(['/api/game/voice-rooms/:roomId/bot-interact', '/api/game/voice-room/bo
   res.json({
     success: true,
     message: msgObj,
-    coinsAwarded,
-    userCoins: callerUser ? callerUser.coins : undefined,
-    userCharms: callerUser ? callerUser.charms : undefined,
+    coinsAwarded: 0,
     chatMessages: room.chatMessages,
   });
 });
 
-// 10. Real Community Players List (For Friends, Clan & Directory)
+// 10. Real Community Players List, Leaderboard & Clans
 app.get('/api/community/real-players', (_req, res) => {
-  const db = loadDatabase();
   const realPlayers = db.users.map(u => ({
     userId: u.userId,
+    gamingId: u.gamingId || `GAME-${u.userId}`,
+    username: u.username || '',
     fullName: u.fullName,
     phone: maskString(u.phone, 'phone'),
     chosenServiceName: u.chosenServiceName || u.chosenServiceCode,
@@ -3927,28 +5779,257 @@ app.get('/api/community/real-players', (_req, res) => {
     charms: u.charms || 0,
     gameLevel: u.gameLevel || 1,
     gameXp: u.gameXp || 0,
-    roomAddress: u.roomAddress || `ESP-ROOM-${u.userId}`,
+    vipTier: u.vipTier || 'none',
+    vipTitle: u.vipTitle || '',
+    frameType: u.frameType || 'standard',
+    roomAddress: ensureUserRoomAddress(db, u),
     houseName: u.houseName || `${u.fullName} Gaming House`,
     clanName: u.clanName || 'Royal Warriors ESP',
     clanRole: u.clanRole || 'Member',
     avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+    coverPhoto: u.coverPhoto || '',
+    bio: u.bio || '',
+    gender: u.gender || 'male',
+    location: u.location || 'India',
+    friendsCount: (u.friendsList || []).length,
+    isOnline: Boolean(u.isOnline),
     role: u.role,
   }));
 
   res.json({ success: true, players: realPlayers });
 });
 
-// 11. Real Player Profile Information Modal
+app.get('/api/community/leaderboard', (_req, res) => {
+  const leaderboard = [...db.users]
+    .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.charms || 0) - (a.charms || 0))
+    .slice(0, 30)
+    .map((u, idx) => ({
+      rank: idx + 1,
+      userId: u.userId,
+      fullName: u.fullName,
+      avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+      gameLevel: u.gameLevel || 1,
+      gameXp: u.gameXp || 0,
+      charms: u.charms || 0,
+      coins: u.coins || 0,
+      vipTier: u.vipTier || 'none',
+      frameType: u.frameType || 'standard',
+      clanName: u.clanName || 'Royal Warriors ESP',
+      tasksCompletedCount: u.tasksCompletedCount || 0,
+    }));
+
+  res.json({ success: true, leaderboard });
+});
+
+app.get('/api/community/clans', (_req, res) => {
+  const clanMap = new Map<string, {
+    clanName: string;
+    membersCount: number;
+    totalXp: number;
+    totalCharms: number;
+    leaderName: string;
+    leaderId: string;
+  }>();
+
+  for (const u of db.users) {
+    const clanName = (u.clanName || 'Royal Warriors ESP').trim();
+    const existing = clanMap.get(clanName);
+    if (!existing) {
+      clanMap.set(clanName, {
+        clanName,
+        membersCount: 1,
+        totalXp: u.gameXp || 0,
+        totalCharms: u.charms || 0,
+        leaderName: u.fullName,
+        leaderId: u.userId,
+      });
+    } else {
+      existing.membersCount += 1;
+      existing.totalXp += (u.gameXp || 0);
+      existing.totalCharms += (u.charms || 0);
+      if (u.clanRole === 'Leader') {
+        existing.leaderName = u.fullName;
+        existing.leaderId = u.userId;
+      }
+    }
+  }
+
+  const clans = Array.from(clanMap.values()).sort(
+    (a, b) => b.totalXp - a.totalXp || b.membersCount - a.membersCount
+  );
+
+  res.json({ success: true, clans });
+});
+
+// 11. Unique Username Check, Real User Search, Friend Toggle & Rich WePlay Player Profile
+app.get('/api/users/check-username', (req, res) => {
+  const raw = String(req.query.username || '');
+  const currentUserId = String(req.query.currentUserId || '').trim();
+  const normalized = normalizeUsername(raw);
+  if (!normalized) {
+    return res.json({
+      success: true,
+      valid: false,
+      available: false,
+      normalized: '',
+      message: 'कृपया यूजरनेम दर्ज करें (कम से कम 3 अक्षर)',
+    });
+  }
+  if (!isValidUsernameFormat(normalized)) {
+    return res.json({
+      success: true,
+      valid: false,
+      available: false,
+      normalized,
+      message: 'कोई Symbol (_ - . @) उपयोग न करें — केवल 3-24 अक्षर (a-z और 0-9) लिखें',
+    });
+  }
+  const taken = isUsernameTaken(db.users, normalized, currentUserId);
+  return res.json({
+    success: true,
+    valid: true,
+    available: !taken,
+    normalized,
+    message: taken
+      ? `@${normalized} पहले से किसी दूसरे यूजर ने लिया है!`
+      : `✓ @${normalized} उपलब्ध है!`,
+  });
+});
+
+app.get('/api/users/search', (req, res) => {
+  const rawQ = String(req.query.q || '').trim();
+  const cleanHandle = normalizeUsername(rawQ);
+  const qLower = rawQ.toLowerCase();
+  const currentUserId = String(req.query.currentUserId || '').trim();
+  const viewer = currentUserId ? db.users.find(u => u.userId === currentUserId || u.id === currentUserId) : undefined;
+  const viewerFriends = new Set(viewer?.friendsList || []);
+
+  const matches = db.users
+    .filter(u => {
+      if (!qLower) return true;
+      const uname = normalizeUsername(u.username);
+      const fname = (u.fullName || '').toLowerCase();
+      const uid = (u.userId || '').toLowerCase();
+      const gid = (u.gamingId || '').toLowerCase();
+      return (
+        (cleanHandle && uname.includes(cleanHandle)) ||
+        fname.includes(qLower) ||
+        uid.includes(qLower) ||
+        gid.includes(qLower)
+      );
+    })
+    .sort((a, b) => {
+      const aU = normalizeUsername(a.username);
+      const bU = normalizeUsername(b.username);
+      const aExact = cleanHandle && aU === cleanHandle ? 1 : 0;
+      const bExact = cleanHandle && bU === cleanHandle ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      return (b.gameXp || 0) - (a.gameXp || 0);
+    })
+    .slice(0, 30)
+    .map(u => ({
+      userId: u.userId,
+      gamingId: u.gamingId || `GAME-${u.userId}`,
+      username: u.username || '',
+      fullName: u.fullName,
+      avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+      coverPhoto: u.coverPhoto || '',
+      location: u.location || 'India',
+      gender: u.gender || 'male',
+      bio: u.bio || '',
+      vipTier: u.vipTier || 'none',
+      vipTitle: u.vipTitle || '',
+      frameType: u.frameType || 'standard',
+      gameLevel: u.gameLevel || 1,
+      gameXp: u.gameXp || 0,
+      coins: u.coins || 0,
+      charms: u.charms || 0,
+      roomAddress: ensureUserRoomAddress(db, u),
+      isVipRoom: Boolean(u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)),
+      vipRoomLabel: u.vipRoomLabel || '',
+      clanName: u.clanName || 'Royal Warriors ESP',
+      friendsCount: (u.friendsList || []).length,
+      isFriend: viewerFriends.has(u.userId),
+      isOnline: Boolean(u.isOnline),
+    }));
+
+  res.json({ success: true, users: matches });
+});
+
+app.post('/api/friends/toggle', (req, res) => {
+  const { userId, targetUserId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const target = db.users.find(
+    u =>
+      u.userId === targetUserId ||
+      u.id === targetUserId ||
+      (normalizeUsername(targetUserId) && normalizeUsername(u.username) === normalizeUsername(targetUserId))
+  );
+  if (!user || !target) {
+    return res.status(404).json({ success: false, message: 'User or target player not found' });
+  }
+  if (user.userId === target.userId) {
+    return res.status(400).json({ success: false, message: 'आप खुद को फ्रेंड लिस्ट में नहीं जोड़ सकते।' });
+  }
+
+  if (!Array.isArray(user.friendsList)) user.friendsList = [];
+  if (!Array.isArray(target.friendsList)) target.friendsList = [];
+
+  const alreadyFriend = user.friendsList.includes(target.userId);
+  if (alreadyFriend) {
+    user.friendsList = user.friendsList.filter(id => id !== target.userId);
+    target.friendsList = target.friendsList.filter(id => id !== user.userId);
+  } else {
+    user.friendsList.push(target.userId);
+    if (!target.friendsList.includes(user.userId)) {
+      target.friendsList.push(user.userId);
+    }
+    incrementUserTaskProgress(user, 'profile_completed', 1);
+  }
+
+  user.friendsCount = user.friendsList.length;
+  target.friendsCount = target.friendsList.length;
+  saveDatabase(db);
+
+  res.json({
+    success: true,
+    isFriend: !alreadyFriend,
+    message: !alreadyFriend
+      ? `✅ ${target.fullName} (${target.username ? `@${target.username}` : target.userId}) को फ्रेंड लिस्ट में जोड़ा गया!`
+      : `${target.fullName} को फ्रेंड लिस्ट से हटाया गया।`,
+    user,
+    targetFriendsCount: target.friendsCount,
+  });
+});
+
 app.get('/api/community/player-profile/:userId', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
-  const u = db.users.find(user => user.userId === userId || user.id === userId);
+  const cleanHandle = normalizeUsername(userId);
+  const viewerId = String(req.query.viewerId || '').trim();
+  const u = db.users.find(
+    user =>
+      user.userId === userId ||
+      user.id === userId ||
+      (cleanHandle && normalizeUsername(user.username) === cleanHandle)
+  );
   if (!u) {
     return res.status(404).json({ success: false, message: 'Player not found' });
   }
 
+  const viewer = viewerId ? db.users.find(v => v.userId === viewerId || v.id === viewerId) : undefined;
+  const isFriend = Boolean(viewer && Array.isArray(viewer.friendsList) && viewer.friendsList.includes(u.userId));
+
+  const userMoments = (db.moments || [])
+    .filter(m => m.userId === u.userId || m.userId === u.id || m.userRollNumber === u.userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const giftEntries = Object.values(u.receivedGifts || {});
+  const totalGiftsLit = giftEntries.reduce((sum, g) => sum + (Number(g.count) || 0), 0);
+
   const profile = {
     userId: u.userId,
+    gamingId: u.gamingId || `GAME-${u.userId}`,
+    username: u.username || '',
     fullName: u.fullName,
     phone: maskString(u.phone, 'phone'),
     email: maskString(u.email, 'email'),
@@ -3961,33 +6042,216 @@ app.get('/api/community/player-profile/:userId', (req, res) => {
     charms: u.charms || 0,
     gameLevel: u.gameLevel || 1,
     gameXp: u.gameXp || 0,
+    vipTier: u.vipTier || 'none',
+    vipTitle: u.vipTitle || '',
+    frameType: u.frameType || 'standard',
+    unlockedFrames: u.unlockedFrames || ['standard'],
     totalEarnings: u.totalEarnings || 0,
     balance: u.balance || 0,
-    roomAddress: u.roomAddress || `ESP-ROOM-${u.userId}`,
+    roomAddress: ensureUserRoomAddress(db, u),
+    isVipRoom: Boolean(u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)),
+    vipRoomLabel: u.vipRoomLabel || '',
     houseName: u.houseName || `${u.fullName} Gaming House`,
     clanName: u.clanName || 'Royal Warriors ESP',
     clanRole: u.clanRole || 'Member',
     sponsorId: u.sponsorId,
     sponsorName: u.sponsorName,
-    loginStreak: u.loginStreak || 1,
+    loginStreak: u.loginStreak || 0,
     avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
+    coverPhoto: u.coverPhoto || '',
+    bio: u.bio || '',
+    gender: u.gender || 'male',
+    location: u.location || 'India',
+    accountType: u.accountType || 'business',
+    payoutUpiId: u.payoutUpiId || u.paymentAddress || '',
+    friendsCount: (u.friendsList || []).length,
+    friendsList: u.friendsList || [],
+    isFriend,
+    moments: userMoments,
+    momentsCount: userMoments.length,
+    giftWall: giftEntries,
+    totalGiftsLit,
     verifiedAt: u.verifiedAt,
     role: u.role,
+    isOnline: Boolean(u.isOnline),
   };
 
   res.json({ success: true, profile });
 });
 
+// ======================== ADMIN VIP NUMERIC ROOM ID SETUP SYSTEM ========================
+
+app.post('/api/admin/vip-rooms/check', (req, res) => {
+  const { adminPassword, roomNumber, excludeUserId } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const rooms = getOrCreateRooms(db);
+  const raw = String(roomNumber || '').trim();
+  if (!raw) {
+    return res.json({
+      success: true,
+      valid: false,
+      available: false,
+      normalized: '',
+      isFancyVip: false,
+      message: 'कृपया 3 से 10 अंकों का Room नंबर दर्ज करें (जैसे 1111, 2222, 1234)',
+    });
+  }
+  if (!/^\d{3,10}$/.test(raw)) {
+    return res.json({
+      success: true,
+      valid: false,
+      available: false,
+      normalized: raw.replace(/\D/g, ''),
+      isFancyVip: false,
+      message: 'केवल संख्यात्मक अंक (0-9, न्यूनतम 3 व अधिकतम 10 अंक) दर्ज करें — कोई अक्षर या Symbol नहीं!',
+    });
+  }
+  const conflict = findRoomConflictOwner(raw, db.users, rooms, excludeUserId);
+  const isFancy = isVipFancyRoomNumber(raw);
+  return res.json({
+    success: true,
+    valid: true,
+    available: !conflict.conflict,
+    normalized: raw,
+    isFancyVip: isFancy,
+    conflictOwner: conflict.conflict ? `${conflict.ownerName || 'User'} (${conflict.ownerId || ''})` : null,
+    message: conflict.conflict
+      ? `❌ Room ID ${raw} पहले से ${conflict.ownerName || conflict.ownerId} को अलॉट है!`
+      : `✓ Room ID ${raw} खाली है${isFancy ? ' (👑 VIP Fancy Number)' : ''}!`,
+  });
+});
+
+app.post('/api/admin/vip-rooms/assign', (req, res) => {
+  const { adminPassword, targetUserId, roomNumber, isVipRoom = true, vipRoomLabel = '' } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const user = db.users.find(
+    u =>
+      u.userId.toLowerCase() === String(targetUserId || '').toLowerCase() ||
+      u.id === targetUserId
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'चयनित यूजर नहीं मिला।' });
+  }
+  const cleanNumber = String(roomNumber || '').trim();
+  if (!/^\d{3,10}$/.test(cleanNumber)) {
+    return res.status(400).json({
+      success: false,
+      message: 'अमान्य Room नंबर! केवल 3 से 10 अंकों की संख्या दर्ज करें (जैसे 1111, 2222, 1234)।',
+    });
+  }
+
+  const rooms = getOrCreateRooms(db);
+  const conflict = findRoomConflictOwner(cleanNumber, db.users, rooms, user.userId);
+  if (conflict.conflict) {
+    return res.status(409).json({
+      success: false,
+      message: `Room ID ${cleanNumber} पहले से ${conflict.ownerName || conflict.ownerId} के पास है। कोई अन्य नंबर चुनें!`,
+    });
+  }
+
+  const prevRoomId = user.roomAddress || '';
+  const vipFlag = Boolean(isVipRoom || isVipFancyRoomNumber(cleanNumber));
+  const cleanLabel = String(vipRoomLabel || (vipFlag ? 'VIP Room' : '')).trim();
+
+  user.roomAddress = cleanNumber;
+  user.personalRoomId = cleanNumber;
+  user.isVipRoom = vipFlag;
+  user.vipRoomLabel = cleanLabel;
+  user.vipRoomAssignedAt = new Date().toISOString();
+  user.vipRoomAssignedBy = 'Admin';
+
+  const personalRoom = ensurePersonalRoomForUser(db, user);
+  personalRoom.roomAddress = cleanNumber;
+  personalRoom.roomNumber = cleanNumber;
+  personalRoom.isVipRoom = vipFlag;
+  personalRoom.vipRoomLabel = cleanLabel;
+
+  if (!Array.isArray(user.editHistory)) user.editHistory = [];
+  user.editHistory.unshift({
+    date: new Date().toISOString(),
+    field: 'VIP Room ID',
+    oldValue: prevRoomId || '-',
+    newValue: `${cleanNumber}${vipFlag ? ' (VIP)' : ''}`,
+  });
+
+  if (!Array.isArray(db.notifications)) db.notifications = [];
+  db.notifications.unshift({
+    id: `notif-vip-room-${Date.now()}`,
+    userId: user.userId,
+    title: vipFlag ? `👑 VIP Room ID ${cleanNumber} अलॉट हुआ!` : `🎙️ नया Room ID ${cleanNumber} अपडेट हुआ!`,
+    message: `बधाई हो ${user.fullName}! Admin ने आपका पर्सनल वॉइस रूम नंबर ${prevRoomId || '-'} से बदलकर ${cleanNumber} सेट किया है। अब कोई भी सिर्फ ${cleanNumber} सर्च करके आपका रूम तुरंत खोल सकता है!`,
+    date: new Date().toISOString(),
+    read: false,
+    type: 'system',
+  });
+
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: `✅ ${user.fullName} को ${vipFlag ? '👑 VIP ' : ''}Room ID "${cleanNumber}" सफलतापूर्वक अलॉट हो गया!`,
+    user,
+    room: buildRoomSummary(personalRoom, user.userId),
+  });
+});
+
+app.post('/api/admin/vip-rooms/reset', (req, res) => {
+  const { adminPassword, targetUserId } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const user = db.users.find(
+    u =>
+      u.userId.toLowerCase() === String(targetUserId || '').toLowerCase() ||
+      u.id === targetUserId
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'चयनित यूजर नहीं मिला।' });
+  }
+
+  const rooms = getOrCreateRooms(db);
+  const nextStandardId = generateUniqueRoomId(user.fullName || user.userId, db.users, rooms, user.userId);
+  const prevRoomId = user.roomAddress || '';
+
+  user.roomAddress = nextStandardId;
+  user.personalRoomId = nextStandardId;
+  user.isVipRoom = false;
+  user.vipRoomLabel = '';
+
+  const personalRoom = ensurePersonalRoomForUser(db, user);
+  personalRoom.roomAddress = nextStandardId;
+  personalRoom.roomNumber = nextStandardId;
+  personalRoom.isVipRoom = false;
+  personalRoom.vipRoomLabel = '';
+
+  if (!Array.isArray(user.editHistory)) user.editHistory = [];
+  user.editHistory.unshift({
+    date: new Date().toISOString(),
+    field: 'Room ID Reset',
+    oldValue: prevRoomId || '-',
+    newValue: nextStandardId,
+  });
+
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: `↺ ${user.fullName} का Room ID अब स्टैंडर्ड काउंट नंबर "${nextStandardId}" पर रीसेट हो गया।`,
+    user,
+    room: buildRoomSummary(personalRoom, user.userId),
+  });
+});
+
 // ======================== ROCK-SOLID COMPLAINTS & SUPPORT SYSTEM ========================
 
-// 1. Submit User Complaint
 app.post('/api/complaints', (req, res) => {
   const { userId, category, subject, description, proofScreenshot } = req.body;
   if (!userId || !subject || !description) {
     return res.status(400).json({ success: false, message: 'UserId, subject, and description are required' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
   const complaintId = `CMP-${Date.now().toString().slice(-6)}`;
 
@@ -4019,7 +6283,6 @@ app.post('/api/complaints', (req, res) => {
   if (!Array.isArray(db.complaints)) db.complaints = [];
   db.complaints.unshift(newComplaint);
 
-  // Add confirmation notification
   if (!Array.isArray(db.notifications)) db.notifications = [];
   db.notifications.push({
     id: `notif-${Date.now()}`,
@@ -4035,24 +6298,20 @@ app.post('/api/complaints', (req, res) => {
   res.json({ success: true, message: 'शिकायत सफलतापूर्वक दर्ज कर ली गई है!', complaint: newComplaint });
 });
 
-// 2. Get User Complaints
 app.get('/api/complaints/user/:userId', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
-  const list = (db.complaints || []).filter(c => 
-    c.userId.toLowerCase() === userId.toLowerCase() || 
+  const list = (db.complaints || []).filter(c =>
+    c.userId.toLowerCase() === userId.toLowerCase() ||
     (c.userRoll && c.userRoll.toLowerCase() === userId.toLowerCase())
   );
   res.json({ success: true, complaints: list });
 });
 
-// 3. Admin Get All Complaints
 app.get('/api/admin/complaints', (req, res) => {
   const pass = req.query.adminPassword as string;
   if (!verifyAdmin(pass)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
-  const db = loadDatabase();
   const statusFilter = req.query.status as string;
   let list = db.complaints || [];
   if (statusFilter && statusFilter !== 'all') {
@@ -4061,7 +6320,6 @@ app.get('/api/admin/complaints', (req, res) => {
   res.json({ success: true, complaints: list });
 });
 
-// 4. Admin Respond & Resolve Complaint
 app.post('/api/admin/complaints/:id/respond', (req, res) => {
   const { id } = req.params;
   const { adminPassword, response, status, refundCoins } = req.body;
@@ -4069,7 +6327,6 @@ app.post('/api/admin/complaints/:id/respond', (req, res) => {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
-  const db = loadDatabase();
   const complaint = (db.complaints || []).find(c => c.id === id);
   if (!complaint) {
     return res.status(404).json({ success: false, message: 'Complaint not found' });
@@ -4081,30 +6338,24 @@ app.post('/api/admin/complaints/:id/respond', (req, res) => {
   complaint.updatedAt = new Date().toISOString();
   complaint.adminResolvedBy = 'Santosh Kumar (Admin)';
 
-  // Handle optional coin refund
   const refundAmt = Number(refundCoins);
   if (!isNaN(refundAmt) && refundAmt > 0) {
     const user = db.users.find(u => u.userId.toLowerCase() === complaint.userId.toLowerCase());
     if (user) {
-      user.coins = (user.coins || 0) + refundAmt;
-      if (!Array.isArray(db.coinTransactions)) db.coinTransactions = [];
-      db.coinTransactions.unshift({
-        id: `CTX-REF-${Date.now()}`,
-        userId: user.userId,
-        userName: user.fullName,
+      const balanceBefore = user.coins || 0;
+      user.coins = balanceBefore + refundAmt;
+      logCoinTransaction(db, user, {
         type: 'credit',
         category: 'admin_adjustment',
         categoryLabel: 'शिकायत समाधान रिफंड',
         amount: refundAmt,
-        balanceBefore: user.coins - refundAmt,
+        balanceBefore,
         balanceAfter: user.coins,
         description: `शिकायत #${complaint.id} समाधान: +${refundAmt} कॉइन्स रिफंड क्रेडिट`,
-        timestamp: new Date().toISOString(),
       });
     }
   }
 
-  // Notify user
   if (!Array.isArray(db.notifications)) db.notifications = [];
   db.notifications.push({
     id: `notif-${Date.now()}`,
@@ -4122,51 +6373,27 @@ app.post('/api/admin/complaints/:id/respond', (req, res) => {
 
 // ======================== GAME PLAY HISTORY & COIN LEDGER ========================
 
-// 5. Record Game Play & Automatic Coin/Day Tracking
+// Record Game Play Stats (Never mints free coins; logs completed gameplay & tracks real game_played task)
 app.post('/api/game/record-play', (req, res) => {
-  const { userId, gameId, gameName, betCoins, wonCoins, durationSeconds, details } = req.body;
+  const { userId, gameId, gameName, betCoins, durationSeconds, details } = req.body;
   if (!userId || !gameName) {
     return res.status(400).json({ success: false, message: 'UserId and gameName are required' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const bet = Math.max(0, Number(betCoins) || 0);
-  const won = Math.max(0, Number(wonCoins) || 0);
-  const netChange = won - bet;
-  const balanceBefore = user.coins || 0;
-  user.coins = Math.max(0, balanceBefore + netChange);
-
-  // Track unique days played in rock-solid database
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
   if (!Array.isArray(user.daysPlayed)) user.daysPlayed = [];
   if (!user.daysPlayed.includes(today)) {
     user.daysPlayed.push(today);
   }
   user.totalDaysPlayed = user.daysPlayed.length;
   user.totalGamesPlayed = (user.totalGamesPlayed || 0) + 1;
+  incrementUserTaskProgress(user, 'game_played', 1);
 
-  if (won > bet) {
-    user.totalGamesWon = (user.totalGamesWon || 0) + 1;
-    user.totalCoinsWon = (user.totalCoinsWon || 0) + won;
-    user.gameXp = (user.gameXp || 0) + 25;
-  } else if (bet > won) {
-    user.totalGamesLost = (user.totalGamesLost || 0) + 1;
-    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + bet;
-    user.gameXp = (user.gameXp || 0) + 10;
-  }
-
-  // Level Up Check
-  const newLevel = Math.max(1, Math.floor((user.gameXp || 0) / 200) + 1);
-  if (newLevel > (user.gameLevel || 1)) {
-    user.gameLevel = newLevel;
-  }
-
-  // 1. Record in GamePlay History
   if (!Array.isArray(db.gamePlayHistory)) db.gamePlayHistory = [];
   const playRecord: GamePlayRecord = {
     id: `GP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -4174,56 +6401,31 @@ app.post('/api/game/record-play', (req, res) => {
     userName: user.fullName,
     gameId: gameId || 'game',
     gameName,
-    betCoins: bet,
-    wonCoins: won,
-    netChange,
-    result: netChange > 0 ? 'win' : netChange < 0 ? 'loss' : 'draw',
+    betCoins: Math.max(0, Number(betCoins) || 0),
+    wonCoins: 0,
+    netChange: 0,
+    result: 'draw',
     durationSeconds: Number(durationSeconds) || 45,
     playedAt: new Date().toISOString(),
     details: details || undefined,
   };
   db.gamePlayHistory.unshift(playRecord);
-
-  // 2. Record in Coin Transaction Audit Ledger
-  if (!Array.isArray(db.coinTransactions)) db.coinTransactions = [];
-  if (netChange !== 0) {
-    db.coinTransactions.unshift({
-      id: `CTX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      userId: user.userId,
-      userName: user.fullName,
-      type: netChange >= 0 ? 'credit' : 'debit',
-      category: netChange >= 0 ? 'game_win' : 'game_bet',
-      categoryLabel: gameName,
-      amount: Math.abs(netChange),
-      balanceBefore,
-      balanceAfter: user.coins,
-      description: `${gameName}: ${netChange > 0 ? 'जीत' : 'खर्च'} (${netChange > 0 ? '+' : ''}${netChange} कॉइन्स)`,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Keep history reasonable (last 5,000 records)
   if (db.gamePlayHistory.length > 5000) db.gamePlayHistory = db.gamePlayHistory.slice(0, 5000);
-  if (db.coinTransactions.length > 5000) db.coinTransactions = db.coinTransactions.slice(0, 5000);
 
   saveDatabase(db);
   res.json({ success: true, user, record: playRecord });
 });
 
-// 6. Get User Gameplay History
 app.get('/api/game/history/:userId', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
   const list = (db.gamePlayHistory || [])
     .filter(g => g.userId.toLowerCase() === userId.toLowerCase())
     .slice(0, 100);
   res.json({ success: true, history: list });
 });
 
-// 7. Get User Coin Transaction History Ledger
 app.get('/api/game/coin-history/:userId', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
   const list = (db.coinTransactions || [])
     .filter(c => c.userId.toLowerCase() === userId.toLowerCase())
     .slice(0, 100);
@@ -4232,26 +6434,22 @@ app.get('/api/game/coin-history/:userId', (req, res) => {
 
 // ======================== PROFILE HISTORY & AUDIT TRAIL ========================
 
-// 8. Get User Profile Audit History
 app.get('/api/user/:userId/profile-history', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
   const history = (db.profileHistory || [])
     .filter(p => p.userId.toLowerCase() === userId.toLowerCase())
     .slice(0, 100);
   res.json({ success: true, history });
 });
 
-// ======================== ONLINE PRESENCE & SESSION HEARTBEAT ("कब से कब तक ऑन रहा") ========================
+// ======================== ONLINE PRESENCE & SESSION HEARTBEAT ========================
 
-// 9. User Presence Heartbeat (Tracks Exact Online Duration)
 app.post('/api/user/heartbeat', (req, res) => {
   const { userId, sessionId, deviceType, deviceName, browser, os } = req.body;
   if (!userId) {
     return res.status(400).json({ success: false, message: 'UserId is required' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
@@ -4262,21 +6460,19 @@ app.post('/api/user/heartbeat', (req, res) => {
 
   if (!Array.isArray(db.activitySessions)) db.activitySessions = [];
 
-  // Find active session for this user and device
-  let session = db.activitySessions.find(s => 
-    s.userId.toLowerCase() === user.userId.toLowerCase() && 
+  let session = db.activitySessions.find(s =>
+    s.userId.toLowerCase() === user.userId.toLowerCase() &&
     s.status === 'online' &&
     (sessionId ? s.id === sessionId : true)
   );
 
   if (session) {
-    // Check if session timed out (>5 minutes since last heartbeat)
     const lastHbTime = new Date(session.lastHeartbeat).getTime();
     if (now.getTime() - lastHbTime > 5 * 60 * 1000) {
       session.status = 'offline';
       session.sessionEnd = new Date(lastHbTime).toISOString();
       session.durationMinutes = Math.max(1, Math.round((lastHbTime - new Date(session.sessionStart).getTime()) / 60000));
-      session = undefined; // Will create new session below
+      session = undefined;
     } else {
       session.lastHeartbeat = nowIso;
       session.durationMinutes = Math.max(1, Math.round((now.getTime() - new Date(session.sessionStart).getTime()) / 60000));
@@ -4306,33 +6502,30 @@ app.post('/api/user/heartbeat', (req, res) => {
   user.lastActiveTime = nowIso;
   user.totalOnlineMinutes = (user.totalOnlineMinutes || 0) + 1;
 
-  // Clean old sessions (keep last 5,000)
   if (db.activitySessions.length > 5000) {
     db.activitySessions = db.activitySessions.slice(0, 5000);
   }
 
   saveDatabase(db);
-  res.json({ 
-    success: true, 
-    sessionId: session.id, 
+  res.json({
+    success: true,
+    sessionId: session.id,
     durationMinutes: session.durationMinutes,
     totalOnlineMinutes: user.totalOnlineMinutes,
     totalDaysPlayed: user.totalDaysPlayed || (user.daysPlayed?.length || 0),
   });
 });
 
-// 10. User Session End (On Logout or Page Exit)
 app.post('/api/user/session-end', (req, res) => {
   const { userId, sessionId } = req.body;
   if (!userId) return res.json({ success: true });
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
   const nowIso = new Date().toISOString();
 
   if (Array.isArray(db.activitySessions)) {
-    const session = db.activitySessions.find(s => 
-      s.userId.toLowerCase() === String(userId).toLowerCase() && 
+    const session = db.activitySessions.find(s =>
+      s.userId.toLowerCase() === String(userId).toLowerCase() &&
       s.status === 'online' &&
       (sessionId ? s.id === sessionId : true)
     );
@@ -4352,27 +6545,23 @@ app.post('/api/user/session-end', (req, res) => {
   res.json({ success: true, message: 'Session closed' });
 });
 
-// 11. Get User Online Session History ("कब से कब तक ऑन रहा")
 app.get('/api/user/:userId/session-history', (req, res) => {
   const { userId } = req.params;
-  const db = loadDatabase();
   const sessions = (db.activitySessions || [])
     .filter(s => s.userId.toLowerCase() === userId.toLowerCase())
     .slice(0, 100);
   res.json({ success: true, sessions });
 });
 
-// 12. Admin View All Users Sessions & Online Status
 app.get('/api/admin/users/activity-overview', (req, res) => {
   const pass = req.query.adminPassword as string;
   if (!verifyAdmin(pass)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
-  const db = loadDatabase();
   const onlineUsers = (db.users || []).filter(u => u.isOnline);
   const recentSessions = (db.activitySessions || []).slice(0, 150);
-  
+
   res.json({
     success: true,
     totalUsers: db.users.length,
@@ -4390,38 +6579,35 @@ app.get('/api/admin/users/activity-overview', (req, res) => {
   });
 });
 
-// 13. Server-side State Persistence (Replacing localStorage for Tasks, Theme, Customization)
+// Restricted Server-Side UI State Persistence (Only Voice Effect & Already-Unlocked Room Theme)
 app.post('/api/user/:userId/server-state', (req, res) => {
   const { userId } = req.params;
-  const { claimedTasksDate, claimedTasksList, openedTimedBoxes, unlockedRooms, roomTheme, voiceEffect } = req.body;
+  const { roomTheme, voiceEffect } = req.body;
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  if (claimedTasksDate) user.claimedTasksDate = claimedTasksDate;
-  if (Array.isArray(claimedTasksList)) user.claimedTasksList = claimedTasksList;
-  if (Array.isArray(openedTimedBoxes)) user.openedTimedBoxes = openedTimedBoxes;
-  if (Array.isArray(unlockedRooms)) user.unlockedRooms = unlockedRooms;
-  if (roomTheme) user.roomTheme = roomTheme;
+  if (roomTheme) {
+    const owned = Array.isArray(user.unlockedRooms) ? user.unlockedRooms : ['default_dark'];
+    if (roomTheme === 'default_dark' || owned.includes(roomTheme)) {
+      user.roomTheme = roomTheme;
+    }
+  }
   if (voiceEffect) user.voiceEffect = voiceEffect;
 
   saveDatabase(db);
   res.json({ success: true, user });
 });
 
-// ======================== 14. HOME PAGE 7-PHOTO POPUP SLIDER SYSTEM ========================
+// ======================== HOME PAGE 7-PHOTO POPUP SLIDER SYSTEM ========================
 
-// Public: Get Active Home Slider Photos
 app.get('/api/home-slider-photos', (_req, res) => {
-  const db = loadDatabase();
   const photos = (db.homeSliderPhotos || []).filter(p => p.active);
   res.json({ success: true, photos });
 });
 
-// Admin: Save / Update Home Slider Photos (Max 7 photos)
 app.post('/api/admin/home-slider-photos', (req, res) => {
   const { adminPassword, photos } = req.body;
   if (!verifyAdmin(adminPassword)) {
@@ -4432,7 +6618,6 @@ app.post('/api/admin/home-slider-photos', (req, res) => {
     return res.status(400).json({ success: false, message: 'Photos array is required' });
   }
 
-  // Limit to maximum 7 photos as requested
   const sanitizedPhotos: HomeSliderPhoto[] = photos.slice(0, 7).map((p, idx) => ({
     id: p.id || `SLIDE-${Date.now()}-${idx}`,
     imageUrl: p.imageUrl,
@@ -4444,7 +6629,6 @@ app.post('/api/admin/home-slider-photos', (req, res) => {
     createdAt: p.createdAt || new Date().toISOString(),
   }));
 
-  const db = loadDatabase();
   db.homeSliderPhotos = sanitizedPhotos;
   if (!db.settings) db.settings = DEFAULT_SETTINGS;
   db.settings.homeSliderPhotos = sanitizedPhotos;
@@ -4453,16 +6637,14 @@ app.post('/api/admin/home-slider-photos', (req, res) => {
   res.json({ success: true, message: '7-फोटो स्लाइडर सफलतापूर्वक अपडेट हो गया!', photos: sanitizedPhotos });
 });
 
-// ======================== 15. CONTACT US & TELEGRAM INQUIRIES SYSTEM ========================
+// ======================== CONTACT US & TELEGRAM INQUIRIES SYSTEM ========================
 
-// Public: Submit Contact Message
 app.post('/api/contact/messages', (req, res) => {
   const { name, email, phone, telegramUsername, subject, message } = req.body;
   if (!name || !email || !message) {
     return res.status(400).json({ success: false, message: 'नाम, ईमेल और संदेश आवश्यक हैं' });
   }
 
-  const db = loadDatabase();
   if (!Array.isArray(db.contactMessages)) db.contactMessages = [];
 
   const newMsg: ContactMessage = {
@@ -4483,18 +6665,14 @@ app.post('/api/contact/messages', (req, res) => {
   res.json({ success: true, message: 'आपका संदेश सफलतापूर्वक प्राप्त हुआ! हम 24 घंटे में संपर्क करेंगे।', contactMessage: newMsg });
 });
 
-// Admin: Get All Contact Messages
 app.get('/api/admin/contact-messages', (req, res) => {
   const pass = req.query.adminPassword as string;
   if (!verifyAdmin(pass)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
-
-  const db = loadDatabase();
   res.json({ success: true, messages: db.contactMessages || [] });
 });
 
-// Admin: Reply / Mark Read Contact Message
 app.post('/api/admin/contact-messages/:id/reply', (req, res) => {
   const { id } = req.params;
   const { adminPassword, adminReply, status } = req.body;
@@ -4502,7 +6680,6 @@ app.post('/api/admin/contact-messages/:id/reply', (req, res) => {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
-  const db = loadDatabase();
   const msg = (db.contactMessages || []).find(m => m.id === id);
   if (!msg) {
     return res.status(404).json({ success: false, message: 'Message not found' });
@@ -4515,73 +6692,8 @@ app.post('/api/admin/contact-messages/:id/reply', (req, res) => {
   res.json({ success: true, message: 'संदेश का समाधान अपडेट हो गया', contactMessage: msg });
 });
 
-// ======================== 16. DEMO USERS & PROFILE MANAGEMENT IN ADMIN PANEL ========================
+// ======================== ADMIN PROFILE EDIT & USER AVATAR UPLOAD ========================
 
-// Admin: Create Demo / Featured User with Custom Avatar, Name & Profile Details
-app.post('/api/admin/demo-user', (req, res) => {
-  const { adminPassword, fullName, phone, email, avatar, roleTitle, coins, charms, gameLevel, clanName, houseName } = req.body;
-  if (!verifyAdmin(adminPassword)) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
-  }
-
-  if (!fullName) {
-    return res.status(400).json({ success: false, message: 'User name is required' });
-  }
-
-  const db = loadDatabase();
-  const demoUserId = `ESP-DEMO-${Math.floor(1000 + Math.random() * 9000)}`;
-
-  const newDemoUser: UserProfile = {
-    id: `usr-demo-${Date.now()}`,
-    userId: demoUserId,
-    gamingId: `GAME-${Math.floor(100000 + Math.random() * 900000)}`,
-    fullName: fullName.trim(),
-    phone: phone ? phone.trim() : '9876543210',
-    email: email ? email.trim().toLowerCase() : `demo_${demoUserId.toLowerCase()}@espplatform.com`,
-    fullAddress: 'Demo City, India',
-    paymentAddress: 'demo@upi',
-    payoutUpiId: 'demo@upi',
-    password: 'password123',
-    sponsorId: db.settings.ownerSponsorId,
-    sponsorName: db.settings.ownerName,
-    chosenServiceCode: 'EMO',
-    chosenServiceName: 'EARN MONEY ONLINE',
-    joiningFee: 100,
-    joiningDate: new Date().toISOString().split('T')[0],
-    paymentUtr: 'DEMO_VERIFIED_USER',
-    status: 'active',
-    balance: 500,
-    totalEarnings: 1500,
-    referralEarnings: 750,
-    promoEarnings: 250,
-    totalWithdrawn: 1000,
-    coins: Number(coins) || 10000,
-    charms: Number(charms) || 500,
-    gameLevel: Number(gameLevel) || 10,
-    gameXp: 1200,
-    avatar: avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    roomAddress: `ESP-ROOM-${demoUserId}`,
-    houseName: houseName || `${fullName.trim().split(' ')[0]} Gaming Palace`,
-    clanName: clanName || 'Royal Warriors ESP',
-    clanRole: 'Member',
-    bio: roleTitle || 'ESP Verified Community Member',
-    loginStreak: 5,
-    claimedDays: [1, 2, 3, 4, 5],
-    friendsCount: 15,
-    visitorCount: 120,
-    role: 'member',
-    accountType: 'gamer',
-    createdAt: new Date().toISOString(),
-    isOnline: true,
-  };
-
-  db.users.push(newDemoUser);
-  saveDatabase(db);
-
-  res.json({ success: true, message: 'डेमो यूजर सफलतापूर्वक जोड़ा गया!', user: newDemoUser });
-});
-
-// Admin: Edit Profile Details of Any User (Demo or Real)
 app.put('/api/admin/user/:userId/edit-details', (req, res) => {
   const { userId } = req.params;
   const { adminPassword, fullName, avatar, phone, email, coins, charms, gameLevel, status, houseName, clanName, bio } = req.body;
@@ -4589,7 +6701,6 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
@@ -4644,7 +6755,6 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
   res.json({ success: true, message: 'यूजर प्रोफाइल विवरण सफलतापूर्वक अपडेट कर दिया गया!', user });
 });
 
-// ======================== 17. USER SELF PROFILE PIC UPLOAD ========================
 app.post('/api/user/:userId/avatar', (req, res) => {
   const { userId } = req.params;
   const { avatar } = req.body;
@@ -4652,7 +6762,6 @@ app.post('/api/user/:userId/avatar', (req, res) => {
     return res.status(400).json({ success: false, message: 'Avatar image data is required' });
   }
 
-  const db = loadDatabase();
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
@@ -4660,6 +6769,7 @@ app.post('/api/user/:userId/avatar', (req, res) => {
 
   const oldValue = user.avatar ? 'Old Photo' : 'Default';
   user.avatar = avatar;
+  incrementUserTaskProgress(user, 'profile_completed', 1);
 
   if (!Array.isArray(db.profileHistory)) db.profileHistory = [];
   db.profileHistory.unshift({
@@ -4679,11 +6789,9 @@ app.post('/api/user/:userId/avatar', (req, res) => {
   res.json({ success: true, message: 'प्रोफाइल फोटो सफलतापूर्वक अपडेट हो गई!', avatar: user.avatar, user });
 });
 
-// ======================== 18. AUTHENTIC REAL PLAYER ONLINE COUNTER ========================
+// ======================== AUTHENTIC REAL PLAYER ONLINE COUNTER ========================
 app.get('/api/community/real-online-count', (_req, res) => {
-  const db = loadDatabase();
   const now = Date.now();
-  // Real active users: Heartbeat received in last 3 minutes OR active activitySession
   const activeSessions = (db.activitySessions || []).filter(s => {
     if (s.status !== 'online') return false;
     const hbTime = new Date(s.lastHeartbeat).getTime();
@@ -4693,7 +6801,6 @@ app.get('/api/community/real-online-count', (_req, res) => {
   const activeUserIds = new Set<string>();
   activeSessions.forEach(s => activeUserIds.add(s.userId.toLowerCase()));
 
-  // Also include users with isOnline and recent lastActiveTime
   (db.users || []).forEach(u => {
     if (u.isOnline && u.lastActiveTime) {
       const diff = now - new Date(u.lastActiveTime).getTime();
@@ -4704,9 +6811,7 @@ app.get('/api/community/real-online-count', (_req, res) => {
   });
 
   const onlineList = (db.users || []).filter(u => activeUserIds.has(u.userId.toLowerCase()));
-  
-  // Real authentic count - no fake inflated numbers!
-  const realCount = Math.max(1, onlineList.length);
+  const realCount = onlineList.length;
 
   res.json({
     success: true,
@@ -4716,170 +6821,223 @@ app.get('/api/community/real-online-count', (_req, res) => {
       fullName: u.fullName,
       avatar: u.avatar || '',
       gameLevel: u.gameLevel || 1,
-      clanName: u.clanName || 'ESP Family',
+      clanName: u.clanName || 'Royal Warriors ESP',
       lastActive: u.lastActiveTime,
     })),
   });
 });
 
-// ======================== 19. REAL-TIME ROOM SEATING REWARDS (+5 Coins / min on Mic) ========================
-app.post('/api/game/voice-room/seat-reward', (req, res) => {
-  const { userId, minutesActive, roomId } = req.body;
-  if (!userId) {
-    return res.status(400).json({ success: false, message: 'UserId is required' });
-  }
-
-  const mins = Math.max(1, Number(minutesActive) || 1);
-  const rewardCoins = mins * 5; // +5 coins per minute on mic!
-
-  const db = loadDatabase();
-  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User not found' });
-  }
-
-  const balanceBefore = user.coins || 0;
-  user.coins = balanceBefore + rewardCoins;
-
-  if (!Array.isArray(db.coinTransactions)) db.coinTransactions = [];
-  const tx: CoinTransactionRecord = {
-    id: `CTX-SEAT-${Date.now()}`,
-    userId: user.userId,
-    userName: user.fullName,
-    type: 'credit',
-    category: 'game_win',
-    categoryLabel: 'वॉइस रूम माइक सीट रिवॉर्ड',
-    amount: rewardCoins,
-    balanceBefore,
-    balanceAfter: user.coins,
-    description: `वॉइस स्टेज सीट रिवॉर्ड: ${mins} मिनट माइक एक्टिव रहने पर +${rewardCoins} कॉइन्स प्राप्त हुए!`,
-    timestamp: new Date().toISOString(),
-  };
-  db.coinTransactions.unshift(tx);
-
-  saveDatabase(db);
-  res.json({ success: true, message: `बधाई! माइक सीट रिवॉर्ड: +${rewardCoins} कॉइन्स मिले`, coinsEarned: rewardCoins, newBalance: user.coins, user });
-});
-
-// ======================== 20. GIFT CARDS & VOUCHERS (INSTANT CODE & PIN) ========================
+// ======================== REAL GIFT CARDS (ADMIN FULFILLMENT QUEUE - ZERO FAKE CODES) ========================
 app.get('/api/gift-cards', (_req, res) => {
-  const db = loadDatabase();
-  res.json({ success: true, vouchers: db.giftCardVouchers || DEFAULT_GIFT_CARD_VOUCHERS });
+  res.json({
+    success: true,
+    catalog: GIFT_CARD_CATALOG,
+    vouchers: GIFT_CARD_CATALOG.map(c => ({ ...c, status: 'available' as const })),
+  });
 });
 
 app.post('/api/gift-cards/redeem', (req, res) => {
-  const { userId, voucherId } = req.body;
-  if (!userId || !voucherId) {
+  const { userId, voucherId, catalogId } = req.body;
+  const targetId = catalogId || voucherId;
+  if (!userId || !targetId) {
     return res.status(400).json({ success: false, message: 'UserId and voucherId are required' });
   }
 
-  const db = loadDatabase();
-  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const voucherList = db.giftCardVouchers || DEFAULT_GIFT_CARD_VOUCHERS;
-  const voucher = voucherList.find(v => v.id === voucherId);
-  if (!voucher) {
+  const catalogItem = GIFT_CARD_CATALOG.find(v => v.id === targetId);
+  if (!catalogItem) {
     return res.status(404).json({ success: false, message: 'Gift card package not found' });
   }
 
-  if (voucher.status === 'claimed') {
-    return res.status(400).json({ success: false, message: 'यह वाउचर पहले ही क्लेम किया जा चुका है' });
-  }
-
-  if ((user.coins || 0) < voucher.coinsRequired) {
-    return res.status(400).json({ 
-      success: false, 
-      message: `अपर्याप्त कॉइन्स! इस वाउचर के लिए ${voucher.coinsRequired} कॉइन्स चाहिए, आपके पास ${user.coins || 0} हैं।` 
+  const balanceBefore = user.coins || 0;
+  if (balanceBefore < catalogItem.coinsRequired) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: catalogItem.coinsRequired,
+      currentCoins: balanceBefore,
+      message: `अपर्याप्त कॉइन्स! इस वाउचर के लिए ${catalogItem.coinsRequired} कॉइन्स चाहिए, आपके पास ${balanceBefore} हैं।`,
     });
   }
 
-  const balanceBefore = user.coins || 0;
-  user.coins = balanceBefore - voucher.coinsRequired;
-  voucher.status = 'claimed';
-  voucher.redeemedBy = user.userId;
-  voucher.redeemedAt = new Date().toISOString();
+  user.coins = balanceBefore - catalogItem.coinsRequired;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + catalogItem.coinsRequired;
 
-  // Create unique voucher code & PIN for the user
-  const generatedCode = `${voucher.brand.slice(0, 3).toUpperCase()}-ESP-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const generatedPin = `${Math.floor(1000 + Math.random() * 9000)}`;
-  voucher.voucherCode = generatedCode;
-  voucher.voucherPin = generatedPin;
-
-  if (!Array.isArray(db.coinTransactions)) db.coinTransactions = [];
-  db.coinTransactions.unshift({
-    id: `CTX-GC-${Date.now()}`,
+  if (!Array.isArray(db.giftCardRedemptions)) db.giftCardRedemptions = [];
+  const redemption: GiftCardRedemption = {
+    id: `GCR-${Date.now().toString().slice(-6)}`,
+    catalogId: catalogItem.id,
+    brand: catalogItem.brand,
+    title: catalogItem.title,
+    denomination: catalogItem.denomination,
+    coinsSpent: catalogItem.coinsRequired,
     userId: user.userId,
     userName: user.fullName,
+    userPhone: user.phone,
+    status: 'pending_fulfillment',
+    requestedAt: new Date().toISOString(),
+  };
+  db.giftCardRedemptions.unshift(redemption);
+
+  logCoinTransaction(db, user, {
     type: 'debit',
-    category: 'daily_task',
-    categoryLabel: 'गिफ्ट कार्ड रिडीम',
-    amount: voucher.coinsRequired,
+    category: 'gift_card_redeem',
+    categoryLabel: 'गिफ्ट कार्ड अनुरोध',
+    amount: catalogItem.coinsRequired,
     balanceBefore,
     balanceAfter: user.coins,
-    description: `${voucher.title} रिडीम किया: कोड ${generatedCode} (पिन: ${generatedPin})`,
-    timestamp: new Date().toISOString(),
+    description: `${catalogItem.title} रिडीम अनुरोध (${redemption.id}): एडमिन द्वारा असली वाउचर कोड जारी होना शेष`,
   });
 
-  // Notify user
   if (!Array.isArray(db.notifications)) db.notifications = [];
-  db.notifications.push({
+  db.notifications.unshift({
     id: `notif-gc-${Date.now()}`,
     userId: user.userId,
-    title: `🎁 ${voucher.title} रिडीम सफल!`,
-    message: `आपका गिफ्ट कार्ड कोड: ${generatedCode} | पिन: ${generatedPin}। इसे तत्काल रिडीम कर सकते हैं।`,
+    title: `🎁 ${catalogItem.title} अनुरोध प्राप्त!`,
+    message: `आपका ${catalogItem.coinsRequired} कॉइन्स का रिडीम अनुरोध (${redemption.id}) एडमिन के पास भेजा गया है। सत्यापन के बाद असली वाउचर कोड यहीं दिखेगा।`,
     type: 'system',
     date: new Date().toLocaleDateString('hi-IN'),
     read: false,
   });
 
   saveDatabase(db);
-  res.json({ 
-    success: true, 
-    message: `बधाई! ${voucher.title} रिडीम हो गया!`, 
-    voucher: { ...voucher, voucherCode: generatedCode, voucherPin: generatedPin },
+  res.json({
+    success: true,
+    message: `अनुरोध (${redemption.id}) सबमिट हो गया! एडमिन द्वारा असली वाउचर कोड जारी होते ही आपको नोटिफिकेशन मिलेगा।`,
+    redemption,
     newBalance: user.coins,
     user,
   });
+});
+
+app.get('/api/gift-cards/redemptions', (req, res) => {
+  const userId = req.query.userId as string | undefined;
+  const adminPassword = req.query.adminPassword as string | undefined;
+
+  if (adminPassword && verifyAdmin(adminPassword)) {
+    return res.json({ success: true, redemptions: db.giftCardRedemptions || [] });
+  }
+  if (!userId) {
+    return res.status(400).json({ success: false, message: 'userId or adminPassword is required' });
+  }
+
+  const list = (db.giftCardRedemptions || []).filter(r => r.userId.toLowerCase() === userId.toLowerCase());
+  res.json({ success: true, redemptions: list });
+});
+
+app.post('/api/admin/gift-cards/:id/fulfill', (req, res) => {
+  const { id } = req.params;
+  const { adminPassword, status, voucherCode, voucherPin, rejectionReason } = req.body;
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  if (!Array.isArray(db.giftCardRedemptions)) db.giftCardRedemptions = [];
+  const redemption = db.giftCardRedemptions.find(r => r.id === id);
+  if (!redemption) {
+    return res.status(404).json({ success: false, message: 'Redemption request not found' });
+  }
+  if (redemption.status !== 'pending_fulfillment') {
+    return res.status(400).json({ success: false, message: 'This redemption request is already processed' });
+  }
+
+  const user = db.users.find(u => u.userId.toLowerCase() === redemption.userId.toLowerCase());
+
+  if (status === 'rejected') {
+    redemption.status = 'rejected';
+    redemption.rejectionReason = rejectionReason || 'एडमिन द्वारा अस्वीकृत — कॉइन्स वापस किए गए';
+    redemption.fulfilledAt = new Date().toISOString();
+
+    if (user) {
+      const before = user.coins || 0;
+      user.coins = before + redemption.coinsSpent;
+      logCoinTransaction(db, user, {
+        type: 'credit',
+        category: 'admin_adjustment',
+        categoryLabel: 'गिफ्ट कार्ड रिफंड',
+        amount: redemption.coinsSpent,
+        balanceBefore: before,
+        balanceAfter: user.coins,
+        description: `गिफ्ट कार्ड ${redemption.id} रद्द होने पर +${redemption.coinsSpent} कॉइन्स वापस`,
+      });
+      db.notifications.unshift({
+        id: `notif-gc-rej-${Date.now()}`,
+        userId: user.userId,
+        title: `❌ गिफ्ट कार्ड अनुरोध रद्द (${redemption.id})`,
+        message: `${redemption.title} रद्द किया गया (${redemption.rejectionReason})। आपके ${redemption.coinsSpent} कॉइन्स वापस क्रेडिट हो गए हैं।`,
+        type: 'system',
+        date: new Date().toLocaleDateString('hi-IN'),
+        read: false,
+      });
+    }
+    saveDatabase(db);
+    return res.json({ success: true, message: 'अनुरोध रद्द कर कॉइन्स वापस किए गए', redemption });
+  }
+
+  if (!voucherCode || String(voucherCode).trim().length < 4) {
+    return res.status(400).json({ success: false, message: 'कृपया जारी करने के लिए असली वाउचर कोड दर्ज करें।' });
+  }
+
+  redemption.status = 'fulfilled';
+  redemption.voucherCode = String(voucherCode).trim();
+  redemption.voucherPin = voucherPin ? String(voucherPin).trim() : '';
+  redemption.fulfilledAt = new Date().toISOString();
+
+  if (user) {
+    db.notifications.unshift({
+      id: `notif-gc-ok-${Date.now()}`,
+      userId: user.userId,
+      title: `🎁 ${redemption.title} वाउचर जारी!`,
+      message: `आपका असली वाउचर कोड: ${redemption.voucherCode}${redemption.voucherPin ? ` | PIN: ${redemption.voucherPin}` : ''}`,
+      type: 'system',
+      date: new Date().toLocaleDateString('hi-IN'),
+      read: false,
+    });
+  }
+
+  saveDatabase(db);
+  res.json({ success: true, message: 'असली वाउचर कोड सफलतापूर्वक जारी कर दिया गया!', redemption });
 });
 
 // ======================== 21. NWI (NON-WORKING INCOME) REAL 3-LEVEL DOWNLINE TREE ========================
 
 function buildRealNwiTree(database: Database, user: UserProfile): NwiTreeRecord {
   const tierFee = user.joiningFee && user.joiningFee >= 50 ? user.joiningFee : 200;
-  const targetId = user.userId.toLowerCase();
-  const claimedSet = new Set((user.nwiClaimedMemberIds || []).map(id => id.toLowerCase()));
+  const targetId = (user.userId || '').toLowerCase();
+  const claimedSet = new Set((user.nwiClaimedMemberIds || []).map(id => (id || '').toLowerCase()));
 
   // Level 1: Real active users directly sponsored by this user
   const l1Users = database.users.filter(
     u =>
       u.status === 'active' &&
-      u.userId.toLowerCase() !== targetId &&
+      (u.userId || '').toLowerCase() !== targetId &&
       (u.sponsorId || '').toLowerCase() === targetId
   );
 
-  const l1Ids = new Set(l1Users.map(u => u.userId.toLowerCase()));
+  const l1Ids = new Set(l1Users.map(u => (u.userId || '').toLowerCase()));
 
   // Level 2: Real active users sponsored by Level 1 members
   const l2Users = database.users.filter(
     u =>
       u.status === 'active' &&
-      u.userId.toLowerCase() !== targetId &&
-      !l1Ids.has(u.userId.toLowerCase()) &&
+      (u.userId || '').toLowerCase() !== targetId &&
+      !l1Ids.has((u.userId || '').toLowerCase()) &&
       l1Ids.has((u.sponsorId || '').toLowerCase())
   );
 
-  const l2Ids = new Set(l2Users.map(u => u.userId.toLowerCase()));
+  const l2Ids = new Set(l2Users.map(u => (u.userId || '').toLowerCase()));
 
   // Level 3: Real active users sponsored by Level 2 members
   const l3Users = database.users.filter(
     u =>
       u.status === 'active' &&
-      u.userId.toLowerCase() !== targetId &&
-      !l1Ids.has(u.userId.toLowerCase()) &&
-      !l2Ids.has(u.userId.toLowerCase()) &&
+      (u.userId || '').toLowerCase() !== targetId &&
+      !l1Ids.has((u.userId || '').toLowerCase()) &&
+      !l2Ids.has((u.userId || '').toLowerCase()) &&
       l2Ids.has((u.sponsorId || '').toLowerCase())
   );
 

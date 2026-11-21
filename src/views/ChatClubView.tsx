@@ -145,6 +145,7 @@ export const ChatClubView: React.FC<ChatClubViewProps> = ({
 
       setMessages(prev => [...prev, sent]);
       if (!textToSend) setInputText('');
+      api.recordTaskAction(currentUser.userId, 'chat_sent', 1).catch(() => {});
       fetchRooms();
     } catch (e) {
       console.error('Error sending message', e);
@@ -202,16 +203,13 @@ export const ChatClubView: React.FC<ChatClubViewProps> = ({
     }
   };
 
-  const handleInviteWhatsApp = () => {
-    const text = encodeURIComponent(
-      `👋 *HELL0 FRIEND! JOIN ME ON ESP CHATTING CLUB & EARNING PLATFORM!*\n\n` +
-      `I am earning through ESP starting at just ₹10. Join our official community club:\n` +
-      `🔗 *Direct Joining Link:* ${window.location.origin}/?ref=${currentUser?.userId || settings.ownerSponsorId}\n` +
-      `👑 *My Sponsor Code:* ${currentUser?.userId || settings.ownerSponsorId}\n` +
-      `✨ Get verified member Digital ID Card instantly!`
-    );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
-  };
+  const whatsappInviteUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
+    `👋 *HELLO FRIEND! JOIN ME ON ESP CHATTING CLUB & EARNING PLATFORM!*\n\n` +
+    `I am earning through ESP starting at just ₹10. Join our official community club:\n` +
+    `🔗 *Direct Joining Link:* ${window.location.origin}/?ref=${currentUser?.userId || settings.ownerSponsorId}\n` +
+    `👑 *My Sponsor Code:* ${currentUser?.userId || settings.ownerSponsorId}\n` +
+    `✨ Get verified member Digital ID Card instantly!`
+  )}`;
 
   const quickQuestions = [
     '₹10 से शुरुआत कैसे करें?',
@@ -233,13 +231,15 @@ export const ChatClubView: React.FC<ChatClubViewProps> = ({
           </span>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={handleInviteWhatsApp}
+          <a
+            href={whatsappInviteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-3.5 py-1.5 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-xs"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>WhatsApp पर दोस्त बुलाओ</span>
-          </button>
+          </a>
         </div>
       </div>
 
@@ -395,13 +395,15 @@ export const ChatClubView: React.FC<ChatClubViewProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              <button
-                onClick={handleInviteWhatsApp}
+              <a
+                href={whatsappInviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="hidden sm:flex items-center space-x-1 px-3 py-1.5 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer"
               >
                 <Share2 className="w-3 h-3" />
                 <span>मित्रों को जोड़ें</span>
-              </button>
+              </a>
             </div>
           </div>
 

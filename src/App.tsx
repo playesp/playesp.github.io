@@ -6,12 +6,14 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile, PlatformSettings, ServiceItem } from './types/index.ts';
 import { api } from './services/api.ts';
+import { syncUserToFirestore } from './services/firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { Footer } from './components/Footer.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
 import { AdminLoginModal } from './components/AdminLoginModal.tsx';
 import { IdCardModal } from './components/IdCardModal.tsx';
 import { LegalComplianceModal } from './components/LegalComplianceModal.tsx';
+import { PostLoginProfileModal } from './components/PostLoginProfileModal.tsx';
 import { AiChatbot } from './components/AiChatbot.tsx';
 import { HomeView } from './views/HomeView.tsx';
 import { ServicesView } from './views/ServicesView.tsx';
@@ -38,7 +40,6 @@ import {
   Info,
   X
 } from 'lucide-react';
-import { DailyLoginRewards } from './services/DailyLoginRewardsService.ts';
 import { showToast, type ToastMessage } from './services/toast.ts';
 
 
@@ -47,8 +48,24 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(() => api.getStoredAdmin());
   const [adminPassword, setAdminPassword] = useState<string>(() => api.getStoredAdminPass());
   
-  // If user is already logged in, start on dashboard
-  const [currentTab, setCurrentTab] = useState<string>(() => (api.getStoredUser() ? 'dashboard' : 'home'));
+  // If user is already logged in, start on dashboard (or voice room if ?room= deep-link is present)
+  const [initialRoomCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('room') || '').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    }
+    return '';
+  });
+
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    const stored = api.getStoredUser();
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('room') && stored) return 'gaming-room';
+    }
+    if (stored?.accountType === 'gamer') return 'gaming-room';
+    return stored ? 'dashboard' : 'home';
+  });
   
   const [settings, setSettings] = useState<PlatformSettings>({
     ownerName: 'SANTOSH KUMAR',
@@ -74,7 +91,20 @@ export default function App() {
   const [initialSponsorId, setInitialSponsorId] = useState<string>('');
 
   // Modals & Routing Preferences
-  const [loginDestination, setLoginDestination] = useState<'platform' | 'gaming-room'>('platform');
+  const [loginDestination, setLoginDestination] = useState<'platform' | 'gaming-room'>(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) {
+      return 'gaming-room';
+    }
+    return 'platform';
+  });
+  const [gamingInitialSubTab, setGamingInitialSubTab] = useState<
+    'overview' | 'ludo' | 'dice_arena' | 'card_luck' | 'gift_store' | 'vip_frames' | 'leaderboard' | 'recharge_convert' | 'voice_room' | 'games' | 'clan_friends' | 'rewards_tasks'
+  >(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) {
+      return 'voice_room';
+    }
+    return 'overview';
+  });
   const [initialRegMode, setInitialRegMode] = useState<'business' | 'gamer'>('business');
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -86,6 +116,7 @@ export default function App() {
   const [adminLoginModalOpen, setAdminLoginModalOpen] = useState(false);
   const [idCardModalOpen, setIdCardModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [showPostLoginProfileModal, setShowPostLoginProfileModal] = useState(false);
   const [remoteLogoutNotice, setRemoteLogoutNotice] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -103,12 +134,13 @@ export default function App() {
     };
     window.addEventListener('esp-toast', handleToastEvent);
 
-    // Check ?ref=ESP10... in URL query
+    // Check ?ref=ESPGTRK01 / EMORKESP01 / username in URL query
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const refParam = params.get('ref');
       if (refParam) {
-        setInitialSponsorId(refParam.toUpperCase());
+        const cleanRef = refParam.trim().replace(/^@+/, '');
+        setInitialSponsorId(cleanRef);
         // Only redirect to register if user is not already logged in
         if (!api.getStoredUser()) {
           setCurrentTab('register');
@@ -197,34 +229,30 @@ export default function App() {
     };
   }, [currentUser?.userId]);
 
-  const handleUserLogin = (user: UserProfile, destination?: 'platform' | 'gaming-room') => {
-    let finalUser = user;
-    try {
-      const status = DailyLoginRewards.checkStatus(user);
-      if (status.canClaimToday) {
-        const { updatedUser, reward } = DailyLoginRewards.claimReward(user);
-        finalUser = updatedUser;
-        api.setStoredUser(updatedUser);
-        try {
-          const today = new Date().toISOString().slice(0, 10);
-          localStorage.setItem('esp_weekly_reward_claimed_date', today);
-          localStorage.setItem(`esp_claimed_date_${user.userId}`, today);
-        } catch {}
-        showToast(
-          `🎉 दैनिक लॉगिन बोनस! आपको ${reward.coins} कॉइन्स और ${reward.xp} XP प्राप्त हुए!`,
-          'reward',
-          'लॉगिन रिवॉर्ड (+100 🪙)'
-        );
-      } else {
-        showToast(`नमस्ते ${user.fullName}, ESP पोर्टल में आपका स्वागत है!`, 'success');
-      }
-    } catch {
-      showToast(`नमस्ते ${user.fullName}, ESP पोर्टल में आपका स्वागत है!`, 'success');
+  useEffect(() => {
+    if (currentUser?.userId) {
+      syncUserToFirestore(currentUser, true).catch(() => {});
     }
-    setCurrentUser(finalUser);
+  }, [currentUser]);
+
+  const handleUserLogin = (user: UserProfile, destination?: 'platform' | 'gaming-room', promptProfileChoice = false) => {
+    api.setStoredUser(user);
+    showToast(`नमस्ते ${user.fullName}, ESP पोर्टल में आपका स्वागत है!`, 'success');
+    setCurrentUser(user);
     setRemoteLogoutNotice(null);
-    const resolvedDestination = destination || (finalUser.accountType === 'gamer' ? 'gaming-room' : 'platform');
-    setCurrentTab(resolvedDestination === 'gaming-room' ? 'gaming-room' : 'dashboard');
+    const isGamerAccount = user.accountType === 'gamer';
+    if (initialRoomCode) {
+      setGamingInitialSubTab('voice_room');
+      setCurrentTab('gaming-room');
+    } else if (isGamerAccount || destination === 'gaming-room') {
+      setGamingInitialSubTab('games');
+      setCurrentTab('gaming-room');
+    } else {
+      setCurrentTab('dashboard');
+    }
+    if (promptProfileChoice && !isGamerAccount && destination !== 'gaming-room') {
+      setShowPostLoginProfileModal(true);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -260,17 +288,42 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleOpenBuyCoins = () => {
+    if (!currentUser) {
+      showToast('⚠️ कॉइन्स खरीदने के लिए कृपया पहले लॉगिन करें!', 'error', 'लॉगिन आवश्यक');
+      setLoginDestination('gaming-room');
+      setLoginModalOpen(true);
+      return;
+    }
+    setGamingInitialSubTab('recharge_convert');
+    setCurrentTab('gaming-room');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleTabChange = (tab: string) => {
     // बिना लॉगिन किए यूजर गेम में ENTRY नहीं ले सकता
-    if (!currentUser && tab === 'gaming-room') {
+    if (!currentUser && (tab === 'gaming-room' || tab === 'gaming-voice' || tab === 'gaming-tasks')) {
       showToast('⚠️ गेम्स और वॉइस रूम में प्रवेश के लिए कृपया पहले लॉगिन करें!', 'error', 'लॉगिन आवश्यक');
       setLoginDestination('gaming-room');
       setLoginModalOpen(true);
       return;
     }
+    if (tab === 'gaming-room') {
+      setGamingInitialSubTab('games');
+    } else if (tab === 'gaming-voice') {
+      setGamingInitialSubTab('voice_room');
+      setCurrentTab('gaming-room');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    } else if (tab === 'gaming-tasks') {
+      setGamingInitialSubTab('rewards_tasks');
+      setCurrentTab('gaming-room');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     // If logged in, block navigating to 'register'
     if (currentUser && tab === 'register') {
-      setCurrentTab('dashboard');
+      setCurrentTab(currentUser.accountType === 'gamer' ? 'gaming-room' : 'dashboard');
     } else {
       setCurrentTab(tab);
     }
@@ -411,12 +464,16 @@ export default function App() {
             <GamingRoomView
               user={currentUser}
               settings={settings}
+              initialSubTab={gamingInitialSubTab}
+              initialRoomId={initialRoomCode || undefined}
               onUpdateUser={updated => {
                 setCurrentUser(updated);
                 api.setStoredUser(updated);
               }}
               onOpenCardModal={() => setIdCardModalOpen(true)}
               onOpenWithdrawal={() => setCurrentTab('dashboard')}
+              onOpenEarningSetup={() => handleTabChange('dashboard')}
+              onOpenServicesSetup={() => handleTabChange('services')}
             />
           ) : (
             <div className="bg-white border border-slate-200 max-w-lg mx-auto my-10 p-6 sm:p-8 rounded-md text-center space-y-5 shadow-sm">
@@ -483,7 +540,8 @@ export default function App() {
               setCurrentUser(updated);
               api.setStoredUser(updated);
             }}
-            onNavigateToTab={tab => setCurrentTab(tab as any)}
+            onNavigateToTab={tab => handleTabChange(tab)}
+            onOpenBuyCoins={handleOpenBuyCoins}
           />
         )}
 
@@ -524,72 +582,122 @@ export default function App() {
         )}
       </main>
 
-      {/* Flipkart Clean Light Mobile Bottom Dock Bar */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 py-1.5 px-2 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex items-center justify-around">
-        <button
-          onClick={() => handleTabChange('home')}
-          className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-            currentTab === 'home' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          <span className="text-[10px] mt-0.5">Home</span>
-        </button>
+      {/* Clean Light Mobile Bottom Dock Bar (Hidden inside gaming-room to prevent double dock bars) */}
+      {currentTab !== 'gaming-room' && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 py-1.5 px-2 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex items-center justify-around">
+          {currentUser?.accountType === 'gamer' ? (
+            <>
+              <button
+                onClick={() => handleTabChange('gaming-room')}
+                className="flex flex-col items-center py-1 px-3 rounded-md transition cursor-pointer bg-[#2874f0] text-white font-bold shadow-xs"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Games</span>
+              </button>
 
-        <button
-          onClick={() => handleTabChange('services')}
-          className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-            currentTab === 'services' || currentTab === 'service-detail' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span className="text-[10px] mt-0.5">Services</span>
-        </button>
+              <button
+                onClick={() => handleTabChange('gaming-voice')}
+                className="flex flex-col items-center py-1 px-2 rounded transition cursor-pointer text-[#555555] hover:text-[#2874f0]"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Voice Room</span>
+              </button>
 
-        <button
-          onClick={() => handleTabChange('gaming-room')}
-          className={`flex flex-col items-center py-1 px-3 rounded-md transition cursor-pointer ${
-            currentTab === 'gaming-room'
-              ? 'bg-[#2874f0] text-white font-bold shadow-xs'
-              : 'bg-[#fb641b] text-white font-bold shadow-xs'
-          }`}
-        >
-          <Gamepad2 className="w-4 h-4" />
-          <span className="text-[10px] mt-0.5">Gaming</span>
-        </button>
+              <button
+                onClick={() => handleTabChange('chat-club')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'chat-club' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Chat Club</span>
+              </button>
 
-        <button
-          onClick={() => handleTabChange('moments')}
-          className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-            currentTab === 'moments' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-          }`}
-        >
-          <Camera className="w-4 h-4" />
-          <span className="text-[10px] mt-0.5">Moments</span>
-        </button>
+              <button
+                onClick={() => handleTabChange('moments')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'moments' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <Camera className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Moments</span>
+              </button>
 
-        {currentUser ? (
-          <button
-            onClick={() => handleTabChange('dashboard')}
-            className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-              currentTab === 'dashboard' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-            }`}
-          >
-            <User className="w-4 h-4" />
-            <span className="text-[10px] mt-0.5">Account</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => handleTabChange('register')}
-            className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-              currentTab === 'register' ? 'text-[#fb641b] font-bold' : 'text-[#555555] hover:text-[#fb641b]'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span className="text-[10px] mt-0.5">Join ₹10</span>
-          </button>
-        )}
-      </div>
+              <button
+                onClick={() => handleTabChange('dashboard')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'dashboard' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Earning</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleTabChange('home')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'home' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <Home className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Home</span>
+              </button>
+
+              <button
+                onClick={() => handleTabChange('services')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'services' || currentTab === 'service-detail' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Services</span>
+              </button>
+
+              <button
+                onClick={() => handleTabChange('gaming-room')}
+                className="flex flex-col items-center py-1 px-3 rounded-md transition cursor-pointer bg-[#fb641b] text-white font-bold shadow-xs"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Gaming</span>
+              </button>
+
+              <button
+                onClick={() => handleTabChange('moments')}
+                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                  currentTab === 'moments' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                }`}
+              >
+                <Camera className="w-4 h-4" />
+                <span className="text-[10px] mt-0.5">Moments</span>
+              </button>
+
+              {currentUser ? (
+                <button
+                  onClick={() => handleTabChange('dashboard')}
+                  className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                    currentTab === 'dashboard' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  <span className="text-[10px] mt-0.5">Account</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleTabChange('register')}
+                  className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
+                    currentTab === 'register' ? 'text-[#fb641b] font-bold' : 'text-[#555555] hover:text-[#fb641b]'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span className="text-[10px] mt-0.5">Join ₹10</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
 
       {/* Footer */}
@@ -606,7 +714,7 @@ export default function App() {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         initialDestination={loginDestination}
-        onLoginSuccess={handleUserLogin}
+        onLoginSuccess={(u, dest) => handleUserLogin(u, dest, true)}
         onSwitchToRegister={mode => {
           setLoginModalOpen(false);
           setInitialRegMode(mode);
@@ -631,6 +739,20 @@ export default function App() {
       <LegalComplianceModal
         isOpen={legalModalOpen}
         onClose={() => setLegalModalOpen(false)}
+      />
+
+      <PostLoginProfileModal
+        isOpen={showPostLoginProfileModal}
+        user={currentUser}
+        onClose={() => setShowPostLoginProfileModal(false)}
+        onUpdated={(updatedUser, goToTab) => {
+          setCurrentUser(updatedUser);
+          api.setStoredUser(updatedUser);
+          setShowPostLoginProfileModal(false);
+          if (goToTab) {
+            setCurrentTab(goToTab);
+          }
+        }}
       />
 
       {/* Clean Flipkart Toast Notification System */}

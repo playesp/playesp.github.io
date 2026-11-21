@@ -88,31 +88,49 @@ export interface UserProfile {
   totalWithdrawn: number;
 
   // WePlay-Style ESP Gaming Time Profile
-  gamingId?: string; // Dedicated Gaming Time ID (e.g. GAME-887749 or WPG-90123)
-  coins?: number; // In-game coins balance (e.g. 5,000)
-  charms?: number; // Charm points received from gifts (e.g. 150)
-  gameLevel?: number; // Player level 1-50 (e.g. 5: Bronze to King)
-  gameXp?: number; // Current XP points
-  roomAddress?: string; // Personal Gaming House / Voice Room ID (e.g. ESP-ROOM-8877)
-  houseName?: string; // E.g. "Royal House of Santosh"
-  clanName?: string; // Family / Clan (e.g. "Royal Warriors ESP")
+  gamingId?: string; // Dedicated Gaming Time ID (e.g. GAME-887749)
+  coins?: number; // Real In-game coins balance (New players always start at 0)
+  charms?: number; // Charm points received from gifts (Starts at 0)
+  gameLevel?: number; // Player level derived from EXP (Starts at 1)
+  gameXp?: number; // Current EXP points earned from real completed tasks & games (Starts at 0)
+  roomAddress?: string; // Unique Numeric Counting Room ID (e.g. 10001) or VIP Room ID (e.g. 1111, 2222, 1234)
+  personalRoomId?: string; // Permanent Numeric Personal Room ID (same as roomAddress)
+  isVipRoom?: boolean; // Assigned VIP fancy numeric Room ID status
+  vipRoomLabel?: string; // Optional badge label (e.g. VIP Royal, VIP King)
+  vipRoomAssignedAt?: string;
+  vipRoomAssignedBy?: string;
+  followedRooms?: string[]; // Room IDs followed by the user
+  houseName?: string;
+  clanName?: string;
   clanRole?: 'Leader' | 'Elder' | 'Member';
-  loginStreak?: number; // 7-Day Login Streak (1-7)
-  lastLoginClaimDate?: string; // Date of last claimed reward
-  claimedDays?: number[]; // Array of claimed days e.g. [1, 2]
-  lastDailySpin?: string; // ISO date timestamp of last 24h lucky spin
+  loginStreak?: number;
+  lastLoginClaimDate?: string;
+  claimedDays?: number[];
+  lastDailySpin?: string; // ISO date timestamp of last paid 50-coin lucky spin
   friendsCount?: number;
+  friendsList?: string[]; // Real added friend userIds
+  receivedGifts?: Record<string, { id: string; name: string; icon: string; count: number; coinCost?: number; charmValue?: number; lastReceivedAt?: string; lastSenderName?: string }>;
   visitorCount?: number;
   crownPost?: boolean;
   frameType?: 'royal-dragon-crown' | 'cosmic-neon' | 'vip-gold' | 'wolf-night' | 'judge-justice' | 'standard' | 'pro-player' | 'rookie' | 'clan-leader' | string;
+  unlockedFrames?: string[]; // Purchased/unlocked frame variants (always includes 'standard')
+  vipTier?: 'none' | 'silver' | 'gold' | 'diamond';
   vipTitle?: string;
+  vipPurchasedAt?: string;
 
+  // Real Server-Verified Daily Task System
+  taskProgress?: Record<string, number>; // Tracks verified counts by TaskEventType or date
+  taskProgressDate?: string; // YYYY-MM-DD reset tracker for daily tasks
+  claimedTaskIds?: string[]; // Task IDs claimed for current date
+  tasksCompletedCount?: number; // Cumulative count of completed tasks
+  claimedChestMilestones?: string[]; // Unlocked milestone chest IDs for current date
   
   // Privacy Settings (Default masked on public views)
   privacySettings?: PrivacySettings;
 
   // Active Multi-Device Sessions
   activeSessions?: UserSession[];
+  terminatedTokens?: string[];
 
   // Initial Form Data Backup (Admin audit)
   initialFormData?: {
@@ -133,15 +151,18 @@ export interface UserProfile {
 
   // Metadata
   role: 'member' | 'admin';
+  username?: string; // Unique lowercase handle (e.g. rahul_01 -> @rahul_01)
   avatar?: string;
+  coverPhoto?: string; // Custom profile cover photo
   bio?: string;
   gender?: string;
+  location?: string; // City / Region / Country displayed on profile
   createdAt: string;
   lastLogin?: string;
 
-  // Rock-solid Database Persistence (Replacing localStorage)
+  // Rock-solid Database Persistence
   totalDaysPlayed?: number;
-  daysPlayed?: string[]; // Array of unique played dates e.g. ["2026-11-08", "2026-11-09"]
+  daysPlayed?: string[];
   totalGamesPlayed?: number;
   totalGamesWon?: number;
   totalGamesLost?: number;
@@ -152,22 +173,31 @@ export interface UserProfile {
   lastActiveTime?: string;
   lastSessionStart?: string;
   
-  // Daily Tasks & Gaming state persisted in server database
+  // Task & Gaming state persisted in server database
   claimedTasksDate?: string;
   claimedTasksList?: string[];
   openedTimedBoxes?: string[];
   unlockedRooms?: string[];
   roomTheme?: string;
   voiceEffect?: string;
-  accountType?: 'business' | 'gamer'; // Dual registration type
+  accountType?: 'business' | 'gamer';
 
   // SWI Special 3.3% Recharge App Link (Shared by Admin after verification)
   swiAppLink?: string;
   swiAppSharedAt?: string;
   swiAppNote?: string;
 
-  // Real NWI Level Team Claim Tracker (Prevents duplicate claims on real downline members)
+  // Real NWI Level Team Claim Tracker
   nwiClaimedMemberIds?: string[];
+
+  // Daily Gaming Retention, Fresh Intel Quiz, Free Skill Play & Coin Power Boosters
+  lastDailyCheckInDate?: string; // YYYY-MM-DD
+  dailyQuizDate?: string; // YYYY-MM-DD
+  dailyQuizCorrectCount?: number;
+  dailyFreeGameDate?: string; // YYYY-MM-DD
+  dailyFreeGamesPlayed?: number;
+  coinBoosterUntil?: string; // ISO timestamp for 2x Game Coin & EXP Surge Pass
+  streakShields?: number; // Purchased with Coins to protect 7-day check-in streak
 }
 
 export interface HomeSliderPhoto {
@@ -199,17 +229,35 @@ export interface GiftCardVoucher {
   brand: 'Amazon' | 'Flipkart' | 'Google Play' | 'ESP Digital Store' | 'UPI Cash Voucher' | string;
   title: string;
   hindiTitle: string;
-  denomination: number; // e.g. ₹50, ₹100, ₹250, ₹500
+  denomination: number;
   valueInRupees?: number;
-  coinsRequired: number; // e.g. 5000 coins
-  voucherCode: string;
+  coinsRequired: number;
+  voucherCode?: string;
   voucherPin?: string;
-  validityDays: number;
+  validityDays?: number;
   description: string;
   instructions?: string;
   redeemedBy?: string;
   redeemedAt?: string;
-  status: 'available' | 'claimed';
+  status: 'available' | 'pending_fulfillment' | 'fulfilled' | 'claimed';
+}
+
+export interface GiftCardRedemption {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhone: string;
+  catalogId: string;
+  brand: string;
+  title: string;
+  denomination: number;
+  coinsSpent: number;
+  status: 'pending_fulfillment' | 'fulfilled' | 'rejected';
+  voucherCode?: string;
+  voucherPin?: string;
+  rejectionReason?: string;
+  requestedAt: string;
+  fulfilledAt?: string;
 }
 
 export interface ReferralRecord {
@@ -229,7 +277,17 @@ export interface WalletTransaction {
   id: string;
   userId: string;
   amount: number;
-  type: 'referral_credit' | 'promo_bonus' | 'non_working_pool' | 'nwi_level_income' | 'level_income' | 'plan_upgrade' | 'withdrawal' | 'signup_bonus';
+  type:
+    | 'referral_credit'
+    | 'promo_bonus'
+    | 'non_working_pool'
+    | 'nwi_level_income'
+    | 'level_income'
+    | 'plan_upgrade'
+    | 'withdrawal'
+    | 'payout_refund'
+    | 'recharge_order'
+    | 'coin_convert';
   description: string;
   date: string;
   status: 'completed' | 'pending' | 'failed';
@@ -413,17 +471,41 @@ export interface VoiceChatMessage {
   time: string;
 }
 
+export type VoiceRoomStageLayout = 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
+
 export interface CustomVoiceRoom {
   id: string;
   title: string;
   topic: string;
   category: 'earning' | 'gaming' | 'chitchat' | 'clan' | 'help';
-  roomAddress: string;
+  roomAddress: string; // Unique Numeric Room ID e.g. 10001 or VIP 1111
+  roomNumber?: string; // Numeric Room Number alias
+  isPersonalFixed?: boolean;
+  isVipRoom?: boolean;
+  vipRoomLabel?: string;
   hostUserId: string;
   hostName: string;
+  hostUsername?: string;
   hostAvatar?: string;
   hostLevel?: number;
   hostCharms?: number;
+  wallpaperId?: string;
+  customWallpaperUrl?: string;
+  stageLayout?: VoiceRoomStageLayout;
+  youtubeVideoUrl?: string;
+  youtubeVideoTitle?: string;
+  lockedSeats?: number[]; // 0-indexed seat indices locked by owner
+  followers?: string[];
+  followersCount?: number;
+  isFollowed?: boolean;
+  roomCharms?: number;
+  audience?: string[];
+  topContributors?: Array<{
+    userId: string;
+    fullName: string;
+    avatar?: string;
+    coins: number;
+  }>;
   createdAt: string;
   isPrivate?: boolean;
   passcode?: string;
@@ -442,6 +524,7 @@ export interface VoiceRoomSeat {
   gameLevel?: number;
   isMuted: boolean;
   isSpeaking: boolean;
+  isLocked?: boolean;
   charms: number;
 }
 
@@ -589,7 +672,25 @@ export interface CoinTransactionRecord {
   userId: string;
   userName: string;
   type: 'credit' | 'debit';
-  category: 'game_win' | 'game_bet' | 'daily_login' | 'daily_task' | 'fortune_spin' | 'mystery_chest' | 'gift_sent' | 'gift_received' | 'recharge' | 'level_up' | 'admin_adjustment';
+  category:
+    | 'game_win'
+    | 'game_bet'
+    | 'daily_task'
+    | 'task_chest'
+    | 'fortune_spin'
+    | 'gift_sent'
+    | 'gift_received'
+    | 'recharge'
+    | 'vip_purchase'
+    | 'frame_purchase'
+    | 'room_purchase'
+    | 'gift_card_redeem'
+    | 'coin_convert'
+    | 'daily_checkin'
+    | 'daily_quiz'
+    | 'skill_game_reward'
+    | 'coin_booster'
+    | 'admin_adjustment';
   categoryLabel: string;
   amount: number;
   balanceBefore: number;
@@ -598,13 +699,90 @@ export interface CoinTransactionRecord {
   timestamp: string;
 }
 
+export interface DailyGameHubData {
+  today: string;
+  intel: {
+    id: string;
+    category: string;
+    title: string;
+    fact: string;
+    proTip: string;
+  };
+  quiz: {
+    id: string;
+    topic: string;
+    question: string;
+    options: string[];
+    coinReward: number;
+    xpReward: number;
+    alreadyAnswered: boolean;
+  };
+  spotlightGame: {
+    key: string;
+    title: string;
+    hindiTitle: string;
+    icon: string;
+    bonusLabel: string;
+    extraCoins: number;
+  };
+  checkIn: {
+    canClaimToday: boolean;
+    currentStreak: number;
+    nextDayNumber: number;
+    streakAtRisk: boolean;
+    streakShields: number;
+    schedule: Array<{
+      day: number;
+      coins: number;
+      xp: number;
+      label: string;
+      claimed: boolean;
+      isToday: boolean;
+    }>;
+  };
+  freePlay: {
+    playedToday: number;
+    dailyLimit: number;
+    remaining: number;
+    coinBoosterActive: boolean;
+    coinBoosterUntil?: string | null;
+  };
+  topDailyPlayers: Array<{
+    userId: string;
+    fullName: string;
+    username?: string;
+    avatar?: string;
+    gameLevel: number;
+    gameXp: number;
+    coins: number;
+    totalGamesWon: number;
+  }>;
+}
+
+export interface RealTaskStatus {
+  id: string;
+  eventType: string;
+  title: string;
+  hindiTitle: string;
+  description: string;
+  coinReward: number;
+  xpReward: number;
+  targetCount: number;
+  currentProgress: number;
+  isCompleted: boolean;
+  isClaimed: boolean;
+  icon: string;
+  actionTab: string;
+  actionLabel: string;
+}
+
 export interface ProfileAuditRecord {
   id: string;
   userId: string;
   userName: string;
   changedBy: 'user' | 'admin';
   changedByName?: string;
-  changeType: 'profile_update' | 'upi_change' | 'phone_change' | 'status_change' | 'avatar_change' | 'clan_change';
+  changeType: 'profile_update' | 'upi_change' | 'phone_change' | 'status_change' | 'avatar_change' | 'clan_change' | 'vip_upgrade' | 'frame_unlock';
   field: string;
   oldValue: string;
   newValue: string;
@@ -626,6 +804,3 @@ export interface OnlineActivitySession {
   ipAddress?: string;
   status: 'online' | 'offline';
 }
-
-
-

@@ -10,6 +10,7 @@ interface OhMyCardGameProps {
   user: UserProfile;
   onCoinsUpdated: (newCoins: number) => void;
   onClose?: () => void;
+  onOpenBuyCoins?: () => void;
 }
 
 type CardSuit = '♠' | '♥' | '♦' | '♣';
@@ -39,8 +40,8 @@ const VALUES = [
   { val: 14, label: 'A' },
 ];
 
-export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated, onClose }) => {
-  const [bet, setBet] = useState<number>(50);
+export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated, onClose, onOpenBuyCoins }) => {
+  const [bet, setBet] = useState<number>((user.coins || 0) >= 20 ? 20 : 0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentCard, setCurrentCard] = useState<PlayingCard>({
     suit: '♠',
@@ -91,22 +92,24 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
   };
 
   const startGame = async () => {
-    if ((user.coins || 0) < bet) {
-      setMessage(`पर्याप्त कॉइन्स नहीं हैं! कम से कम ${bet} कॉइन्स चाहिए।`);
+    if (bet > 0 && (user.coins || 0) < bet) {
+      setMessage(`पर्याप्त कॉइन्स नहीं हैं! कम से कम ${bet} कॉइन्स चाहिए या "🆓 Free" चुनें।`);
       return;
     }
 
-    try {
-      const uId = user.userId || (user as any).id;
-      const res = await api.playCoinsGame(uId, 'cards', bet);
-      if (!res.success) {
-        setMessage(res.error || res.message || 'गेम शुरू करने में त्रुटि');
+    if (bet > 0) {
+      try {
+        const uId = user.userId || (user as any).id;
+        const res = await api.playCoinsGame(uId, 'cards', bet);
+        if (!res.success) {
+          setMessage(res.error || res.message || 'गेम शुरू करने में त्रुटि');
+          return;
+        }
+        onCoinsUpdated(res.currentCoins);
+      } catch {
+        setMessage('सर्वर से संपर्क करने में असमर्थ');
         return;
       }
-      onCoinsUpdated(res.currentCoins);
-    } catch {
-      setMessage('सर्वर से संपर्क करने में असमर्थ');
-      return;
     }
 
     const firstCard = drawRandomCard();
@@ -114,7 +117,7 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
     setNextCard(null);
     setStreak(0);
     setMultiplier(1.0);
-    setPotentialWinnings(bet);
+    setPotentialWinnings(bet === 0 ? 5 : bet);
     setHistory([firstCard]);
     setIsPlaying(true);
     setMessage('🃏 अगला कार्ड Higher (ऊंचा) होगा या Lower (नीचा)? या Red / Black? अनुमान लगाएं!');
@@ -155,7 +158,8 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
       if (isWin) {
         const newStreak = streak + 1;
         const newMulti = Number((multiplier * multiStep).toFixed(2));
-        const newPotential = Math.floor(bet * newMulti);
+        const baseStake = bet === 0 ? 5 : bet;
+        const newPotential = bet === 0 ? Math.min(20, 5 + newStreak * 3) : Math.floor(baseStake * newMulti);
 
         setStreak(newStreak);
         setMultiplier(newMulti);
@@ -166,11 +170,24 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
         setIsFlipping(false);
 
         playSound(700, 'triangle', 0.25);
-        setMessage(`🎯 सही अनुमान! Streak x${newStreak}! संभावित जीत: ${newPotential} कॉइन्स (${newMulti}x). आगे खेलें या Cash Out करें!`);
+        setMessage(`🎯 सही अनुमान! Streak x${newStreak}! संभावित जीत: ${newPotential} कॉइन्स. आगे खेलें या Cash Out करें!`);
       } else {
         setIsFlipping(false);
         setIsPlaying(false);
         playSound(220, 'sawtooth', 0.3);
+        const uId = user.userId || (user as any).id;
+        if (uId) {
+          if (bet === 0) {
+            try {
+              const res = await api.playFreeSkillMatch(uId, 'cards', 'loss', streak);
+              if (res.currentCoins !== undefined) onCoinsUpdated(res.currentCoins);
+              setMessage(`❌ कार्ड था ${drawn.label}${drawn.suit}. प्रयास बोनस +${res.coinsEarned || 0} कॉइन्स जुड़े!`);
+              return;
+            } catch {}
+          } else {
+            api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
+          }
+        }
         setMessage(`❌ गलत अनुमान! कार्ड था ${drawn.label}${drawn.suit}. आपकी बाजी समाप्त हुई। फिर से प्रयास करें!`);
       }
     }, 700);
@@ -181,12 +198,23 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
 
     try {
       const uId = user.userId || (user as any).id;
-      const res = await api.claimGameWin(uId, 'cards', potentialWinnings);
-      if (res.success) {
-        onCoinsUpdated(res.currentCoins);
-        playSound(880, 'triangle', 0.4);
-        setMessage(`🏆 शानदार जीत! आपने ${potentialWinnings} कॉइन्स सफलतापूर्वक कैश आउट कर लिए!`);
-        setIsPlaying(false);
+      if (bet === 0) {
+        const res = await api.playFreeSkillMatch(uId, 'cards', 'win', streak);
+        if (res.success) {
+          onCoinsUpdated(res.currentCoins);
+          playSound(880, 'triangle', 0.4);
+          setMessage(res.message || `🏆 शानदार स्ट्रीक x${streak}! +${res.coinsEarned} कॉइन्स जुड़े!`);
+          setIsPlaying(false);
+        }
+      } else {
+        const res = await api.claimGameWin(uId, 'cards', potentialWinnings);
+        if (res.success) {
+          onCoinsUpdated(res.currentCoins);
+          playSound(880, 'triangle', 0.4);
+          setMessage(`🏆 शानदार जीत! आपने ${potentialWinnings} कॉइन्स सफलतापूर्वक कैश आउट कर लिए!`);
+          setIsPlaying(false);
+          if (uId) api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
+        }
       }
     } catch {
       setMessage('कैशआउट में त्रुटि आई');
@@ -353,31 +381,55 @@ export const OhMyCardGame: React.FC<OhMyCardGameProps> = ({ user, onCoinsUpdated
           {!isPlaying ? (
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-[#212121] mb-1.5 block">शर्त राशि (Bet Coins):</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[20, 50, 100, 200].map(amt => (
+                <label className="text-xs font-bold text-[#212121] mb-1.5 block">एंट्री मोड चुनें (Free Earn या Coin Bet):</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[0, 20, 50, 100, 200].map(amt => (
                     <button
                       key={amt}
                       onClick={() => setBet(amt)}
                       className={`py-2 rounded-sm text-xs font-bold border transition cursor-pointer ${
                         bet === amt
-                          ? 'bg-[#ffe500] text-[#212121] border-amber-400 shadow-xs'
+                          ? amt === 0
+                            ? 'bg-[#388e3c] text-white border-emerald-600 shadow-xs'
+                            : 'bg-[#ffe500] text-[#212121] border-amber-400 shadow-xs'
                           : 'bg-[#f9fafb] hover:bg-slate-100 text-[#212121] border-slate-200'
                       }`}
                     >
-                      🪙 {amt}
+                      {amt === 0 ? '🆓 Free' : `🪙 ${amt}`}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <button
-                onClick={startGame}
-                className="w-full py-3.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-sm sm:text-base flex items-center justify-center space-x-2 shadow-sm transition transform active:scale-98 cursor-pointer"
-              >
-                <Play className="w-5 h-5 fill-white" />
-                <span>START OH MY CARD (शर्त: {bet} कॉइन्स)</span>
-              </button>
+              {bet > 0 && (user.coins || 0) < bet ? (
+                <div className="space-y-2">
+                  <div className="p-2 bg-rose-50 border border-rose-200 rounded-sm text-xs font-bold text-rose-700 text-center">
+                    इस शर्त के लिए {bet} कॉइन्स चाहिए — या ऊपर "🆓 Free" चुनें!
+                  </div>
+                  {onOpenBuyCoins && (
+                    <button
+                      onClick={onOpenBuyCoins}
+                      className="w-full py-3 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-black text-sm flex items-center justify-center space-x-2 shadow-sm transition cursor-pointer"
+                    >
+                      <span>🪙 Buy Coins (कॉइन्स खरीदें)</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={startGame}
+                  className={`w-full py-3.5 rounded-sm ${
+                    bet === 0 ? 'bg-[#388e3c] hover:bg-emerald-700' : 'bg-[#fb641b] hover:bg-[#e8550f]'
+                  } text-white font-black text-sm sm:text-base flex items-center justify-center space-x-2 shadow-sm transition transform active:scale-98 cursor-pointer`}
+                >
+                  <Play className="w-5 h-5 fill-white" />
+                  <span>
+                    {bet === 0
+                      ? 'START FREE CARD DUEL (जीतें +10 से +20 कॉइन्स!)'
+                      : `START OH MY CARD (शर्त: ${bet} कॉइन्स)`}
+                  </span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

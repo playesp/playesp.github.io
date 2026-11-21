@@ -1,11 +1,12 @@
 import React from 'react';
+import { getVipConfig, type VipTierId } from '../config/economy.ts';
 
-export type FrameVariant = 
-  | 'royal-dragon-crown' 
-  | 'cosmic-neon' 
-  | 'vip-gold' 
-  | 'wolf-night' 
-  | 'judge-justice' 
+export type FrameVariant =
+  | 'royal-dragon-crown'
+  | 'cosmic-neon'
+  | 'vip-gold'
+  | 'wolf-night'
+  | 'judge-justice'
   | 'pro-player'
   | 'rookie'
   | 'clan-leader'
@@ -17,6 +18,7 @@ interface AvatarFrameProps {
   alt?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   frameType?: FrameVariant;
+  vipTier?: VipTierId | string;
   level?: number;
   showCrown?: boolean;
   isSpeaking?: boolean;
@@ -28,6 +30,7 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
   alt = 'User Avatar',
   size = 'md',
   frameType = 'standard',
+  vipTier = 'none',
   level,
   showCrown = false,
   isSpeaking = false,
@@ -42,13 +45,13 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
   };
 
   const currentSize = sizeMap[size];
-  const isSharmaJiRoyal = frameType === 'royal-dragon-crown' || frameType === 'clan-leader' || showCrown;
+  const isRoyalCrown = frameType === 'royal-dragon-crown' || frameType === 'clan-leader' || showCrown;
+  const vipCfg = getVipConfig(vipTier);
 
   return (
     <div className={`relative flex items-center justify-center shrink-0 ${currentSize.container} ${className}`}>
-      
-      {/* 1. Deluxe Sharma Ji / Royal Crown Top Jewel */}
-      {isSharmaJiRoyal && (
+      {/* Royal Crown Top Jewel */}
+      {isRoyalCrown && (
         <div className={`absolute z-30 transform -translate-x-1/2 left-1/2 pointer-events-none drop-shadow-[0_4px_12px_rgba(234,179,8,0.9)] animate-bounce ${currentSize.crown}`}>
           <svg viewBox="0 0 100 100" className="w-full h-full">
             <defs>
@@ -63,14 +66,12 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
                 <stop offset="100%" stopColor="#990000" />
               </linearGradient>
             </defs>
-            {/* 3D Imperial WePlay Crown */}
             <path
               d="M15,80 L85,80 L80,50 L65,70 L50,30 L35,70 L20,50 Z"
               fill="url(#royalGoldGrad)"
               stroke="#713f12"
               strokeWidth="2.5"
             />
-            {/* Jewels on Crown Peaks */}
             <circle cx="50" cy="27" r="6" fill="url(#rubyGlow)" stroke="#fff" strokeWidth="1" />
             <circle cx="20" cy="47" r="4.5" fill="#38bdf8" stroke="#fff" strokeWidth="1" />
             <circle cx="80" cy="47" r="4.5" fill="#38bdf8" stroke="#fff" strokeWidth="1" />
@@ -79,21 +80,21 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
         </div>
       )}
 
-      {/* 2. Pro Player Electric Lightning Jewel */}
+      {/* Pro Player Electric Lightning Jewel */}
       {frameType === 'pro-player' && (
         <div className="absolute -top-3 z-20 pointer-events-none px-1.5 py-0.2 rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 text-[10px] font-black text-white shadow-[0_0_12px_rgba(6,182,212,0.9)] border border-cyan-300 animate-pulse">
           ⚡ PRO
         </div>
       )}
 
-      {/* 3. Rookie Starter Badge */}
+      {/* Rookie Starter Badge */}
       {frameType === 'rookie' && (
         <div className="absolute -top-3 z-20 pointer-events-none px-1.5 py-0.2 rounded-full bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-700 text-[9px] font-black text-white shadow-md border border-emerald-300">
           🔰 ROOKIE
         </div>
       )}
 
-      {/* 4. Wolf Night Frame Horns / Moon Claws */}
+      {/* Wolf Night Frame Horns */}
       {frameType === 'wolf-night' && (
         <div className="absolute -top-3 w-8 h-4 z-20 pointer-events-none flex justify-between px-1">
           <div className="w-2.5 h-3.5 bg-gradient-to-t from-purple-600 to-indigo-300 rounded-t-full transform -rotate-12 shadow-md shadow-purple-500/50" />
@@ -101,15 +102,22 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
         </div>
       )}
 
-      {/* 5. Judge Justice Top Scales Emblem */}
+      {/* Judge Justice Top Scales Emblem */}
       {frameType === 'judge-justice' && (
         <div className="absolute -top-3.5 z-20 pointer-events-none px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-600 via-yellow-400 to-amber-600 text-[10px] font-black text-slate-950 shadow-lg border border-yellow-200">
           ⚖️
         </div>
       )}
 
-      {/* 6. Frame Outer Animated Rings */}
-      {isSharmaJiRoyal ? (
+      {/* VIP Top Chip when no frame crown overrides */}
+      {vipCfg && !isRoyalCrown && frameType === 'standard' && (
+        <div className={`absolute -top-2.5 z-20 pointer-events-none px-1.5 py-0.2 rounded-full bg-gradient-to-r ${vipCfg.colorClass} text-[8px] font-black text-white shadow border border-white/60`}>
+          {vipCfg.icon} VIP
+        </div>
+      )}
+
+      {/* Frame Outer Animated Rings */}
+      {isRoyalCrown ? (
         <div className="absolute inset-0 rounded-full p-[3px] bg-gradient-to-tr from-yellow-300 via-amber-500 to-yellow-600 shadow-[0_0_20px_rgba(250,204,21,0.6)] animate-spin-slow">
           <div className="w-full h-full rounded-full border-2 border-dashed border-amber-200/80" />
         </div>
@@ -137,15 +145,17 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
         <div className="absolute inset-0 rounded-full p-[1.5px] bg-slate-300" />
       )}
 
-      {/* 5. Speaking Voice Wave Pulse */}
+      {/* Speaking Voice Wave Pulse */}
       {isSpeaking && (
         <div className="absolute -inset-1 rounded-full border-2 border-emerald-400 animate-ping opacity-75 pointer-events-none" />
       )}
 
-      {/* 6. Avatar Image */}
-      <div className={`relative z-10 rounded-full overflow-hidden bg-[#f5f8ff] border-2 ${
-        isSharmaJiRoyal ? 'border-amber-300 shadow-inner' : 'border-slate-200'
-      } ${currentSize.img}`}>
+      {/* Avatar Image */}
+      <div
+        className={`relative z-10 rounded-full overflow-hidden bg-[#f5f8ff] border-2 ${
+          isRoyalCrown ? 'border-amber-300 shadow-inner' : 'border-slate-200'
+        } ${currentSize.img}`}
+      >
         <img
           src={src || 'https://api.dicebear.com/7.x/bottts/svg?seed=ESPPlayer'}
           alt={alt}
@@ -154,18 +164,18 @@ export const AvatarFrame: React.FC<AvatarFrameProps> = ({
         />
       </div>
 
-      {/* 7. Level / Crown Badge */}
+      {/* Level Badge */}
       {typeof level === 'number' && (
         <span
           className={`absolute z-30 font-black px-1.5 py-0.2 rounded-full shadow-lg ${currentSize.badge} ${
-            level >= 90
+            level >= 50
               ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 border border-yellow-200'
-              : level >= 50
+              : level >= 15
               ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
               : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
           }`}
         >
-          {level >= 90 ? `👑 ${level}` : `Lv.${level}`}
+          {level >= 50 ? `👑 ${level}` : `Lv.${level}`}
         </span>
       )}
     </div>

@@ -22,6 +22,8 @@ import {
   Smartphone,
   Scale,
   Bell,
+  Briefcase,
+  Radio,
 } from 'lucide-react';
 import type { UserProfile, PlatformSettings } from '../types/index.ts';
 import { ServicesPopUpModal } from './ServicesPopUpModal.tsx';
@@ -62,6 +64,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [helplineModalOpen, setHelplineModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [mobileEarningMenuOpen, setMobileEarningMenuOpen] = useState(false);
+
+  const isGamerOnly = currentUser?.accountType === 'gamer';
 
   const searchRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -208,17 +213,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               type="button"
-              onClick={() => onSelectTab(currentUser ? 'dashboard' : 'home')}
+              onClick={() => onSelectTab(currentUser ? (isGamerOnly ? 'gaming-room' : 'dashboard') : 'home')}
               className="flex flex-col items-start text-left cursor-pointer group shrink-0"
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-display text-lg sm:text-xl font-extrabold italic tracking-tight text-white whitespace-nowrap">
-                  ESP Platform
+                  {isGamerOnly ? 'ESP Gaming' : 'ESP Platform'}
                 </span>
               </div>
               <span className="text-[10px] sm:text-[11px] italic text-blue-100 leading-none flex items-center gap-1 whitespace-nowrap">
-                <span>Explore</span>
-                <span className="text-[#ffe500] font-bold">Plus ★</span>
+                <span>{isGamerOnly ? 'Gaming Club' : 'Explore'}</span>
+                <span className="text-[#ffe500] font-bold">{isGamerOnly ? '🎮 Live' : 'Plus ★'}</span>
               </span>
             </button>
           </div>
@@ -234,7 +239,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setSearchQuery(e.target.value);
                   setSearchFocused(true);
                 }}
-                placeholder="Search 10 Services, SWI 3.3% App, NWI Passive, Games..."
+                placeholder={
+                  isGamerOnly
+                    ? 'Search Games, Voice Rooms, @Usernames, Daily Tasks...'
+                    : 'Search 10 Services, SWI 3.3% App, NWI Passive, Games...'
+                }
                 className="w-full h-9 pl-4 pr-10 bg-white text-[#212121] placeholder-[#878787] text-xs sm:text-sm rounded-xs shadow-xs focus:outline-none"
               />
               <button
@@ -309,25 +318,80 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 {accountMenuOpen && (
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-sm shadow-xl z-50 text-[#212121] overflow-hidden">
+                  <div className="absolute right-0 mt-1.5 w-68 bg-white border border-slate-200 rounded-sm shadow-xl z-50 text-[#212121] overflow-hidden">
                     <div className="p-3 bg-[#f5f7fa] border-b border-slate-200 space-y-1">
                       <p className="text-xs font-bold text-[#212121] truncate">{currentUser.fullName}</p>
                       <p className="text-[11px] text-[#878787] font-mono">
-                        ID: {currentUser.userId} · ₹{currentUser.balance}
+                        {isGamerOnly
+                          ? `${currentUser.username ? `@${currentUser.username} · ` : ''}GAME: ${currentUser.gamingId || currentUser.userId}`
+                          : `ID: ${currentUser.userId} · ₹${currentUser.balance}`}
                       </p>
-                      <p className="text-[11px] text-[#388e3c] font-semibold">
-                        Coins: {(currentUser.coins || 0).toLocaleString()}
+                      <p className="text-[11px] text-[#388e3c] font-semibold tabular-nums">
+                        🪙 Coins: {(currentUser.coins || 0).toLocaleString()} · Lv.{currentUser.gameLevel || 1}
                       </p>
                     </div>
                     <div className="py-1 text-xs">
                       <button
                         type="button"
-                        onClick={() => { onSelectTab('dashboard'); setAccountMenuOpen(false); }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                        onClick={() => { onSelectTab('gaming-room'); setAccountMenuOpen(false); }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-semibold cursor-pointer"
                       >
-                        <User className="w-3.5 h-3.5 text-[#2874f0]" />
-                        <span>My Dashboard</span>
+                        <Gamepad2 className="w-3.5 h-3.5 text-[#fb641b]" />
+                        <span>{isGamerOnly ? 'Game Setup & Lobby' : 'ESP Gaming Time'}</span>
                       </button>
+
+                      {isGamerOnly && (
+                        <button
+                          type="button"
+                          onClick={() => { onSelectTab('gaming-voice'); setAccountMenuOpen(false); }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                        >
+                          <Radio className="w-3.5 h-3.5 text-[#2874f0]" />
+                          <span>My Personal Voice Room</span>
+                        </button>
+                      )}
+
+                      {isGamerOnly ? (
+                        <div className="border-t border-slate-100 mt-1 pt-1">
+                          <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#878787]">
+                            Earning Setup (Menu)
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { onSelectTab('dashboard'); setAccountMenuOpen(false); }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                          >
+                            <Briefcase className="w-3.5 h-3.5 text-[#2874f0]" />
+                            <span>Earning Dashboard (Wallet &amp; Team)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setServicesModalOpen(true); setAccountMenuOpen(false); }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                          >
+                            <Layers className="w-3.5 h-3.5 text-[#388e3c]" />
+                            <span>10 Earning Plans &amp; Services</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { onSelectTab('nwi'); setAccountMenuOpen(false); }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                          >
+                            <Crown className="w-3.5 h-3.5 text-[#fb641b]" />
+                            <span>NWI 3-Level Passive Income</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { onSelectTab('dashboard'); setAccountMenuOpen(false); }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
+                        >
+                          <User className="w-3.5 h-3.5 text-[#2874f0]" />
+                          <span>My Dashboard</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => { onShowIdCard(); setAccountMenuOpen(false); }}
@@ -336,14 +400,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <Award className="w-3.5 h-3.5 text-[#2874f0]" />
                         <span>Digital ID Card</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => { onSelectTab('gaming-room'); setAccountMenuOpen(false); }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-[#f5f8ff] flex items-center gap-2 font-medium cursor-pointer"
-                      >
-                        <Gamepad2 className="w-3.5 h-3.5 text-[#fb641b]" />
-                        <span>ESP Gaming Time</span>
-                      </button>
+
                       {isAdmin && (
                         <button
                           type="button"
@@ -385,22 +442,45 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => onSelectTab('services')}
-              className="hidden lg:inline-flex text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-            >
-              10 Services
-            </button>
+            {!isGamerOnly ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('services')}
+                  className="hidden lg:inline-flex text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
+                >
+                  10 Services
+                </button>
 
-            <button
-              type="button"
-              onClick={() => onSelectTab('gaming-room')}
-              className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-            >
-              <Gamepad2 className="w-4 h-4 text-[#ffe500]" />
-              <span>Gaming Time</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('gaming-room')}
+                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
+                >
+                  <Gamepad2 className="w-4 h-4 text-[#ffe500]" />
+                  <span>Gaming Time</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('gaming-room')}
+                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
+                >
+                  <Gamepad2 className="w-4 h-4 text-[#ffe500]" />
+                  <span>Games Lobby</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('gaming-voice')}
+                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
+                >
+                  <Radio className="w-4 h-4 text-[#ffe500]" />
+                  <span>Voice Room</span>
+                </button>
+              </>
+            )}
 
             {/* More Dropdown */}
             <div ref={moreRef} className="relative hidden sm:block">
@@ -491,116 +571,188 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* ===================== FLIPKART CLEAN WHITE CATEGORY SHELF STRIP ===================== */}
+      {/* ===================== CLEAN WHITE CATEGORY SHELF STRIP ===================== */}
       <nav
         aria-label="Primary categories"
         className="bg-white border-b border-slate-200 px-2 sm:px-6 overflow-x-auto no-scrollbar"
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 min-w-max py-1.5">
-          <button
-            type="button"
-            onClick={() => onSelectTab('home')}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'home'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>Home</span>
-          </button>
+          {isGamerOnly ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onSelectTab('gaming-room')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'gaming-room'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>Games Lobby</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setServicesModalOpen(true)}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'services' || currentTab === 'service-detail'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5 text-[#2874f0]" />
-            <span>10 Services</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('gaming-voice')}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Radio className="w-3.5 h-3.5 text-[#fb641b]" />
+                <span>Voice Rooms</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => handleSelectService('SWI')}
-            className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-[#388e3c]" />
-            <span>SWI 3.3% App</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('gaming-tasks')}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Daily Streak &amp; Tasks</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('nwi')}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'nwi'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <Crown className="w-3.5 h-3.5 text-[#fb641b]" />
-            <span>NWI 3-Level</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('chat-club')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'chat-club'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-[#388e3c]" />
+                <span>Chat Club</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('gaming-room')}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'gaming-room'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
-            <span>ESP Gaming</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('moments')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'moments'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>Moments</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('chat-club')}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'chat-club'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-[#388e3c]" />
-            <span>Chat Club</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setHelplineModalOpen(true)}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Phone className="w-3.5 h-3.5 text-[#388e3c]" />
+                <span>Helpline</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => onSelectTab('home')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'home'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Home</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('moments')}
-            className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-              currentTab === 'moments'
-                ? 'border-[#2874f0] text-[#2874f0]'
-                : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-            }`}
-          >
-            <Camera className="w-3.5 h-3.5 text-[#2874f0]" />
-            <span>Moments</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setServicesModalOpen(true)}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'services' || currentTab === 'service-detail'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>10 Services</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={onShowIdCard}
-            className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Award className="w-3.5 h-3.5 text-[#fb641b]" />
-            <span>Digital ID</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => handleSelectService('SWI')}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-[#388e3c]" />
+                <span>SWI 3.3% App</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setHelplineModalOpen(true)}
-            className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Phone className="w-3.5 h-3.5 text-[#388e3c]" />
-            <span>Helpline</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('nwi')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'nwi'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5 text-[#fb641b]" />
+                <span>NWI 3-Level</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectTab('gaming-room')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'gaming-room'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>ESP Gaming</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectTab('chat-club')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'chat-club'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-[#388e3c]" />
+                <span>Chat Club</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectTab('moments')}
+                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'moments'
+                    ? 'border-[#2874f0] text-[#2874f0]'
+                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>Moments</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onShowIdCard}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Award className="w-3.5 h-3.5 text-[#fb641b]" />
+                <span>Digital ID</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHelplineModalOpen(true)}
+                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Phone className="w-3.5 h-3.5 text-[#388e3c]" />
+                <span>Helpline</span>
+              </button>
+            </>
+          )}
         </div>
       </nav>
 
@@ -608,87 +760,182 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white border-b border-slate-200 px-4 pt-3 pb-5 space-y-3 text-[#212121] max-h-[80vh] overflow-y-auto shadow-lg">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-            <span className="text-xs font-bold text-[#878787] uppercase">ESP Menu</span>
+            <span className="text-xs font-bold text-[#878787] uppercase">
+              {isGamerOnly ? '🎮 Gaming & Menu' : 'ESP Menu'}
+            </span>
             {currentUser && (
               <span className="text-xs font-bold text-[#388e3c] tabular-nums">
-                Wallet: ₹{currentUser.balance}
+                {isGamerOnly
+                  ? `🪙 ${(currentUser.coins || 0).toLocaleString()} Coins`
+                  : `Wallet: ₹${currentUser.balance}`}
               </span>
             )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => { onSelectTab('home'); setMobileMenuOpen(false); }}
-              className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
-            >
-              <Home className="w-4 h-4 text-[#2874f0]" />
-              <span>Home</span>
-            </button>
+            {isGamerOnly ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('gaming-room'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Gamepad2 className="w-4 h-4 text-[#fb641b]" />
+                  <span>Games Lobby</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => { onSelectTab('nwi'); setMobileMenuOpen(false); }}
-              className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
-            >
-              <Crown className="w-4 h-4 text-[#fb641b]" />
-              <span>NWI 3-Level</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('gaming-voice'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Radio className="w-4 h-4 text-[#2874f0]" />
+                  <span>Voice Room</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => { onSelectTab('gaming-room'); setMobileMenuOpen(false); }}
-              className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
-            >
-              <Gamepad2 className="w-4 h-4 text-[#2874f0]" />
-              <span>ESP Gaming</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('chat-club'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 text-[#388e3c]" />
+                  <span>Chat Club</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => { onSelectTab('chat-club'); setMobileMenuOpen(false); }}
-              className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
-            >
-              <MessageCircle className="w-4 h-4 text-[#388e3c]" />
-              <span>Chat Club</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('moments'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Camera className="w-4 h-4 text-[#2874f0]" />
+                  <span>Moments</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('home'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Home className="w-4 h-4 text-[#2874f0]" />
+                  <span>Home</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('nwi'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Crown className="w-4 h-4 text-[#fb641b]" />
+                  <span>NWI 3-Level</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('gaming-room'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <Gamepad2 className="w-4 h-4 text-[#2874f0]" />
+                  <span>ESP Gaming</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { onSelectTab('chat-club'); setMobileMenuOpen(false); }}
+                  className="px-3 py-2.5 rounded-sm bg-[#f5f7fa] hover:bg-blue-50 text-xs font-semibold text-left flex items-center gap-2 cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 text-[#388e3c]" />
+                  <span>Chat Club</span>
+                </button>
+              </>
+            )}
           </div>
 
-          {/* 10 Services Quick List */}
-          <div className="border border-slate-200 rounded-sm p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-[#212121]">
-              <span>10 Earning Services</span>
+          {isGamerOnly ? (
+            <div className="border border-blue-200 bg-[#f5f8ff] rounded-sm p-3 space-y-2">
               <button
                 type="button"
-                onClick={() => { setServicesModalOpen(true); setMobileMenuOpen(false); }}
-                className="text-xs text-[#2874f0] font-semibold hover:underline cursor-pointer"
+                onClick={() => setMobileEarningMenuOpen(prev => !prev)}
+                className="w-full flex items-center justify-between text-xs font-bold text-[#2874f0] cursor-pointer"
               >
-                View All →
+                <span className="flex items-center gap-1.5">
+                  <Briefcase className="w-4 h-4" />
+                  <span>💼 Earning Setup (10 Plans · Dashboard)</span>
+                </span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${mobileEarningMenuOpen ? 'rotate-180' : ''}`} />
               </button>
+              {mobileEarningMenuOpen && (
+                <div className="pt-2 border-t border-blue-100 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { onSelectTab('dashboard'); setMobileMenuOpen(false); }}
+                    className="w-full py-2 px-2.5 rounded-sm bg-white border border-blue-200 text-xs font-bold text-[#2874f0] text-left cursor-pointer"
+                  >
+                    💼 Earning Dashboard &amp; Wallet ({currentUser?.userId})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSelectTab('nwi'); setMobileMenuOpen(false); }}
+                    className="w-full py-2 px-2.5 rounded-sm bg-white border border-slate-200 text-xs font-semibold text-[#212121] text-left cursor-pointer"
+                  >
+                    👑 NWI 3-Level Passive Income
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setServicesModalOpen(true); setMobileMenuOpen(false); }}
+                    className="w-full py-2 px-2.5 rounded-sm bg-white border border-slate-200 text-xs font-semibold text-[#212121] text-left cursor-pointer"
+                  >
+                    📊 View All 10 Earning Services
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSelectTab('home'); setMobileMenuOpen(false); }}
+                    className="w-full py-2 px-2.5 rounded-sm bg-white border border-slate-200 text-xs font-semibold text-[#212121] text-left cursor-pointer"
+                  >
+                    🏠 ESP Main Portal Home
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="divide-y divide-slate-100">
-              {tenServicesList.map(srv => (
+          ) : (
+            <div className="border border-slate-200 rounded-sm p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-[#212121]">
+                <span>10 Earning Services</span>
                 <button
-                  key={srv.code}
                   type="button"
-                  onClick={() => handleSelectService(srv.code)}
-                  className="w-full py-2 text-left text-xs flex items-center justify-between hover:text-[#2874f0] cursor-pointer"
+                  onClick={() => { setServicesModalOpen(true); setMobileMenuOpen(false); }}
+                  className="text-xs text-[#2874f0] font-semibold hover:underline cursor-pointer"
                 >
-                  <span className="font-medium truncate pr-2">{srv.title}</span>
-                  <span className="font-bold text-[#388e3c] tabular-nums shrink-0">{srv.fee}</span>
+                  View All →
                 </button>
-              ))}
+              </div>
+              <div className="divide-y divide-slate-100">
+                {tenServicesList.map(srv => (
+                  <button
+                    key={srv.code}
+                    type="button"
+                    onClick={() => handleSelectService(srv.code)}
+                    className="w-full py-2 text-left text-xs flex items-center justify-between hover:text-[#2874f0] cursor-pointer"
+                  >
+                    <span className="font-medium truncate pr-2">{srv.title}</span>
+                    <span className="font-bold text-[#388e3c] tabular-nums shrink-0">{srv.fee}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {currentUser ? (
             <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={() => { onSelectTab('dashboard'); setMobileMenuOpen(false); }}
+                onClick={() => { onSelectTab(isGamerOnly ? 'gaming-room' : 'dashboard'); setMobileMenuOpen(false); }}
                 className="w-full py-2.5 rounded-sm text-xs font-bold bg-[#2874f0] text-white cursor-pointer"
               >
-                Open Dashboard ({currentUser.userId})
+                {isGamerOnly
+                  ? `🎮 Open Game Setup (${currentUser.gamingId || currentUser.userId})`
+                  : `Open Dashboard (${currentUser.userId})`}
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button

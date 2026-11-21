@@ -1,75 +1,441 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Default Deny
+    // 1. Global Default Deny Catch-All
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // Core Primitives & Security Helpers
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // 2. Users Collection
+    function isAdmin() {
+      return isVerified() && (
+        request.auth.token.email == 'ashokraj7676767676@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // Entity Validation Blueprints (Anti-Update-Gap)
+    function isValidUsernameHandle(val) {
+      return val is string && val.size() >= 3 && val.size() <= 24 && val.matches('^[a-z0-9]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['userId', 'authUid', 'fullName', 'phone', 'email', 'status', 'role', 'createdAt']) &&
+        data.keys().hasOnly([
+          'userId', 'authUid', 'username', 'fullName', 'phone', 'email', 'fullAddress',
+          'paymentAddress', 'payoutUpiId', 'sponsorId', 'sponsorName',
+          'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
+          'paymentUtr', 'status', 'accountType', 'balance', 'totalEarnings',
+          'referralEarnings', 'totalWithdrawn', 'coins', 'charms',
+          'gameLevel', 'gameXp', 'vipTier', 'unlockedFrames', 'frameType',
+          'tasksCompletedCount', 'clanName', 'avatar', 'coverPhoto', 'bio',
+          'gender', 'location', 'friendsList', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.fullName, 1, 120) &&
+        isValidString(data.phone, 6, 24) &&
+        isValidString(data.email, 3, 150) &&
+        data.status in ['pending', 'active', 'rejected'] &&
+        data.role in ['member', 'admin'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
+        (!('fullAddress' in data) || isValidString(data.fullAddress, 0, 300)) &&
+        (!('paymentAddress' in data) || isValidString(data.paymentAddress, 0, 120)) &&
+        (!('payoutUpiId' in data) || isValidString(data.payoutUpiId, 0, 120)) &&
+        (!('sponsorId' in data) || isValidString(data.sponsorId, 0, 64)) &&
+        (!('sponsorName' in data) || isValidString(data.sponsorName, 0, 120)) &&
+        (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24)) &&
+        (!('chosenServiceName' in data) || isValidString(data.chosenServiceName, 0, 120)) &&
+        (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
+        (!('joiningDate' in data) || isValidString(data.joiningDate, 0, 32)) &&
+        (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('accountType' in data) || data.accountType in ['business', 'gamer']) &&
+        (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
+        (!('totalEarnings' in data) || (data.totalEarnings is number && data.totalEarnings >= 0)) &&
+        (!('referralEarnings' in data) || (data.referralEarnings is number && data.referralEarnings >= 0)) &&
+        (!('totalWithdrawn' in data) || (data.totalWithdrawn is number && data.totalWithdrawn >= 0)) &&
+        (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
+        (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
+        (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
+        (!('gameXp' in data) || (data.gameXp is number && data.gameXp >= 0)) &&
+        (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('unlockedFrames' in data) || (data.unlockedFrames is list && data.unlockedFrames.size() >= 1 && data.unlockedFrames.size() <= 20 && data.unlockedFrames[0] is string)) &&
+        (!('frameType' in data) || isValidString(data.frameType, 1, 64)) &&
+        (!('tasksCompletedCount' in data) || (data.tasksCompletedCount is number && data.tasksCompletedCount >= 0)) &&
+        (!('clanName' in data) || isValidString(data.clanName, 0, 100)) &&
+        (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
+        (!('coverPhoto' in data) || isValidString(data.coverPhoto, 0, 500)) &&
+        (!('bio' in data) || isValidString(data.bio, 0, 240)) &&
+        (!('gender' in data) || isValidString(data.gender, 0, 24)) &&
+        (!('location' in data) || isValidString(data.location, 0, 100)) &&
+        (!('friendsList' in data) || (data.friendsList is list && data.friendsList.size() <= 500 && (data.friendsList.size() == 0 || data.friendsList[0] is string))) &&
+        (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
+    }
+
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll(['userId', 'authUid', 'fullName', 'isPublic']) &&
+        data.keys().hasOnly([
+          'userId', 'authUid', 'username', 'fullName', 'avatar', 'coverPhoto',
+          'bio', 'gender', 'location', 'frameType', 'vipTier',
+          'gameLevel', 'gameXp', 'charms', 'coins', 'clanName', 'friendsCount',
+          'isPublic', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.fullName, 1, 120) &&
+        data.isPublic is bool &&
+        (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
+        (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
+        (!('coverPhoto' in data) || isValidString(data.coverPhoto, 0, 500)) &&
+        (!('bio' in data) || isValidString(data.bio, 0, 240)) &&
+        (!('gender' in data) || isValidString(data.gender, 0, 24)) &&
+        (!('location' in data) || isValidString(data.location, 0, 100)) &&
+        (!('frameType' in data) || isValidString(data.frameType, 1, 64)) &&
+        (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
+        (!('gameXp' in data) || (data.gameXp is number && data.gameXp >= 0)) &&
+        (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
+        (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
+        (!('clanName' in data) || isValidString(data.clanName, 0, 100)) &&
+        (!('friendsCount' in data) || (data.friendsCount is number && data.friendsCount >= 0)) &&
+        (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
+    }
+
+    function isValidUsernameReservation(data) {
+      return data.keys().hasAll(['username', 'userId', 'authUid', 'createdAt']) &&
+        data.keys().hasOnly(['username', 'userId', 'authUid', 'createdAt']) &&
+        isValidUsernameHandle(data.username) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.createdAt, 4, 64);
+    }
+
+    function isValidReferral(data) {
+      return data.keys().hasAll(['id', 'sponsorUserId', 'downlineUserId', 'commissionAmount', 'status', 'authUid']) &&
+        data.keys().hasOnly([
+          'id', 'sponsorUserId', 'downlineUserId', 'downlineName',
+          'serviceCode', 'joiningFee', 'commissionAmount', 'status', 'authUid', 'date'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.sponsorUserId) &&
+        isValidId(data.downlineUserId) &&
+        data.commissionAmount is number && data.commissionAmount >= 0 &&
+        data.status in ['credited', 'pending', 'rejected'] &&
+        isValidString(data.authUid, 1, 128) &&
+        (!('downlineName' in data) || isValidString(data.downlineName, 0, 120)) &&
+        (!('serviceCode' in data) || isValidString(data.serviceCode, 0, 24)) &&
+        (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
+        (!('date' in data) || isValidString(data.date, 0, 64));
+    }
+
+    function isValidPayout(data) {
+      return data.keys().hasAll(['id', 'userId', 'authUid', 'amount', 'payoutAddress', 'status', 'requestDate']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'authUid', 'userName', 'amount',
+          'payoutAddress', 'status', 'requestDate', 'transactionRef'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        data.amount is number && data.amount >= 10 &&
+        isValidString(data.payoutAddress, 3, 120) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.requestDate, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('transactionRef' in data) || isValidString(data.transactionRef, 0, 128));
+    }
+
+    function isValidGiftCardRedemption(data) {
+      return data.keys().hasAll(['id', 'catalogId', 'userId', 'authUid', 'coinsSpent', 'status', 'requestedAt']) &&
+        data.keys().hasOnly([
+          'id', 'catalogId', 'brand', 'title', 'denomination', 'coinsSpent',
+          'userId', 'authUid', 'userName', 'status', 'voucherCode', 'voucherPin',
+          'rejectionReason', 'requestedAt', 'fulfilledAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.catalogId) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        data.coinsSpent is number && data.coinsSpent >= 10 &&
+        data.status in ['pending_fulfillment', 'fulfilled', 'rejected'] &&
+        isValidString(data.requestedAt, 4, 64) &&
+        (!('brand' in data) || isValidString(data.brand, 0, 64)) &&
+        (!('title' in data) || isValidString(data.title, 0, 120)) &&
+        (!('denomination' in data) || (data.denomination is number && data.denomination >= 0)) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('voucherCode' in data) || isValidString(data.voucherCode, 0, 128)) &&
+        (!('voucherPin' in data) || isValidString(data.voucherPin, 0, 64)) &&
+        (!('rejectionReason' in data) || isValidString(data.rejectionReason, 0, 200)) &&
+        (!('fulfilledAt' in data) || isValidString(data.fulfilledAt, 0, 64));
+    }
+
+    function isValidComplaint(data) {
+      return data.keys().hasAll(['id', 'userId', 'authUid', 'category', 'subject', 'description', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'authUid', 'userName', 'category', 'subject',
+          'description', 'status', 'adminResponse', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.category, 1, 64) &&
+        isValidString(data.subject, 1, 160) &&
+        isValidString(data.description, 1, 2000) &&
+        data.status in ['open', 'in_progress', 'resolved', 'rejected'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('adminResponse' in data) || isValidString(data.adminResponse, 0, 1000)) &&
+        (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
+    }
+
+    function isValidGamePlay(data) {
+      return data.keys().hasAll(['id', 'userId', 'authUid', 'gameName', 'betCoins', 'wonCoins', 'result', 'playedAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'authUid', 'userName', 'gameId', 'gameName',
+          'betCoins', 'wonCoins', 'netChange', 'result', 'playedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.gameName, 1, 100) &&
+        data.betCoins is number && data.betCoins >= 0 &&
+        data.wonCoins is number && data.wonCoins >= 0 &&
+        data.result in ['win', 'loss', 'draw'] &&
+        isValidString(data.playedAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('gameId' in data) || isValidString(data.gameId, 0, 64)) &&
+        (!('netChange' in data) || data.netChange is number);
+    }
+
+    function isValidCoinTransaction(data) {
+      return data.keys().hasAll(['id', 'userId', 'authUid', 'type', 'amount', 'balanceBefore', 'balanceAfter', 'timestamp']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'authUid', 'userName', 'type', 'category',
+          'categoryLabel', 'amount', 'balanceBefore', 'balanceAfter', 'description', 'timestamp'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        data.type in ['credit', 'debit'] &&
+        data.amount is number && data.amount >= 0 &&
+        data.balanceBefore is number && data.balanceBefore >= 0 &&
+        data.balanceAfter is number && data.balanceAfter >= 0 &&
+        isValidString(data.timestamp, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('category' in data) || isValidString(data.category, 0, 64)) &&
+        (!('categoryLabel' in data) || isValidString(data.categoryLabel, 0, 120)) &&
+        (!('description' in data) || isValidString(data.description, 0, 400));
+    }
+
+    function isValidActivitySession(data) {
+      return data.keys().hasAll(['id', 'userId', 'authUid', 'sessionStart', 'lastHeartbeat', 'status']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'authUid', 'userName', 'sessionStart',
+          'lastHeartbeat', 'durationMinutes', 'deviceType', 'status'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.authUid, 1, 128) &&
+        isValidString(data.sessionStart, 4, 64) &&
+        isValidString(data.lastHeartbeat, 4, 64) &&
+        data.status in ['online', 'offline'] &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('durationMinutes' in data) || (data.durationMinutes is number && data.durationMinutes >= 0)) &&
+        (!('deviceType' in data) || isValidString(data.deviceType, 0, 32));
+    }
+
+    // 2. Admins Registry
+    match /admins/{uid} {
+      allow get: if isVerified() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+
+    // 3. Private User Profiles (PII Strictly Isolated to Owner or Admin)
     match /users/{userId} {
-      // Allow user to read their own profile, or authenticated reads for sponsor lookups
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if false; // Data must NEVER be deleted!
+      allow get: if isVerified() && isValidId(userId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) && (
+        (incoming().authUid == request.auth.uid && incoming().role == 'member' && incoming().status == 'pending' && incoming().coins == 0 && incoming().balance == 0) ||
+        isAdmin()
+      );
+      allow update: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) && (
+        isAdmin() ||
+        (
+          existing().authUid == request.auth.uid &&
+          incoming().authUid == existing().authUid &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().role == existing().role &&
+          incoming().status == existing().status &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'username', 'fullName', 'fullAddress', 'paymentAddress', 'payoutUpiId',
+            'avatar', 'coverPhoto', 'bio', 'gender', 'location', 'friendsList',
+            'clanName', 'accountType', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if false;
     }
 
-    // 3. Referrals Collection
+    // 4. Public Gaming/Leaderboard Profiles (Zero PII)
+    match /public_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && existing().isPublic == true;
+      allow create: if isVerified() && isValidId(userId) && isValidPublicProfile(incoming()) && (
+        incoming().authUid == request.auth.uid || isAdmin()
+      );
+      allow update: if isVerified() && isValidId(userId) && isValidPublicProfile(incoming()) && (
+        isAdmin() ||
+        (
+          existing().authUid == request.auth.uid &&
+          incoming().authUid == existing().authUid &&
+          incoming().userId == existing().userId &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'username', 'fullName', 'avatar', 'coverPhoto', 'bio', 'gender', 'location',
+            'friendsCount', 'clanName', 'isPublic', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if false;
+    }
+
+    // 4b. Unique Username Handle Reservations (Atomic Duplicate Prevention)
+    match /usernames/{username} {
+      allow get: if isSignedIn() && isValidUsernameHandle(username);
+      allow list: if false;
+      allow create: if isVerified() && isValidUsernameHandle(username) && isValidUsernameReservation(incoming()) &&
+        incoming().username == username &&
+        incoming().authUid == request.auth.uid &&
+        !exists(/databases/$(database)/documents/usernames/$(username));
+      allow update: if false;
+      allow delete: if isVerified() && isValidUsernameHandle(username) && (
+        existing().authUid == request.auth.uid || isAdmin()
+      );
+    }
+
+    // 5. Referrals Ledger
     match /referrals/{referralId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if false; // Irreversible records
+      allow get: if isVerified() && isValidId(referralId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isAdmin() && isValidId(referralId) && isValidReferral(incoming());
+      allow update: if isAdmin() && isValidId(referralId) && isValidReferral(incoming()) && (
+        existing().status == 'pending' || isAdmin()
+      );
+      allow delete: if false;
     }
 
-    // 4. Payouts Collection
+    // 6. Payouts Escrow Collection
     match /payouts/{payoutId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow get: if isVerified() && isValidId(payoutId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(payoutId) && isValidPayout(incoming()) && (
+        (incoming().authUid == request.auth.uid && incoming().status == 'pending') || isAdmin()
+      );
+      allow update: if isAdmin() && isValidId(payoutId) && isValidPayout(incoming()) && (
+        existing().status == 'pending' &&
+        incoming().authUid == existing().authUid &&
+        incoming().userId == existing().userId &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef'])
+      );
       allow delete: if false;
     }
 
-    // 5. Complaints Collection (User Grievances & Support)
+    // 7. Gift Card Redemptions Collection
+    match /gift_card_redemptions/{redemptionId} {
+      allow get: if isVerified() && isValidId(redemptionId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(redemptionId) && isValidGiftCardRedemption(incoming()) && (
+        (incoming().authUid == request.auth.uid && incoming().status == 'pending_fulfillment') || isAdmin()
+      );
+      allow update: if isAdmin() && isValidId(redemptionId) && isValidGiftCardRedemption(incoming()) && (
+        existing().status == 'pending_fulfillment' &&
+        incoming().authUid == existing().authUid &&
+        incoming().userId == existing().userId &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'voucherCode', 'voucherPin', 'rejectionReason', 'fulfilledAt'
+        ])
+      );
+      allow delete: if false;
+    }
+
+    // 8. Complaints Collection
     match /complaints/{complaintId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow get: if isVerified() && isValidId(complaintId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(complaintId) && isValidComplaint(incoming()) && (
+        (incoming().authUid == request.auth.uid && incoming().status == 'open') || isAdmin()
+      );
+      allow update: if isAdmin() && isValidId(complaintId) && isValidComplaint(incoming()) && (
+        incoming().authUid == existing().authUid &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminResponse', 'updatedAt'])
+      );
       allow delete: if false;
     }
 
-    // 6. Gameplay History Collection (Permanent Logs)
+    // 9. Gameplay History (Immutable Once Written)
     match /gameplay_history/{gameId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow get: if isVerified() && isValidId(gameId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(gameId) && isValidGamePlay(incoming()) && (
+        incoming().authUid == request.auth.uid || isAdmin()
+      );
+      allow update: if false;
       allow delete: if false;
     }
 
-    // 7. Coin Transactions Ledger (Permanent Audit Trail)
+    // 10. Coin Transactions Audit Trail (Immutable Ledger)
     match /coin_transactions/{txId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow get: if isVerified() && isValidId(txId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isAdmin() && isValidId(txId) && isValidCoinTransaction(incoming());
+      allow update: if false;
       allow delete: if false;
     }
 
-    // 8. Activity Sessions ("कब से कब तक ऑन रहा")
+    // 11. Activity Sessions
     match /activity_sessions/{sessionId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow get: if isVerified() && isValidId(sessionId) && (existing().authUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().authUid == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidId(sessionId) && isValidActivitySession(incoming()) && (
+        incoming().authUid == request.auth.uid || isAdmin()
+      );
+      allow update: if isVerified() && isValidId(sessionId) && isValidActivitySession(incoming()) && (
+        isAdmin() || (
+          existing().authUid == request.auth.uid &&
+          incoming().authUid == existing().authUid &&
+          incoming().userId == existing().userId &&
+          incoming().sessionStart == existing().sessionStart &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['lastHeartbeat', 'durationMinutes', 'status'])
+        )
+      );
       allow delete: if false;
     }
   }

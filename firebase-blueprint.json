@@ -2,156 +2,252 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile in ESP platform with approval status, referral tracking and wallet",
+      "description": "Private authenticated ESP member profile with referral tracking, wallet, and cloud sync",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Unique Roll Number or Sponsor ID (e.g. ESP10RK01)" },
-        "fullName": { "type": "string", "description": "User's full name" },
-        "phone": { "type": "string", "description": "WhatsApp contact number" },
-        "email": { "type": "string", "format": "email", "description": "User email address" },
-        "fullAddress": { "type": "string", "description": "Postal address" },
-        "paymentAddress": { "type": "string", "description": "UPI ID or bank account for payouts" },
-        "payoutUpiId": { "type": "string", "description": "Active payout UPI address" },
-        "sponsorId": { "type": "string", "description": "Upline sponsor ID" },
-        "sponsorName": { "type": "string", "description": "Upline sponsor full name" },
-        "chosenServiceCode": { "type": "string", "description": "Service code (e.g. EMO, MMO, NWI)" },
-        "chosenServiceName": { "type": "string", "description": "Service title" },
-        "joiningFee": { "type": "number", "description": "Joining charge fee paid" },
-        "joiningDate": { "type": "string", "description": "Registration date YYYY-MM-DD" },
-        "paymentUtr": { "type": "string", "description": "12-digit UPI transaction reference / UTR" },
-        "paymentScreenshot": { "type": "string", "description": "Uploaded payment proof" },
-        "status": { "type": "string", "enum": ["pending", "active", "rejected"], "description": "Admin verification status" },
-        "balance": { "type": "number", "description": "Current wallet balance" },
-        "totalEarnings": { "type": "number", "description": "Cumulative earnings" },
-        "referralEarnings": { "type": "number", "description": "Direct referral rewards" },
-        "totalWithdrawn": { "type": "number", "description": "Total amount paid out" },
-        "activeSessions": { "type": "array", "description": "Active logged-in multi-device sessions" },
-        "role": { "type": "string", "enum": ["member", "admin"], "description": "User access role" },
-        "createdAt": { "type": "string", "description": "Creation timestamp" }
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 24 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "fullAddress": { "type": "string", "maxLength": 300 },
+        "paymentAddress": { "type": "string", "maxLength": 120 },
+        "payoutUpiId": { "type": "string", "maxLength": 120 },
+        "sponsorId": { "type": "string", "maxLength": 64 },
+        "sponsorName": { "type": "string", "maxLength": 120 },
+        "chosenServiceCode": { "type": "string", "maxLength": 24 },
+        "chosenServiceName": { "type": "string", "maxLength": 120 },
+        "joiningFee": { "type": "number" },
+        "joiningDate": { "type": "string", "maxLength": 32 },
+        "paymentUtr": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["pending", "active", "rejected"] },
+        "accountType": { "type": "string", "enum": ["business", "gamer"] },
+        "balance": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "referralEarnings": { "type": "number" },
+        "totalWithdrawn": { "type": "number" },
+        "coins": { "type": "number" },
+        "charms": { "type": "number" },
+        "gameLevel": { "type": "number" },
+        "gameXp": { "type": "number" },
+        "vipTier": { "type": "string", "enum": ["none", "silver", "gold", "diamond"] },
+        "unlockedFrames": { "type": "array" },
+        "frameType": { "type": "string", "maxLength": 64 },
+        "tasksCompletedCount": { "type": "number" },
+        "clanName": { "type": "string", "maxLength": 100 },
+        "username": { "type": "string", "maxLength": 24 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "coverPhoto": { "type": "string", "maxLength": 500 },
+        "bio": { "type": "string", "maxLength": 240 },
+        "gender": { "type": "string", "maxLength": 24 },
+        "location": { "type": "string", "maxLength": 100 },
+        "friendsList": { "type": "array" },
+        "role": { "type": "string", "enum": ["member", "admin"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["userId", "fullName", "phone", "email", "paymentAddress", "status"]
+      "required": ["userId", "authUid", "fullName", "phone", "email", "status", "role", "createdAt"]
+    },
+    "PublicUserProfile": {
+      "title": "PublicUserProfile",
+      "description": "Public non-PII gaming/leaderboard card for ESP members",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 24 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "coverPhoto": { "type": "string", "maxLength": 500 },
+        "bio": { "type": "string", "maxLength": 240 },
+        "gender": { "type": "string", "maxLength": 24 },
+        "location": { "type": "string", "maxLength": 100 },
+        "frameType": { "type": "string", "maxLength": 64 },
+        "vipTier": { "type": "string", "enum": ["none", "silver", "gold", "diamond"] },
+        "gameLevel": { "type": "number" },
+        "gameXp": { "type": "number" },
+        "charms": { "type": "number" },
+        "coins": { "type": "number" },
+        "clanName": { "type": "string", "maxLength": 100 },
+        "friendsCount": { "type": "number" },
+        "isPublic": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "authUid", "fullName", "isPublic"]
     },
     "ReferralRecord": {
       "title": "ReferralRecord",
       "description": "Records downline members linked to a sponsor",
       "type": "object",
       "properties": {
-        "sponsorUserId": { "type": "string" },
-        "downlineUserId": { "type": "string" },
-        "downlineName": { "type": "string" },
-        "downlinePhone": { "type": "string" },
-        "serviceCode": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "sponsorUserId": { "type": "string", "maxLength": 64 },
+        "downlineUserId": { "type": "string", "maxLength": 64 },
+        "downlineName": { "type": "string", "maxLength": 120 },
+        "serviceCode": { "type": "string", "maxLength": 24 },
         "joiningFee": { "type": "number" },
         "commissionAmount": { "type": "number" },
         "status": { "type": "string", "enum": ["credited", "pending", "rejected"] },
-        "date": { "type": "string" }
+        "authUid": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 64 }
       },
-      "required": ["sponsorUserId", "downlineUserId", "commissionAmount", "status"]
+      "required": ["id", "sponsorUserId", "downlineUserId", "commissionAmount", "status", "authUid"]
     },
     "PayoutRequest": {
       "title": "PayoutRequest",
-      "description": "Member withdrawal request",
+      "description": "Member withdrawal request with escrow status",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "userName": { "type": "string" },
-        "userPhone": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
         "amount": { "type": "number" },
-        "payoutAddress": { "type": "string" },
+        "payoutAddress": { "type": "string", "maxLength": 120 },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
-        "requestDate": { "type": "string" },
-        "transactionRef": { "type": "string" }
+        "requestDate": { "type": "string", "maxLength": 64 },
+        "transactionRef": { "type": "string", "maxLength": 128 }
       },
-      "required": ["userId", "amount", "payoutAddress", "status"]
+      "required": ["id", "userId", "authUid", "amount", "payoutAddress", "status", "requestDate"]
+    },
+    "GiftCardRedemption": {
+      "title": "GiftCardRedemption",
+      "description": "Gift card redemption queued for genuine Admin voucher issuance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "catalogId": { "type": "string", "maxLength": 64 },
+        "brand": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 120 },
+        "denomination": { "type": "number" },
+        "coinsSpent": { "type": "number" },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["pending_fulfillment", "fulfilled", "rejected"] },
+        "voucherCode": { "type": "string", "maxLength": 128 },
+        "voucherPin": { "type": "string", "maxLength": 64 },
+        "rejectionReason": { "type": "string", "maxLength": 200 },
+        "requestedAt": { "type": "string", "maxLength": 64 },
+        "fulfilledAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "catalogId", "userId", "authUid", "coinsSpent", "status", "requestedAt"]
     },
     "UserComplaint": {
       "title": "UserComplaint",
-      "description": "User grievance, ticket status, and resolution",
+      "description": "User grievance ticket and admin resolution",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "userName": { "type": "string" },
-        "userPhone": { "type": "string" },
-        "userRoll": { "type": "string" },
-        "category": { "type": "string" },
-        "categoryLabel": { "type": "string" },
-        "subject": { "type": "string" },
-        "description": { "type": "string" },
-        "proofScreenshot": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "maxLength": 64 },
+        "subject": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
         "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "rejected"] },
-        "adminResponse": { "type": "string" },
-        "adminResolvedBy": { "type": "string" },
-        "resolvedAt": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "adminResponse": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "userId", "category", "subject", "description", "status", "createdAt"]
+      "required": ["id", "userId", "authUid", "category", "subject", "description", "status", "createdAt"]
     },
     "GamePlayRecord": {
       "title": "GamePlayRecord",
-      "description": "Complete gameplay audit with bets, winnings, and duration",
+      "description": "Gameplay wager and result audit log",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "userName": { "type": "string" },
-        "gameId": { "type": "string" },
-        "gameName": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "gameId": { "type": "string", "maxLength": 64 },
+        "gameName": { "type": "string", "maxLength": 100 },
         "betCoins": { "type": "number" },
         "wonCoins": { "type": "number" },
         "netChange": { "type": "number" },
         "result": { "type": "string", "enum": ["win", "loss", "draw"] },
-        "durationSeconds": { "type": "number" },
-        "playedAt": { "type": "string" },
-        "details": { "type": "string" }
+        "playedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "userId", "gameName", "betCoins", "wonCoins", "result", "playedAt"]
+      "required": ["id", "userId", "authUid", "gameName", "betCoins", "wonCoins", "result", "playedAt"]
     },
     "CoinTransactionRecord": {
       "title": "CoinTransactionRecord",
-      "description": "Audit trail ledger of every coin credit and debit",
+      "description": "Immutable ledger of every coin credit and debit",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "userName": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
         "type": { "type": "string", "enum": ["credit", "debit"] },
-        "category": { "type": "string" },
-        "categoryLabel": { "type": "string" },
+        "category": { "type": "string", "maxLength": 64 },
+        "categoryLabel": { "type": "string", "maxLength": 120 },
         "amount": { "type": "number" },
         "balanceBefore": { "type": "number" },
         "balanceAfter": { "type": "number" },
-        "description": { "type": "string" },
-        "timestamp": { "type": "string" }
+        "description": { "type": "string", "maxLength": 400 },
+        "timestamp": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "userId", "type", "amount", "balanceBefore", "balanceAfter", "timestamp"]
+      "required": ["id", "userId", "authUid", "type", "amount", "balanceBefore", "balanceAfter", "timestamp"]
     },
     "OnlineActivitySession": {
       "title": "OnlineActivitySession",
-      "description": "Session tracking of exact online time duration and device",
+      "description": "Online presence tracking session",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "userName": { "type": "string" },
-        "sessionStart": { "type": "string" },
-        "sessionEnd": { "type": "string" },
-        "lastHeartbeat": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 64 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "sessionStart": { "type": "string", "maxLength": 64 },
+        "lastHeartbeat": { "type": "string", "maxLength": 64 },
         "durationMinutes": { "type": "number" },
-        "deviceType": { "type": "string" },
-        "deviceName": { "type": "string" },
-        "browser": { "type": "string" },
-        "os": { "type": "string" },
+        "deviceType": { "type": "string", "maxLength": 32 },
         "status": { "type": "string", "enum": ["online", "offline"] }
       },
-      "required": ["id", "userId", "sessionStart", "lastHeartbeat", "status"]
+      "required": ["id", "userId", "authUid", "sessionStart", "lastHeartbeat", "status"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authoritative admin role grant document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "grantedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "email"]
+    },
+    "UsernameReservation": {
+      "title": "UsernameReservation",
+      "description": "Atomic unique handle reservation ensuring no two users share the same @username",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "minLength": 3, "maxLength": 24, "pattern": "^[a-z0-9_.]+$" },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "authUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["username", "userId", "authUid", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Registered ESP members and accounts"
+      "description": "Private PII & wallet records (owner or admin only)"
+    },
+    "/public_profiles/{userId}": {
+      "schema": "PublicUserProfile",
+      "description": "Public leaderboard/community display without PII"
+    },
+    "/usernames/{username}": {
+      "schema": "UsernameReservation",
+      "description": "Unique username handle reservations"
+    },
+    "/admins/{uid}": {
+      "schema": "AdminRecord",
+      "description": "Admin authorization registry"
     },
     "/referrals/{referralId}": {
       "schema": "ReferralRecord",
@@ -161,13 +257,17 @@
       "schema": "PayoutRequest",
       "description": "Withdrawal requests submitted by members"
     },
+    "/gift_card_redemptions/{redemptionId}": {
+      "schema": "GiftCardRedemption",
+      "description": "Real gift card fulfillment requests"
+    },
     "/complaints/{complaintId}": {
       "schema": "UserComplaint",
       "description": "User grievance tickets and admin resolutions"
     },
     "/gameplay_history/{gameId}": {
       "schema": "GamePlayRecord",
-      "description": "Complete gameplay records and logs"
+      "description": "Gameplay records and audit logs"
     },
     "/coin_transactions/{txId}": {
       "schema": "CoinTransactionRecord",

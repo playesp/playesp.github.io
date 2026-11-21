@@ -45,23 +45,42 @@ import {
   Lock,
   Disc,
   Sliders,
-  Bot,
   Maximize2,
   Minimize2,
+  Search,
+  LogIn,
+  Star,
+  Image as ImageIcon,
+  Upload,
+  Trash2,
+  Eye,
 } from 'lucide-react';
-import type { UserProfile, PlatformSettings, VoiceRoomSeat, RoomGift, ClanInfo, CoinRechargeRequest, WePlayBot } from '../types/index.ts';
+import type {
+  UserProfile,
+  PlatformSettings,
+  VoiceRoomSeat,
+  RoomGift,
+  ClanInfo,
+  CoinRechargeRequest,
+  CustomVoiceRoom,
+  VoiceRoomStageLayout,
+  VoiceChatMessage,
+} from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { SnakeRushGame } from '../components/games/SnakeRushGame.tsx';
 import { BingoGame } from '../components/games/BingoGame.tsx';
 import { OhMyCardGame } from '../components/games/OhMyCardGame.tsx';
-import { PlayerInfoModal, type RealPlayerProfile } from '../components/PlayerInfoModal.tsx';
+import type { RealPlayerProfile } from '../components/PlayerInfoModal.tsx';
+import { UserProfileSheetModal, type RichProfileData } from '../components/UserProfileSheetModal.tsx';
 import { AvatarFrame, type FrameVariant } from '../components/AvatarFrame.tsx';
-import { WePlayBotHubModal } from '../components/games/WePlayBotHubModal.tsx';
 import { WerewolfGameModal } from '../components/games/WerewolfGameModal.tsx';
 import { VoiceEffectSelector, VOICE_EFFECTS, type VoiceEffectType } from '../components/VoiceEffectSelector.tsx';
 import { DailyLuckySpin } from '../components/games/DailyLuckySpin.tsx';
 import { WhoIsTheSpyGameModal } from '../components/games/WhoIsTheSpyGameModal.tsx';
 import { VoiceRoomMediaStage } from '../components/VoiceRoomMediaStage.tsx';
+import { VoiceRoomStageCanvas } from '../components/VoiceRoomStageCanvas.tsx';
+import { VoiceRoomDesignModal } from '../components/VoiceRoomDesignModal.tsx';
+import { VOICE_WALLPAPER_PRESETS, STAGE_LAYOUT_OPTIONS } from '../config/voiceWallpapers.ts';
 import { LeaderboardWidget, type LeaderboardUser } from '../components/games/LeaderboardWidget.tsx';
 import { DailyFortuneSpinModal } from '../components/games/DailyFortuneSpinModal.tsx';
 import { TimedMysteryChestModal } from '../components/games/TimedMysteryChestModal.tsx';
@@ -73,12 +92,13 @@ import { TopClansDataTable, type ClanRecord } from '../components/TopClansDataTa
 import { DailyMissionsModal } from '../components/DailyMissionsModal.tsx';
 import { AvatarCustomizerModal } from '../components/AvatarCustomizerModal.tsx';
 import { DigitalGiftCardsModal } from '../components/DigitalGiftCardsModal.tsx';
-import { DailyLoginRewardsModal } from '../components/DailyLoginRewardsModal.tsx';
-import { DailyLoginRewards } from '../services/DailyLoginRewardsService.ts';
+import { DailyTasks } from '../components/DailyTasks.tsx';
 import { EspChatModal } from '../components/EspChatModal.tsx';
 import { InteractiveGameArenaModal, type GameKey } from '../components/games/InteractiveGameArenaModal.tsx';
+import { COIN_RECHARGE_PACKS } from '../config/economy.ts';
 import { CreditCard as CreditCardIcon } from 'lucide-react';
 import { showToast } from '../services/toast.ts';
+import { isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface GamingRoomViewProps {
   user: UserProfile;
@@ -86,6 +106,10 @@ interface GamingRoomViewProps {
   onUpdateUser: (updatedUser: UserProfile) => void;
   onOpenCardModal?: (tab?: string) => void;
   onOpenWithdrawal?: () => void;
+  onOpenEarningSetup?: () => void;
+  onOpenServicesSetup?: () => void;
+  initialSubTab?: 'overview' | 'ludo' | 'dice_arena' | 'card_luck' | 'gift_store' | 'vip_frames' | 'leaderboard' | 'recharge_convert' | 'voice_room' | 'games' | 'clan_friends' | 'rewards_tasks';
+  initialRoomId?: string;
 }
 
 const LUXURY_GIFTS: RoomGift[] = [
@@ -96,15 +120,6 @@ const LUXURY_GIFTS: RoomGift[] = [
   { id: 'g5', name: 'Moon Rocket', hindiName: 'स्पेस रॉकेट', icon: '🚀', coinCost: 1000, charmValue: 2500, animationType: 'rocket', gradient: 'from-indigo-600 to-purple-800' },
   { id: 'g6', name: 'Emperor Crown', hindiName: 'शाही ताज', icon: '👑', coinCost: 2500, charmValue: 6500, animationType: 'crown', gradient: 'from-amber-400 to-yellow-600' },
   { id: 'g7', name: 'Magic Castle', hindiName: 'जादुई महल', icon: '🏰', coinCost: 5000, charmValue: 15000, animationType: 'castle', gradient: 'from-purple-600 to-pink-700' },
-];
-
-const RECHARGE_PACKS = [
-  { id: 'p1', coins: 100, amount: 10, bonus: 10, tag: 'Starter' },
-  { id: 'p2', coins: 550, amount: 50, bonus: 50, tag: 'Popular' },
-  { id: 'p3', coins: 1200, amount: 100, bonus: 200, tag: 'Best Value' },
-  { id: 'p4', coins: 3500, amount: 250, bonus: 500, tag: 'Pro Pack' },
-  { id: 'p5', coins: 7500, amount: 500, bonus: 1000, tag: 'VIP Pack' },
-  { id: 'p6', coins: 15000, amount: 1000, bonus: 2500, tag: 'King Pack' },
 ];
 
 const PRESET_TALK_PHRASES = [
@@ -122,9 +137,25 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   onUpdateUser,
   onOpenCardModal,
   onOpenWithdrawal,
+  onOpenEarningSetup,
+  onOpenServicesSetup,
+  initialSubTab = 'overview',
+  initialRoomId,
 }) => {
-  // Navigation tabs within ESP Gaming Room (Default: 'games' - WePlay Home Image 1)
-  const [activeTab, setActiveTab] = useState<'voice_room' | 'games' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks'>('games');
+  // Navigation tabs within ESP Gaming Room (Default: 'games', or 'voice_room' when deep-linked)
+  const [activeTab, setActiveTab] = useState<'voice_room' | 'games' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks'>(
+    initialRoomId
+      ? 'voice_room'
+      : initialSubTab === 'recharge_convert'
+      ? 'recharge_convert'
+      : initialSubTab === 'voice_room'
+      ? 'voice_room'
+      : initialSubTab === 'clan_friends'
+      ? 'clan_friends'
+      : initialSubTab === 'rewards_tasks'
+      ? 'rewards_tasks'
+      : 'games'
+  );
 
   // Voice Room State
   const [hostSpeaking, setHostSpeaking] = useState(true);
@@ -147,12 +178,18 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [audienceCount, setAudienceCount] = useState<number>(1);
   const [showAudienceModal, setShowAudienceModal] = useState(false);
   const [realPlayers, setRealPlayers] = useState<RealPlayerProfile[]>([]);
-  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<RealPlayerProfile | null>(null);
+  const [profileSheetState, setProfileSheetState] = useState<{
+    isOpen: boolean;
+    targetUserId?: string;
+    initialProfile?: Partial<RichProfileData> | null;
+    initialMode?: 'view' | 'edit' | 'search';
+  }>({ isOpen: false });
 
-  // Real Voice Room Host (ESP Founder Santosh Kumar)
+  // Real Voice Room Host
   const [voiceRoomHost, setVoiceRoomHost] = useState<{
     userId: string;
     userName: string;
+    username?: string;
     gameLevel: number;
     charms: number;
     userAvatar: string;
@@ -161,8 +198,8 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   }>({
     userId: 'EMO-MOM-MMO',
     userName: 'SANTOSH KUMAR',
-    gameLevel: 25,
-    charms: 12500,
+    gameLevel: 1,
+    charms: 0,
     userAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP',
     isSpeaking: true,
     roleTitle: 'ESP Founder & Room Host',
@@ -174,14 +211,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   // Stage mini-game overlay
   const [showStageGameOverlay, setShowStageGameOverlay] = useState(false);
 
-  // WePlay AI Bot Ecosystem State
-  const [showBotHubModal, setShowBotHubModal] = useState(false);
+  // Stage Mini-Games Modals (Real Players Only)
   const [showWerewolfModal, setShowWerewolfModal] = useState(false);
   const [showSpyGameModal, setShowSpyGameModal] = useState(false);
-  const [availableBots, setAvailableBots] = useState<WePlayBot[]>([]);
-  const [sharmaJiLegend, setSharmaJiLegend] = useState<any>(null);
-  const [botVoiceTts, setBotVoiceTts] = useState(true);
-  const [selectedSeatForBot, setSelectedSeatForBot] = useState<number | null>(null);
 
   // Simulated Voice Effect State
   const [selectedVoiceEffect, setSelectedVoiceEffect] = useState<VoiceEffectType>(() => {
@@ -203,6 +235,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [showFortuneSpinModal, setShowFortuneSpinModal] = useState(false);
   const [showTimedChestModal, setShowTimedChestModal] = useState(false);
   const [showAppGiftModal, setShowAppGiftModal] = useState(false);
+  const [appGiftPreset, setAppGiftPreset] = useState<{
+    giftId?: string;
+    targetName?: string;
+    targetUserId?: string;
+  } | null>(null);
   const [showDailyTasksModal, setShowDailyTasksModal] = useState(false);
   const [showRoomStoreModal, setShowRoomStoreModal] = useState(false);
   const [showTopClansModal, setShowTopClansModal] = useState(false);
@@ -210,52 +247,41 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [showAvatarCustomizerModal, setShowAvatarCustomizerModal] = useState(false);
   const [showDigitalGiftCardsModal, setShowDigitalGiftCardsModal] = useState(false);
   
-  // Real Time Weekly Rewards Modal State (defaults to true if canClaimToday)
-  const [showWeeklyRewardsModal, setShowWeeklyRewardsModal] = useState<boolean>(() => {
-    return DailyLoginRewards.checkStatus(user).canClaimToday;
-  });
-
   // ESP CHAT Modal State (Facebook-style Social Friend & Chat Network)
   const [showEspChatModal, setShowEspChatModal] = useState(false);
 
   // 8D Interactive Game Arena Modal State
   const [activeInteractiveGame, setActiveInteractiveGame] = useState<GameKey | null>(null);
 
-  const [seatingTimerSeconds, setSeatingTimerSeconds] = useState(0);
-  const [seatingRewardNotice, setSeatingRewardNotice] = useState<string | null>(null);
-
-  // Real-time Voice Room Seating Reward (+5 coins every 60 seconds on mic)
   useEffect(() => {
-    if (mySeatIndex === null) {
-      setSeatingTimerSeconds(0);
+    if (!initialSubTab || initialSubTab === 'overview' || initialSubTab === 'games') {
       return;
     }
-
-    const interval = setInterval(() => {
-      setSeatingTimerSeconds(prev => {
-        const next = prev + 1;
-        if (next >= 60) {
-          api.claimSeatReward(user.userId, 1).then(res => {
-            if (res && res.success && res.coinsEarned) {
-              setSeatingRewardNotice(`🎉 माइक सीट रिवॉर्ड: +${res.coinsEarned} कॉइन्स मिले!`);
-              setTimeout(() => setSeatingRewardNotice(null), 4000);
-              onUpdateUser({
-                ...user,
-                coins: (user.coins || 0) + res.coinsEarned,
-              });
-            }
-          }).catch(console.error);
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [mySeatIndex, user.userId]);
-
-  // Real Players vs Solo Bot System
-  const [multiplayerMode, setMultiplayerMode] = useState<'real_players' | 'solo_bot'>('real_players');
+    if (initialSubTab === 'recharge_convert') {
+      setActiveTab('recharge_convert');
+    } else if (initialSubTab === 'voice_room') {
+      setActiveTab('voice_room');
+    } else if (initialSubTab === 'clan_friends') {
+      setActiveTab('clan_friends');
+    } else if (initialSubTab === 'rewards_tasks') {
+      setActiveTab('rewards_tasks');
+    } else if (initialSubTab === 'vip_frames') {
+      setShowAvatarCustomizerModal(true);
+    } else if (initialSubTab === 'gift_store') {
+      setShowDigitalGiftCardsModal(true);
+    } else if (initialSubTab === 'leaderboard') {
+      setShowLeaderboardModal(true);
+    } else if (initialSubTab === 'dice_arena') {
+      setActiveTab('games');
+      setSelectedGame('dice');
+    } else if (initialSubTab === 'card_luck') {
+      setActiveTab('games');
+      setSelectedGame('cards');
+    } else if (initialSubTab === 'ludo') {
+      setActiveTab('games');
+      setActiveInteractiveGame('ludo');
+    }
+  }, [initialSubTab]);
 
   // Room Background Wallpaper Theme (Default: Classic Light Marketplace Room)
   const [roomBgTheme, setRoomBgTheme] = useState<AdvanceRoomTheme>(() => {
@@ -292,53 +318,58 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  const toggleMultiplayerMode = async () => {
-    if (multiplayerMode === 'real_players') {
-      setMultiplayerMode('solo_bot');
-      await handleSummonAllBots();
-      setSoundEffectToast('🤖 सोलो बॉट मोड सक्रिय! शर्मा जी व ESP PLAY बॉट्स आपके साथ खेलेंगे।');
-      setTimeout(() => setSoundEffectToast(null), 3500);
-    } else {
-      setMultiplayerMode('real_players');
-      // Clear bot seats, keeping only current user seat
-      setSeats(prev => prev.map(s => {
-        if (s.userId && s.userId.toLowerCase() === (user.userId || '').toLowerCase()) return s;
-        return {
-          seatNumber: s.seatNumber,
-          seatNumberLabel: String(s.seatNumber),
-          isMuted: false,
-          isSpeaking: false,
-          charms: 0,
-        };
-      }));
-      setSoundEffectToast('👥 रियल प्लेयर्स मोड सक्रिय! अब केवल असली ऑनलाइन मेंबर्स बैठेंगे।');
-      setTimeout(() => setSoundEffectToast(null), 3500);
-    }
+  // Invite Real Friends Helper (Numeric Room ID + Direct Room URL)
+  const handleInviteRealFriends = () => {
+    const cleanCode = (activeRoomAddress || user.roomAddress || '1111').replace(/\D/g, '') || '1111';
+    const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(cleanCode)}&ref=${encodeURIComponent(user.userId)}`;
+    navigator.clipboard.writeText(
+      `🎙️ मेरे ESP Voice Room "${activeRoomTitle}" में जुड़ें!\nRoom ID: ${cleanCode}\nDirect Join Link: ${shareUrl}`
+    ).catch(() => {});
+    setSoundEffectToast(`📋 रूम ID (${cleanCode}) व लिंक कॉपी हो गया!`);
+    setTimeout(() => setSoundEffectToast(null), 3500);
   };
 
   // Room Chat stream (Real live server chat with real voice audio notes)
-  const [roomChatMessages, setRoomChatMessages] = useState<Array<{ id: string; sender: string; text: string; isGift?: boolean; time: string; senderRoll?: string; audioDataUrl?: string; audioDuration?: number; isVoiceNote?: boolean }>>([]);
+  const [roomChatMessages, setRoomChatMessages] = useState<VoiceChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
 
   // ==============================================================
-  // MULTI-ROOM VOICE STATE (Har user ka khud ka voice room)
+  // MULTI-ROOM & PERSONAL FIXED VOICE ROOM STATE
   // ==============================================================
-  const [currentRoomId, setCurrentRoomId] = useState<string>('room-founder');
-  const [activeRoomTitle, setActiveRoomTitle] = useState<string>('ESP Royal Voice Stage #1 (Official Stage)');
-  const [activeRoomTopic, setActiveRoomTopic] = useState<string>('Daily ₹500 - ₹2000 Earnings with 10 ESP Services & Games');
+  const cleanUserRoomFallback =
+    (user.roomAddress || user.personalRoomId || '10001').replace(/\D/g, '') || '10001';
+
+  const [currentRoomId, setCurrentRoomId] = useState<string>(`room-personal-${user.userId}`);
+  const [activeRoomDetail, setActiveRoomDetail] = useState<CustomVoiceRoom | null>(null);
+  const [activeRoomTitle, setActiveRoomTitle] = useState<string>(`${user.fullName}'s Voice Room`);
+  const [activeRoomTopic, setActiveRoomTopic] = useState<string>('Welcome to my personal voice stage! Join, chat & play.');
   const [activeRoomCategory, setActiveRoomCategory] = useState<string>('earning');
-  const [activeRoomAddress, setActiveRoomAddress] = useState<string>('ESP-ROOM-FOUNDER-01');
-  const [activeRoomHostId, setActiveRoomHostId] = useState<string>('EMO-MOM-MMO');
+  const [activeRoomAddress, setActiveRoomAddress] = useState<string>(cleanUserRoomFallback);
+  const [activeRoomHostId, setActiveRoomHostId] = useState<string>(user.userId);
   const [availableRooms, setAvailableRooms] = useState<any[]>([]);
   const [showRoomsModal, setShowRoomsModal] = useState(false);
+  const [roomsSearchQuery, setRoomsSearchQuery] = useState('');
+  const [roomsFilterTab, setRoomsFilterTab] = useState<'all' | 'vip' | 'my_room' | 'followed'>('all');
+  const [designModalState, setDesignModalState] = useState<{
+    isOpen: boolean;
+    tab: 'design' | 'invite' | 'seats';
+  }>({ isOpen: false, tab: 'design' });
+  const [privatePasscodePrompt, setPrivatePasscodePrompt] = useState<{
+    room: any;
+    passcode: string;
+    error?: string;
+  } | null>(null);
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [showHostSettingsModal, setShowHostSettingsModal] = useState(false);
   const [editTopicInput, setEditTopicInput] = useState('');
+  const roomBootstrappedRef = useRef<string>('');
   
   // New Room Creation Form
   const [newRoomTitle, setNewRoomTitle] = useState('');
   const [newRoomTopic, setNewRoomTopic] = useState('');
   const [newRoomCategory, setNewRoomCategory] = useState<'earning' | 'gaming' | 'chitchat' | 'clan' | 'help'>('earning');
+  const [newRoomWallpaperId, setNewRoomWallpaperId] = useState<string>('castle_night');
+  const [newRoomStageLayout, setNewRoomStageLayout] = useState<VoiceRoomStageLayout>('classic_8');
   const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
   const [newRoomPasscode, setNewRoomPasscode] = useState('');
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
@@ -369,6 +400,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [selectedGift, setSelectedGift] = useState<RoomGift | null>(LUXURY_GIFTS[0]);
   const [giftTarget, setGiftTarget] = useState<string>('Entire Room (सभी को)');
+  const [giftTargetUserId, setGiftTargetUserId] = useState<string | undefined>(undefined);
   const [activeGiftAnimation, setActiveGiftAnimation] = useState<{ gift: RoomGift; sender: string; target: string } | null>(null);
   const [giftAnnouncement, setGiftAnnouncement] = useState<string | null>(null);
 
@@ -452,18 +484,16 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [coinChoice, setCoinChoice] = useState<'heads' | 'tails'>('heads');
   const [coinResultState, setCoinResultState] = useState<'heads' | 'tails'>('heads');
 
-  // Convert to Cash State
-  const [convertCoinsInput, setConvertCoinsInput] = useState<number>(100);
-  const [convertStatusMessage, setConvertStatusMessage] = useState<string | null>(null);
-
   // Real Recharge State
-  const [selectedPack, setSelectedPack] = useState(RECHARGE_PACKS[1]);
+  const [selectedPack, setSelectedPack] = useState(COIN_RECHARGE_PACKS[1] || COIN_RECHARGE_PACKS[0]);
   const [rechargeUtr, setRechargeUtr] = useState('');
+  const [rechargeScreenshot, setRechargeScreenshot] = useState('');
   const [rechargeSuccess, setRechargeSuccess] = useState<string | null>(null);
   const [rechargeError, setRechargeError] = useState<string | null>(null);
   const [isRecharging, setIsRecharging] = useState(false);
   const [userRecharges, setUserRecharges] = useState<CoinRechargeRequest[]>([]);
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [previewRechargeShot, setPreviewRechargeShot] = useState<string | null>(null);
 
   // Web Audio Synthesizer for rich audio feedback
   const playSynthesizedChime = (type: 'win' | 'gift' | 'click' | 'applause') => {
@@ -515,63 +545,117 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
+  // Apply fetched voice room payload cleanly
+  const applyVoiceRoomPayload = (res: any) => {
+    if (!res || !res.success) return;
+    if (res.seats) {
+      setSeats(res.seats);
+      const currentUid = (user.userId || user.id || '').toLowerCase();
+      const myIdx = res.seats.findIndex((s: any) => s.userId && s.userId.toLowerCase() === currentUid);
+      setMySeatIndex(myIdx !== -1 ? myIdx : null);
+    }
+    if (res.host) {
+      setVoiceRoomHost(res.host);
+    }
+    if (res.room) {
+      setActiveRoomDetail(res.room);
+      if (res.room.id) setCurrentRoomId(res.room.id);
+      setActiveRoomTitle(res.room.title || 'ESP Voice Stage');
+      setActiveRoomTopic(res.room.topic || 'General Strategy');
+      setActiveRoomCategory(res.room.category || 'earning');
+      const cleanAddr = (res.room.roomAddress || cleanUserRoomFallback).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      setActiveRoomAddress(cleanAddr);
+      setActiveRoomHostId(res.room.hostUserId);
+
+      // Sync owner's symbol-free roomAddress if newly generated
+      if (
+        res.room.hostUserId === user.userId &&
+        res.room.isPersonalFixed &&
+        cleanAddr &&
+        user.roomAddress !== cleanAddr
+      ) {
+        onUpdateUser({ ...user, roomAddress: cleanAddr, personalRoomId: cleanAddr });
+      }
+    }
+    if (res.chatMessages) {
+      setRoomChatMessages(res.chatMessages);
+
+      // Auto-play new incoming voice audio if enabled and not sent by current user
+      if (autoPlayAudio) {
+        res.chatMessages.forEach((msg: any) => {
+          if (
+            msg.isVoiceNote &&
+            msg.audioDataUrl &&
+            !playedAudioIdsRef.current.has(msg.id) &&
+            msg.senderId !== user.userId
+          ) {
+            playedAudioIdsRef.current.add(msg.id);
+            try {
+              const snd = new Audio(msg.audioDataUrl);
+              setCurrentlyPlayingAudioId(msg.id);
+              snd.onended = () => setCurrentlyPlayingAudioId(null);
+              snd.onerror = () => setCurrentlyPlayingAudioId(null);
+              snd.play().catch(() => {});
+            } catch {}
+          }
+        });
+      }
+    }
+    if (typeof res.audienceCount === 'number') {
+      setAudienceCount(res.audienceCount);
+    }
+  };
+
   // Fetch Real Voice Room State & Community Rooms
   const loadVoiceRoomData = async (targetRoomId = currentRoomId) => {
     try {
-      const res = await api.getVoiceRoomState(targetRoomId);
-      if (res && res.success) {
-        if (res.seats) {
-          setSeats(res.seats);
-          const currentUid = (user.userId || user.id || '').toLowerCase();
-          const myIdx = res.seats.findIndex((s: any) => s.userId && s.userId.toLowerCase() === currentUid);
-          setMySeatIndex(myIdx !== -1 ? myIdx : null);
-        }
-        if (res.host) {
-          setVoiceRoomHost(res.host);
-        }
-        if (res.room) {
-          setActiveRoomTitle(res.room.title || 'ESP Voice Stage');
-          setActiveRoomTopic(res.room.topic || 'General Strategy');
-          setActiveRoomCategory(res.room.category || 'earning');
-          setActiveRoomAddress(res.room.roomAddress || `ESP-ROOM-${res.room.hostUserId || user.userId}`);
-          setActiveRoomHostId(res.room.hostUserId);
-        }
-        if (res.chatMessages) {
-          setRoomChatMessages(res.chatMessages);
-
-          // Auto-play new incoming voice audio if enabled and not sent by current user
-          if (autoPlayAudio) {
-            res.chatMessages.forEach((msg: any) => {
-              if (
-                msg.isVoiceNote &&
-                msg.audioDataUrl &&
-                !playedAudioIdsRef.current.has(msg.id) &&
-                msg.senderId !== user.userId
-              ) {
-                playedAudioIdsRef.current.add(msg.id);
-                try {
-                  const snd = new Audio(msg.audioDataUrl);
-                  setCurrentlyPlayingAudioId(msg.id);
-                  snd.onended = () => setCurrentlyPlayingAudioId(null);
-                  snd.onerror = () => setCurrentlyPlayingAudioId(null);
-                  snd.play().catch(() => {});
-                } catch {}
-              }
-            });
-          }
-        }
-        if (typeof res.audienceCount === 'number') {
-          setAudienceCount(res.audienceCount);
-        }
-      }
+      const res = await api.getVoiceRoomState(targetRoomId, user.userId);
+      applyVoiceRoomPayload(res);
     } catch (e) {
       console.warn('Voice room state load error', e);
     }
   };
 
-  const loadAvailableRooms = async () => {
+  const loadMyPersonalRoom = async (switchToVoiceTab = true) => {
     try {
-      const res = await api.getVoiceRooms();
+      const res = await api.getMyPersonalVoiceRoom(user.userId, user.userId);
+      if (res?.success && res.room) {
+        applyVoiceRoomPayload(res);
+        if (switchToVoiceTab) setActiveTab('voice_room');
+      }
+    } catch (e) {
+      console.warn('Personal room load error', e);
+    }
+  };
+
+  const openRoomByLookup = async (query: string, switchToVoiceTab = true) => {
+    const cleanQ = query.trim();
+    if (!cleanQ) return;
+    try {
+      const res = await api.lookupVoiceRoom(cleanQ, user.userId);
+      if (res?.success && res.room) {
+        if (res.room.isPrivate && res.room.hostUserId !== user.userId) {
+          const alreadyIn = Array.isArray(res.room.audience) && res.room.audience.includes(user.userId);
+          if (!alreadyIn) {
+            setPrivatePasscodePrompt({ room: res.room, passcode: '' });
+            return;
+          }
+        }
+        applyVoiceRoomPayload(res);
+        if (switchToVoiceTab) setActiveTab('voice_room');
+        setShowRoomsModal(false);
+        showToast(`🎙️ रूम "${res.room.title}" (${res.room.roomAddress}) खुल गया!`, 'success');
+      } else {
+        showToast(res?.message || `❌ रूम "${cleanQ}" नहीं मिला`, 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'रूम खोजने में त्रुटि आई', 'error');
+    }
+  };
+
+  const loadAvailableRooms = async (searchQ = '') => {
+    try {
+      const res = await api.getVoiceRooms(user.userId, searchQ);
       if (res && res.success && Array.isArray(res.rooms)) {
         setAvailableRooms(res.rooms);
       }
@@ -580,112 +664,41 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  const loadBots = async () => {
-    try {
-      const res = await api.getBots();
-      if (res && res.success) {
-        setAvailableBots(res.bots || []);
-        if (res.sharmaJiLegend) {
-          setSharmaJiLegend(res.sharmaJiLegend);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load bots', e);
-    }
-  };
-
-  const handleInviteBotToSeat = async (botId: string, seatIdx?: number) => {
-    try {
-      const res = await api.inviteBotToSeat(botId, seatIdx, currentRoomId);
-      if (res && res.success) {
-        setSeats(res.seats);
-        if (res.chatMessages) setRoomChatMessages(res.chatMessages);
-        playSynthesizedChime('win');
-        setSoundEffectToast(res.message);
-        setTimeout(() => setSoundEffectToast(null), 4000);
-        if (botVoiceTts && res.message) {
-          speakMessage(res.message);
-        }
-      } else {
-        setSoundEffectToast(res?.message || 'सीट उपलब्ध नहीं है।');
-        setTimeout(() => setSoundEffectToast(null), 3000);
-      }
-    } catch (err: any) {
-      setSoundEffectToast(err?.message || 'बॉट को सीट पर नहीं बैठाया जा सका');
-      setTimeout(() => setSoundEffectToast(null), 3000);
-    }
-  };
-
-  const handleSummonAllBots = async () => {
-    try {
-      const res = await api.summonAllBots(currentRoomId);
-      if (res && res.success) {
-        setSeats(res.seats);
-        if (res.chatMessages) setRoomChatMessages(res.chatMessages);
-        playSynthesizedChime('win');
-        confetti({ particleCount: 120, spread: 80 });
-        setSoundEffectToast(res.message);
-        setTimeout(() => setSoundEffectToast(null), 4500);
-        if (botVoiceTts) {
-          speakMessage('सभी ESP PLAY बॉट्स व शर्मा जी स्टेज पर आ चुके हैं!');
-        }
-      }
-    } catch (err: any) {
-      setSoundEffectToast(err?.message || 'बॉट्स को बुलाने में समस्या आई');
-      setTimeout(() => setSoundEffectToast(null), 3000);
-    }
-  };
-
-  const handleBotAction = async (botCode: string, actionType?: string) => {
-    try {
-      const res = await api.interactWithBot(botCode, user.userId, actionType, currentRoomId);
-      if (res && res.success) {
-        if (res.chatMessages) setRoomChatMessages(res.chatMessages);
-        if (res.userCoins !== undefined) {
-          onUpdateUser({
-            ...user,
-            coins: res.userCoins,
-            charms: res.userCharms !== undefined ? res.userCharms : user.charms,
-          });
-        }
-        playSynthesizedChime('win');
-        if (res.message && botVoiceTts) {
-          speakMessage(res.message.text);
-        }
-        if (res.coinsAwarded > 0) {
-          setSoundEffectToast(`🎉 ${res.message.sender} ने आपको +${res.coinsAwarded} कॉइन्स रिवॉर्ड दिए!`);
-          setTimeout(() => setSoundEffectToast(null), 4000);
-        }
-      }
-    } catch (err: any) {
-      console.warn('Bot action error', err);
-    }
-  };
-
   const loadRealPlayers = async () => {
     try {
       const players = await api.getRealCommunityPlayers();
       if (Array.isArray(players) && players.length > 0) {
         setRealPlayers(players);
-        setAudienceCount(Math.max(players.length, 1));
       }
     } catch (e) {
       console.warn('Real players load error', e);
     }
   };
 
+  // Bootstrap initial fixed personal room OR deep-linked ?room= code once per user
+  useEffect(() => {
+    const bootKey = `${user.userId}:${initialRoomId || ''}`;
+    if (roomBootstrappedRef.current === bootKey) return;
+    roomBootstrappedRef.current = bootKey;
+
+    if (initialRoomId) {
+      openRoomByLookup(initialRoomId, true);
+    } else {
+      loadMyPersonalRoom(false);
+    }
+  }, [user.userId, initialRoomId]);
+
   useEffect(() => {
     loadVoiceRoomData(currentRoomId);
-    loadAvailableRooms();
+    loadAvailableRooms(roomsSearchQuery);
     loadRealPlayers();
-    loadBots();
     const timer = setInterval(() => {
       loadVoiceRoomData(currentRoomId);
-      loadAvailableRooms();
+      loadAvailableRooms(roomsSearchQuery);
       loadRealPlayers();
-    }, 4000);
+    }, 4500);
     return () => clearInterval(timer);
-  }, [user.userId, currentRoomId]);
+  }, [user.userId, currentRoomId, roomsSearchQuery]);
 
   // Speaking wave simulation for other active speakers
   useEffect(() => {
@@ -1000,8 +1013,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         passcode: newRoomPasscode,
         hostName: user.fullName || 'ESP Host',
         hostAvatar: user.avatar,
-        hostLevel: user.gameLevel || 5,
-        hostCharms: user.charms || 150,
+        hostLevel: user.gameLevel || 1,
+        hostCharms: user.charms || 0,
+        wallpaperId: newRoomWallpaperId,
+        stageLayout: newRoomStageLayout,
       });
 
       if (res && res.success && res.roomId) {
@@ -1012,10 +1027,12 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         setRoomActionFeedback(null);
         setCurrentRoomId(res.roomId);
         await loadVoiceRoomData(res.roomId);
-        await loadAvailableRooms();
+        await loadAvailableRooms(roomsSearchQuery);
         playSynthesizedChime('win');
         confetti({ particleCount: 100, spread: 70 });
-        setSoundEffectToast(`🎉 आपका नया वॉइस रूम "${title}" लाइव हो गया है! आप सीट #1 पर स्टेज होस्ट हैं।`);
+        setSoundEffectToast(
+          `🎉 आपका वॉइस रूम "${title}" (ID: ${res.room?.roomAddress || ''}) लाइव हो गया!`
+        );
         setTimeout(() => setSoundEffectToast(null), 6000);
       } else {
         setRoomActionFeedback({
@@ -1033,11 +1050,108 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
+  const handleJoinAndSwitchRoom = async (roomObj: any, passcode?: string) => {
+    if (!roomObj?.id) return;
+    const isLockedForMe =
+      roomObj.isPrivate &&
+      roomObj.hostUserId !== user.userId &&
+      !(Array.isArray(roomObj.audience) && roomObj.audience.includes(user.userId));
+
+    if (isLockedForMe && !passcode) {
+      setPrivatePasscodePrompt({ room: roomObj, passcode: '' });
+      return;
+    }
+
+    try {
+      const res = await api.joinVoiceRoom(roomObj.id, user.userId, passcode);
+      if (res && res.success) {
+        setPrivatePasscodePrompt(null);
+        playSynthesizedChime('click');
+        setCurrentRoomId(roomObj.id);
+        setShowRoomsModal(false);
+        applyVoiceRoomPayload(res);
+        setActiveTab('voice_room');
+        showToast(`✅ आप "${res.room?.title || roomObj.title}" में शामिल हो गए!`, 'success');
+      } else if (privatePasscodePrompt) {
+        setPrivatePasscodePrompt({ ...privatePasscodePrompt, error: res?.message || 'गलत पासकोड' });
+      } else {
+        showToast(res?.message || 'रूम जॉइन नहीं हो सका', 'error');
+      }
+    } catch (err: any) {
+      if (privatePasscodePrompt) {
+        setPrivatePasscodePrompt({ ...privatePasscodePrompt, error: err?.message || 'पासकोड त्रुटि' });
+      } else {
+        showToast(err?.message || 'रूम जॉइन करने में समस्या आई', 'error');
+      }
+    }
+  };
+
   const handleSwitchRoom = (roomId: string) => {
+    const found = availableRooms.find((r) => r.id === roomId);
+    if (found) {
+      handleJoinAndSwitchRoom(found);
+      return;
+    }
     playSynthesizedChime('click');
     setCurrentRoomId(roomId);
     setShowRoomsModal(false);
     loadVoiceRoomData(roomId);
+  };
+
+  const handleJoinCurrentRoom = async () => {
+    if (!activeRoomDetail && !currentRoomId) return;
+    if (
+      activeRoomDetail?.isPrivate &&
+      activeRoomDetail.hostUserId !== user.userId &&
+      !(Array.isArray(activeRoomDetail.audience) && activeRoomDetail.audience.includes(user.userId))
+    ) {
+      setPrivatePasscodePrompt({ room: activeRoomDetail, passcode: '' });
+      return;
+    }
+    try {
+      const res = await api.joinVoiceRoom(currentRoomId, user.userId);
+      if (res?.success) {
+        applyVoiceRoomPayload(res);
+        playSynthesizedChime('win');
+        showToast(`✅ आप रूम (${activeRoomAddress}) में जुड़ गए हैं!`, 'success');
+      } else {
+        showToast(res?.message || 'रूम जॉइन नहीं हो सका', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'रूम जॉइन करने में त्रुटि', 'error');
+    }
+  };
+
+  const handleToggleFollowRoom = async (targetRoomId = currentRoomId) => {
+    try {
+      const res = await api.toggleFollowVoiceRoom(targetRoomId, user.userId);
+      if (res?.success) {
+        if (targetRoomId === currentRoomId) {
+          setActiveRoomDetail((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  isFollowed: res.isFollowed,
+                  followersCount: res.followersCount,
+                }
+              : prev
+          );
+        }
+        setAvailableRooms((prev) =>
+          prev.map((r) =>
+            r.id === targetRoomId
+              ? { ...r, isFollowed: res.isFollowed, followersCount: res.followersCount }
+              : r
+          )
+        );
+        if (Array.isArray(res.followedRooms)) {
+          onUpdateUser({ ...user, followedRooms: res.followedRooms });
+        }
+        showToast(res.message, 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'फॉलो अपडेट नहीं हो सका', 'error');
+    }
   };
 
   // Host Controls: Update Topic
@@ -1062,41 +1176,53 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  // Host Controls: Mute or Kick a Seat
-  const handleHostMuteSeat = async (seatIdx: number, mute: boolean) => {
+  // Unified Host Seat Action (mute, unmute, kick, lock_seat, unlock_seat) — always 0-based index!
+  const handleHostSeatAction = async (
+    action: 'mute' | 'unmute' | 'kick' | 'lock_seat' | 'unlock_seat',
+    seatIdx: number
+  ) => {
     try {
       const activeHostId = user.userId || user.id || 'ESP-GUEST-01';
       const res = await api.manageVoiceSeatHostAction({
         roomId: currentRoomId,
         hostUserId: activeHostId,
-        action: mute ? 'mute' : 'unmute',
+        action,
         seatIndex: seatIdx,
       });
       if (res && res.seats) {
         setSeats(res.seats);
       }
+      if (res?.room) {
+        setActiveRoomDetail(res.room);
+      }
+      playSynthesizedChime('click');
     } catch (err: any) {
       setSoundEffectToast(err?.message || 'एक्शन नहीं लिया जा सका');
       setTimeout(() => setSoundEffectToast(null), 3000);
     }
   };
 
-  const handleHostKickSeat = async (seatIdx: number) => {
+  const handleHostMuteSeat = (seatIdx: number, mute: boolean) =>
+    handleHostSeatAction(mute ? 'mute' : 'unmute', seatIdx);
+
+  const handleHostKickSeat = (seatIdx: number) =>
+    handleHostSeatAction('kick', seatIdx);
+
+  const handleSetYouTubeVideo = async (youtubeUrl: string) => {
     try {
-      const activeHostId = user.userId || user.id || 'ESP-GUEST-01';
-      const res = await api.manageVoiceSeatHostAction({
-        roomId: currentRoomId,
-        hostUserId: activeHostId,
-        action: 'kick',
-        seatIndex: seatIdx,
+      const res = await api.updateVoiceRoomDesign(currentRoomId, {
+        userId: user.userId,
+        stageLayout: 'watch_party',
+        youtubeVideoUrl: youtubeUrl,
       });
-      if (res && res.seats) {
-        setSeats(res.seats);
+      if (res?.success) {
+        applyVoiceRoomPayload(res);
+        showToast('📺 YouTube Watch Party रूम में अपडेट हो गई!', 'success');
+      } else {
+        showToast(res?.message || 'YouTube लिंक अपडेट नहीं हो सका', 'error');
       }
-      playSynthesizedChime('click');
     } catch (err: any) {
-      setSoundEffectToast(err?.message || 'सीट खाली नहीं की जा सकी');
-      setTimeout(() => setSoundEffectToast(null), 3000);
+      showToast(err?.message || 'वीडियो सेट करने में त्रुटि', 'error');
     }
   };
 
@@ -1114,20 +1240,23 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }).catch(() => {});
   };
 
+  // Open WePlay-style User Profile Sheet Modal (Real Profile, Cover, Moments, Gift Wall, @Username, Add Friend)
+  const openUserProfileSheet = (
+    targetId?: string,
+    fallback?: Partial<RichProfileData> | null,
+    mode: 'view' | 'edit' | 'search' = 'view'
+  ) => {
+    setProfileSheetState({
+      isOpen: true,
+      targetUserId: targetId || user.userId,
+      initialProfile: fallback || null,
+      initialMode: mode,
+    });
+  };
+
   // Open Real Player Digital Profile Modal
-  const handleOpenPlayerModal = async (userId: string, fallback?: Partial<RealPlayerProfile>) => {
-    try {
-      const res = await api.getPlayerProfile(userId);
-      if (res && res.success && res.profile) {
-        setSelectedPlayerProfile(res.profile);
-        return;
-      }
-    } catch (e) {
-      console.warn('Error fetching real player profile', e);
-    }
-    if (fallback) {
-      setSelectedPlayerProfile(fallback as RealPlayerProfile);
-    }
+  const handleOpenPlayerModal = (userId: string, fallback?: Partial<RealPlayerProfile>) => {
+    openUserProfileSheet(userId, (fallback as Partial<RichProfileData>) || null, 'view');
   };
 
   // Real Seat Grab Action
@@ -1190,13 +1319,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  // Real Room Chat Send
-  const handleSendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-
-    const text = chatInput.trim();
-    setChatInput('');
+  // Real Room Chat Send (shared by form & VoiceRoomStageCanvas)
+  const handleSendChatText = async (rawText: string) => {
+    const text = rawText.trim();
+    if (!text) return;
     try {
       const res = await api.sendVoiceRoomChat(user.userId, text, false, currentRoomId);
       if (res && res.success && res.chatMessages) {
@@ -1205,6 +1331,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     } catch (err) {
       console.warn('Failed to send chat', err);
     }
+  };
+
+  const handleSendChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    const text = chatInput.trim();
+    setChatInput('');
+    await handleSendChatText(text);
   };
 
   // Send Luxury Gift Action with Full-Screen Spectacular Visual Effect
@@ -1234,7 +1368,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         selectedGift.id,
         selectedGift.name,
         selectedGift.coinCost,
-        totalCharmsAwarded
+        totalCharmsAwarded,
+        selectedGift.icon,
+        giftTargetUserId
       );
 
       playSynthesizedChime(newCombo >= 2 ? 'win' : 'gift');
@@ -1270,6 +1406,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         ...prev,
         {
           id: `gift-${Date.now()}`,
+          senderId: user.userId,
           sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'LUXURY GIFT',
           isGift: true,
           text: `🎁 [LIVE GIFT] ${user.fullName} gifted ${selectedGift.name} ${selectedGift.icon} to ${finalTarget}! (+${totalCharmsAwarded} Charms ✨ ${comboText})`,
@@ -1294,7 +1431,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const handlePlayGame = async (gameOverride?: string, choiceOverride?: string) => {
     if (isGameSpinning) return;
     if ((user.coins || 0) < betAmount) {
-      setSoundEffectToast(`सिक्के कम हैं! कृपया रिचार्ज करें या 7-डे लॉगिन रिवॉर्ड क्लेम करें।`);
+      setSoundEffectToast(`सिक्के कम हैं! असली टास्क (+5 Coins) पूरे करें या कॉइन्स खरीदें।`);
       setTimeout(() => setSoundEffectToast(null), 3500);
       setActiveTab('recharge_convert');
       return;
@@ -1351,6 +1488,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         ...prev,
         {
           id: `game-${Date.now()}`,
+          senderId: user.userId,
           sender: 'GAME ARENA',
           text: `🎲 ${user.fullName} played ${gameTitle} (${betAmount} Coins) -> Result: ${isWin ? `WIN (+${res.winAmount} 🪙)` : 'LOSS'}!`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -1363,35 +1501,12 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  // Convert Coins to Cash
-  const handleConvertCoins = async () => {
-    if ((user.coins || 0) < convertCoinsInput) {
-      showToast('सिक्के कम हैं!', 'warning');
-      return;
-    }
-
-    try {
-      const res = await api.convertCoins(user.userId, convertCoinsInput);
-      setConvertStatusMessage(res.message);
-      playSynthesizedChime('win');
-      onUpdateUser({
-        ...user,
-        coins: res.coins,
-        balance: res.balance,
-      });
-      setTimeout(() => setConvertStatusMessage(null), 4000);
-    } catch (err: any) {
-      showToast(err?.message || 'कन्वर्शन में त्रुटि हुई', 'error');
-    }
-  };
-
   // Fetch User's Coin Recharges
   const loadUserRecharges = async () => {
     try {
-      const res = await api.getUserCoinRecharges(user.userId);
-      if (res.success && res.recharges) {
-        setUserRecharges(res.recharges);
-      }
+      const res: any = await api.getUserCoinRecharges(user.userId);
+      const list = Array.isArray(res) ? res : (res?.recharges || []);
+      setUserRecharges(list);
     } catch (e) {
       console.warn('Failed to fetch user recharges', e);
     }
@@ -1401,7 +1516,50 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     loadUserRecharges();
   }, [user.userId]);
 
-  // Real UPI Recharge Coins
+  const handleRechargeScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRechargeError(null);
+    if (file.size > 8 * 1024 * 1024) {
+      setRechargeError('स्क्रीनशॉट का साइज़ 8MB से कम होना चाहिए।');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const rawDataUrl = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 960;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            setRechargeScreenshot(canvas.toDataURL('image/jpeg', 0.78));
+          } else {
+            setRechargeScreenshot(rawDataUrl);
+          }
+        } catch {
+          setRechargeScreenshot(rawDataUrl);
+        }
+      };
+      img.onerror = () => setRechargeScreenshot(rawDataUrl);
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // Real UPI Recharge Coins (12-Digit UTR + Payment Screenshot Required)
   const handleRechargeCoins = async () => {
     setRechargeError(null);
     setRechargeSuccess(null);
@@ -1417,45 +1575,34 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       return;
     }
 
+    if (!rechargeScreenshot || rechargeScreenshot.trim().length < 20) {
+      setRechargeError('कृपया UPI भुगतान के बाद पेमेंट स्क्रीनशॉट (Payment Screenshot) जरूर अपलोड करें।');
+      return;
+    }
+
     setIsRecharging(true);
     try {
-      const res = await api.rechargeCoins(
+      await api.rechargeCoins(
         user.userId,
         selectedPack.coins,
         selectedPack.amount,
         cleanUtr,
         selectedPack.bonus,
-        selectedPack.id
+        selectedPack.id,
+        rechargeScreenshot
       );
 
       setRechargeSuccess(
-        `✅ आपका रिचार्ज अनुरोध दर्ज कर लिया गया है (UTR: ${cleanUtr})! एडमिन खाते में 12-अंक UTR सत्यापन के बाद 10-15 मिनट में आपके प्रोफाइल में +${selectedPack.coins + selectedPack.bonus} सिक्के क्रेडिट कर दिए जाएंगे।`
+        `✅ आपका रिचार्ज अनुरोध दर्ज कर लिया गया है (UTR: ${cleanUtr}) व पेमेंट स्क्रीनशॉट एडमिन पैनल में भेज दिया गया है! सत्यापन के बाद आपके प्रोफाइल में +${selectedPack.coins + selectedPack.bonus} सिक्के क्रेडिट कर दिए जाएंगे।`
       );
       setRechargeUtr('');
+      setRechargeScreenshot('');
       playSynthesizedChime('win');
       loadUserRecharges();
     } catch (err: any) {
       setRechargeError(err?.message || 'रिचार्ज सबमिट करने में समस्या आई।');
     } finally {
       setIsRecharging(false);
-    }
-  };
-
-  // Claim 7-Day Login Reward
-  const handleClaimLoginReward = async (day: number) => {
-    try {
-      const res = await api.claimLoginReward(user.userId, day);
-      confetti({ particleCount: 80, spread: 60 });
-      playSynthesizedChime('win');
-      showToast(res.message, 'reward');
-      onUpdateUser({
-        ...user,
-        coins: res.coins,
-        claimedDays: res.claimedDays,
-        loginStreak: res.loginStreak,
-      });
-    } catch (err: any) {
-      showToast(err?.message || 'रिवॉर्ड क्लेम नहीं हो सका', 'error');
     }
   };
 
@@ -1660,16 +1807,16 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             <div className="flex items-center space-x-3">
               <div
                 className="relative cursor-pointer group"
-                onClick={() => setShowAvatarCustomizerModal(true)}
-                title="Click to Customize Avatar & Status Frame"
+                onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
+                title="Click to View & Edit WePlay Profile, Cover Photo & Unique @Username"
               >
                 <AvatarFrame
                   src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`}
                   alt={user.fullName}
                   size="md"
-                  frameType={(user.frameType as any) || 'pro-player'}
-                  level={user.gameLevel || 5}
-                  showCrown={user.frameType === 'clan-leader' || user.frameType === 'royal-dragon-crown'}
+                  frameType={(user.frameType as any) || 'standard'}
+                  level={user.gameLevel || 1}
+                  showCrown={user.frameType === 'clan-leader' || user.frameType === 'royal-dragon-crown' || user.frameType === 'mythic-crimson'}
                 />
                 <span className="absolute -top-1 -right-1 text-[10px] bg-[#2874f0] rounded-full w-4 h-4 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition shadow">
                   ✏️
@@ -1678,14 +1825,24 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
               <div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-bold text-[#212121] text-sm tracking-wide">
+                  <span
+                    onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
+                    className="font-bold text-[#212121] text-sm tracking-wide cursor-pointer hover:text-[#2874f0] transition"
+                  >
                     {user.fullName}
                   </span>
-                  <span className="bg-[#f5f8ff] text-[#2874f0] border border-blue-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
-                    💼 ESP: {user.userId}
-                  </span>
+                  {user.username && (
+                    <span className="bg-cyan-50 text-cyan-800 border border-cyan-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
+                      @{user.username}
+                    </span>
+                  )}
+                  {user.accountType !== 'gamer' && (
+                    <span className="bg-[#f5f8ff] text-[#2874f0] border border-blue-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
+                      💼 ESP: {user.userId}
+                    </span>
+                  )}
                   <span className="bg-amber-50 text-[#fb641b] border border-amber-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
-                    🎮 GAME: {user.gamingId || `GAME-${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '887749'}`}
+                    🎮 GAME: {user.gamingId || `ESPGT${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '01'}`}
                   </span>
                   {user.vipTitle && (
                     <span className="text-[9px] px-2 py-0.5 rounded-sm bg-[#ffe500] text-[#212121] font-bold">
@@ -1694,7 +1851,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-[#878787] flex items-center space-x-2 mt-0.5">
-                  <span className="text-[#2874f0] font-mono font-medium">🏠 {user.roomAddress || `ESP-ROOM-${user.userId}`}</span>
+                  <button
+                    type="button"
+                    onClick={() => loadMyPersonalRoom(true)}
+                    className="text-[#2874f0] hover:underline font-mono font-bold cursor-pointer"
+                    title="अपने फिक्स्ड पर्सनल वॉइस रूम में जाएं"
+                  >
+                    🏠 {cleanUserRoomFallback}
+                  </button>
                   <span>•</span>
                   <span className="text-[#388e3c] font-semibold">{user.clanName || 'Royal Warriors ESP'}</span>
                 </div>
@@ -1741,7 +1905,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <div>
                   <div className="text-[9px] text-[#878787] font-semibold">Coins</div>
                   <div className="text-xs font-bold text-[#212121] tabular-nums">
-                    {(user.coins || 5000).toLocaleString()}
+                    {(user.coins || 0).toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -1751,20 +1915,22 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <div>
                   <div className="text-[9px] text-[#878787] font-semibold">Charms</div>
                   <div className="text-xs font-bold text-[#fb641b] tabular-nums">
-                    {user.charms || 150}
+                    {user.charms || 0}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-emerald-50 px-3 py-1.5 rounded-sm border border-emerald-200 flex items-center space-x-1.5">
-                <span className="text-base font-bold text-[#388e3c]">₹</span>
-                <div>
-                  <div className="text-[9px] text-[#388e3c] font-semibold">Cash</div>
-                  <div className="text-xs font-bold text-[#388e3c] tabular-nums">
-                    ₹{(user.balance || 0).toLocaleString()}
+              {user.accountType !== 'gamer' && (
+                <div className="bg-emerald-50 px-3 py-1.5 rounded-sm border border-emerald-200 flex items-center space-x-1.5">
+                  <span className="text-base font-bold text-[#388e3c]">₹</span>
+                  <div>
+                    <div className="text-[9px] text-[#388e3c] font-semibold">Cash</div>
+                    <div className="text-xs font-bold text-[#388e3c] tabular-nums">
+                      ₹{(user.balance || 0).toLocaleString()}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <button
                 onClick={() => setActiveTab('recharge_convert')}
@@ -1828,8 +1994,8 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             >
               <ArrowRightLeft className={`w-4 h-4 ${activeTab === 'recharge_convert' ? 'text-white' : 'text-[#388e3c]'}`} />
               <div className="text-left">
-                <div>Recharge & Convert</div>
-                <div className="text-[9px] font-normal opacity-80">सिक्के खरीदें / बदलें</div>
+                <div>Buy Coins (UPI)</div>
+                <div className="text-[9px] font-normal opacity-80">असली कॉइन्स खरीदें</div>
               </div>
             </button>
 
@@ -1858,8 +2024,8 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             >
               <Calendar className={`w-4 h-4 ${activeTab === 'rewards_tasks' ? 'text-[#ffe500]' : 'text-[#fb641b]'}`} />
               <div className="text-left">
-                <div>7-Day Login & Tasks</div>
-                <div className="text-[9px] font-normal opacity-80">डेली रिवॉर्ड्स</div>
+                <div>Real Tasks (+5 🪙)</div>
+                <div className="text-[9px] font-normal opacity-80">रियल टास्क व EXP</div>
               </div>
             </button>
           </div>
@@ -1869,759 +2035,273 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       {/* Main Content Area */}
       <div className="w-full max-w-6xl px-4 mt-4">
         {/* ============================================================== */}
-        {/* TAB 1: WEPLAY-STYLE VOICE ROOM STAGE (FULL INTERACTIVE SETUP)  */}
+        {/* TAB 1: WEPLAY-STYLE PERSONAL FIXED VOICE ROOM STAGE            */}
         {/* ============================================================== */}
         {activeTab === 'voice_room' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fadeIn">
-            {/* Left 2 Cols: Main Voice Stage & Mic Grid */}
+            {/* Left 2 Cols: WePlay-Style Personal Fixed Voice Stage Canvas */}
             <div className="lg:col-span-2 space-y-4">
-              
-              {/* Voice Room Stage Banner with Custom Advance Wallpaper & Flipkart Light Default */}
-              <div 
-                style={roomBgTheme?.bgImageUrl ? { backgroundImage: `url(${roomBgTheme.bgImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
-                className={`rounded-xl p-4 sm:p-5 border shadow-sm relative overflow-hidden transition-all duration-300 ${
-                  !isDarkStageBg
-                    ? 'bg-white border-slate-200 text-[#212121]'
-                    : !roomBgTheme?.bgImageUrl
-                    ? `border-blue-400/50 bg-gradient-to-br ${roomBgTheme?.bgGradient || 'from-[#031336] via-[#092257] to-[#040d21]'} text-white`
-                    : 'border-blue-400/50 bg-slate-950/80 bg-blend-darken text-white'
-                }`}
-              >
-                {/* Divine Celestial Krishna Aura if Active */}
-                {roomBgTheme?.isDivine && (
-                  <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 select-none">
-                    <div className="absolute top-2 right-4 text-7xl opacity-30 animate-pulse">🦚</div>
-                    <div className="absolute bottom-4 left-6 text-5xl opacity-25">🪈</div>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-400/10 rounded-full blur-3xl pointer-events-none" />
-                    <div className="absolute bottom-1 right-3 text-[9px] text-cyan-200/60 font-mono tracking-widest uppercase">
-                      श्री कृष्ण दिव्य पैवेलियन • Celestial Divine Stage
-                    </div>
-                  </div>
-                )}
-                
-                {/* Multi-Room Top Switcher Bar */}
-                <div className="mb-3 pb-3 border-b border-blue-200 flex flex-wrap items-center justify-between gap-2 bg-[#f5f8ff]/95 backdrop-blur-xs p-2.5 rounded-md relative z-10 text-[#212121]">
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <button
-                      onClick={() => {
-                        loadAvailableRooms();
-                        setShowRoomsModal(true);
-                      }}
-                      className="bg-[#2874f0] hover:bg-[#1c62d6] text-white px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 cursor-pointer transition shadow-xs"
-                    >
-                      <Radio className="w-3.5 h-3.5 text-[#ffe500]" />
-                      <span>🔄 रूम्स ({availableRooms.length})</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowCreateRoomModal(true)}
-                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 cursor-pointer transition shadow-xs"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      <span>➕ रूम बनाएं</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowRoomStoreModal(true)}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 cursor-pointer transition"
-                      title="रूम का बैकग्राउंड बदलें"
-                    >
-                      <span>🖼️ बैकग्राउंड</span>
-                    </button>
-
-                    <button
-                      onClick={toggleMultiplayerMode}
-                      className={`px-3 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer shadow-xs ${
-                        multiplayerMode === 'real_players'
-                          ? 'bg-[#388e3c] hover:bg-emerald-700 text-white'
-                          : 'bg-[#2874f0] hover:bg-[#1c62d6] text-white'
-                      }`}
-                      title="रियल प्लेयर्स vs सोलो बॉट मोड बदलें"
-                    >
-                      <span>{multiplayerMode === 'real_players' ? '👥 रियल प्लेयर्स' : '🤖 सोलो बॉट'}</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowTimedChestModal(true)}
-                      className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 shadow-xs cursor-pointer transition"
-                      title="8 Timed Mystery Boxes"
-                    >
-                      <span>🎁 8 बॉक्सेज</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowFortuneSpinModal(true)}
-                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold px-2.5 py-1.5 rounded-sm text-xs flex items-center space-x-1 shadow-xs cursor-pointer transition"
-                      title="24H Daily Fortune Wheel"
-                    >
-                      <span>🎡 24H स्पिन</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowLeaderboardModal(true)}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 font-bold px-2.5 py-1.5 rounded-sm text-xs flex items-center space-x-1 cursor-pointer transition"
-                      title="Top 10 Earners & Gaming Players"
-                    >
-                      <Trophy className="w-3.5 h-3.5 text-[#fb641b]" />
-                      <span>रैंकिंग</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setPendingJoinSeatIndex(null);
-                        setShowVoiceEffectModal(true);
-                      }}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 cursor-pointer transition"
-                      title="माइक आवाज़ इफ़ेक्ट"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-[#2874f0]" />
-                      <span>{VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.icon} आवाज़</span>
-                    </button>
-
-                    <button
-                      onClick={toggleFullScreen}
-                      className="bg-white hover:bg-slate-50 text-[#2874f0] border border-blue-200 font-bold px-2.5 py-1.5 rounded-sm text-xs flex items-center space-x-1 transition cursor-pointer"
-                      title={isFullscreen ? 'नॉर्मल स्क्रीन करें' : 'फुल स्क्रीन करें'}
-                    >
-                      {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                      <span>{isFullscreen ? 'नॉर्मल' : '⛶ फुल'}</span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-2 text-xs">
-                    <span className="font-mono text-[#2874f0] bg-white px-2.5 py-1 rounded-sm border border-blue-200 font-bold flex items-center space-x-1">
-                      <span>🏠 {activeRoomAddress}</span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(activeRoomAddress);
-                          setSoundEffectToast('📋 रूम एड्रेस कॉपी हुआ!');
-                          setTimeout(() => setSoundEffectToast(null), 2000);
-                        }}
-                        className="text-[#2874f0] hover:text-[#1c62d6] ml-1 cursor-pointer"
-                        title="Copy Room ID"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                    </span>
-
-                    {activeRoomHostId === user.userId && (
-                      <button
-                        onClick={() => {
-                          setEditTopicInput(activeRoomTopic);
-                          setShowHostSettingsModal(true);
-                        }}
-                        className="px-2.5 py-1 rounded-sm bg-amber-50 text-[#fb641b] border border-amber-300 text-[11px] font-bold flex items-center space-x-1 hover:bg-amber-100 cursor-pointer"
-                      >
-                        <Settings className="w-3 h-3" />
-                        <span>होस्ट सेटिंग्स</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Stage Header Info */}
-                <div className={`flex flex-wrap items-center justify-between pb-3 border-b gap-2 relative z-10 ${isDarkStageBg ? 'border-white/15' : 'border-slate-200'}`}>
-                  <div className="flex items-center space-x-3">
-                    <span className="w-3 h-3 rounded-full bg-[#388e3c] animate-pulse shrink-0" />
-                    <div>
-                      <h2 className={`text-base sm:text-lg font-bold flex items-center space-x-2 ${isDarkStageBg ? 'text-white' : 'text-[#212121]'}`}>
-                        <span className="tracking-wide">
-                          {activeRoomTitle}
-                        </span>
-                        <span className="bg-[#ffe500] text-[#212121] text-[10px] font-bold px-2 py-0.5 rounded-sm">
-                          {activeRoomHostId === user.userId ? '👑 आपका रूम' : 'LIVE ON AIR'}
-                        </span>
-                      </h2>
-                      <p className={`text-xs flex flex-wrap items-center gap-1.5 mt-0.5 ${isDarkStageBg ? 'text-slate-200' : 'text-[#878787]'}`}>
-                        <span className="bg-[#2874f0] text-white text-[9px] font-bold px-2 py-0.5 rounded-sm">
-                          ESP STAGE
-                        </span>
-                        <span className="font-medium">Topic: "{activeRoomTopic}"</span>
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Room Viewers Counter & Actions */}
-                  <div className="flex items-center space-x-2 flex-wrap gap-y-1.5">
-                    <button
-                      onClick={() => setShowAudienceModal(true)}
-                      className="flex items-center space-x-1.5 text-xs text-[#2874f0] bg-[#f5f8ff] hover:bg-blue-100 px-3 py-1.5 rounded-sm border border-blue-200 cursor-pointer transition font-bold"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>{audienceCount} Online</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowStageGameOverlay(!showStageGameOverlay)}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-3 py-1.5 text-xs font-bold rounded-sm flex items-center space-x-1 cursor-pointer transition"
-                    >
-                      <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
-                      <span>Stage Games</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowBotHubModal(true)}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-3 py-1.5 text-xs font-bold rounded-sm flex items-center space-x-1 cursor-pointer transition"
-                    >
-                      <Bot className="w-3.5 h-3.5 text-[#fb641b]" />
-                      <span>ESP PLAY बॉट्स</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowDailySpinModal(true)}
-                      className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3 py-1.5 text-xs font-bold rounded-sm flex items-center space-x-1 cursor-pointer transition shadow-xs"
-                      title="डेली लकी स्पिन"
-                    >
-                      <RotateCw className="w-3.5 h-3.5 text-[#212121]" />
-                      <span>🎰 लकी स्पिन</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowGiftModal(true)}
-                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-1.5 text-xs font-bold rounded-sm flex items-center space-x-1 cursor-pointer transition shadow-xs"
-                    >
-                      <Gift className="w-3.5 h-3.5 text-white" />
-                      <span>Send Gift</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* ESP PLAY Solo Bot Ecosystem Help Banner */}
-                <div className="mt-3 p-3 rounded-md bg-[#f5f8ff]/95 border border-blue-200 flex flex-wrap items-center justify-between gap-2 relative z-10 text-[#212121]">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="p-1.5 rounded-sm bg-[#2874f0]/10 text-[#2874f0]">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-[#212121] flex items-center gap-1.5">
-                        <span>🤖 ESP PLAY AI बॉट्स व साथी (अकेले हैं? बॉट्स बुलाएं)</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-[#ffe500] text-[#212121] font-black">Lvl 99 शर्मा जी 👑</span>
-                      </div>
-                      <p className="text-[11px] text-[#878787]">
-                        न्यायाधीश, भेड़िया बॉट, वी भाई, वी चैट और शर्मा जी के साथ खेलें व बातें करें
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      onClick={handleSummonAllBots}
-                      className="px-2.5 py-1.5 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-bold text-[11px] flex items-center space-x-1 shadow-xs cursor-pointer"
-                      title="एक क्लिक में सारे बॉट्स को खाली सीटों पर बैठाएं"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>⚡ सभी बॉट्स बैठाएं</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowBotHubModal(true)}
-                      className="px-2.5 py-1.5 rounded-sm bg-white hover:bg-slate-50 border border-slate-300 text-[#212121] font-bold text-[11px] flex items-center space-x-1 cursor-pointer"
-                    >
-                      <span>📖 बॉट शक्तियां</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowWerewolfModal(true)}
-                      className="px-2.5 py-1.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold text-[11px] flex items-center space-x-1 shadow-xs cursor-pointer"
-                    >
-                      <span>🐺 भेड़िया गेम</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowSpyGameModal(true)}
-                      className="px-2.5 py-1.5 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center space-x-1 shadow-xs cursor-pointer"
-                    >
-                      <span>🕵️ जासूस कौन?</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* WePlay Multimedia Stage Player */}
-                <div className="mt-3.5 relative z-10">
-                  <VoiceRoomMediaStage
-                    isHost={activeRoomHostId === user.userId}
-                    onOpenSpyGame={() => setShowSpyGameModal(true)}
-                    onOpenWerewolfGame={() => setShowWerewolfModal(true)}
-                    onOpenDailySpin={() => setShowDailySpinModal(true)}
-                    onOpenStageGameOverlay={() => setShowStageGameOverlay(true)}
-                    onSoundboardEffect={playSoundEffect}
-                  />
-                </div>
-
-                {/* Stage Mini-Game Dropdown Overlay */}
-                {showStageGameOverlay && (
-                  <div className="mt-3 bg-[#f9fafb] p-4 rounded-md border border-slate-200 shadow-sm animate-fadeIn relative z-10 text-[#212121]">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                      <div className="flex items-center space-x-2 text-xs font-bold text-[#212121]">
-                        <Gamepad2 className="w-4 h-4 text-[#fb641b]" />
-                        <span>STAGE MINI-GAME BATTLE (स्टेज पर गेम खेलें)</span>
-                      </div>
-                      <button onClick={() => setShowStageGameOverlay(false)} className="text-slate-500 hover:text-[#212121] cursor-pointer">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-                      <button
-                        onClick={() => setShowSpyGameModal(true)}
-                        className="bg-[#2874f0] hover:bg-[#1c62d6] p-2.5 rounded-sm text-center text-xs font-bold text-white cursor-pointer"
-                      >
-                        <div>🕵️ जासूस कौन?</div>
-                        <div className="text-[9px] text-blue-100">Who is the Spy</div>
-                      </button>
-
-                      <button
-                        onClick={() => handlePlayGame('Lucky Dice', 'seven')}
-                        disabled={isGameSpinning}
-                        className="bg-[#fb641b] hover:bg-[#e8550f] p-2.5 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
-                      >
-                        <div>🎲 Lucky 7 Dice</div>
-                        <div className="text-[9px] text-orange-100">50 Coins • 5x Win</div>
-                      </button>
-
-                      <button
-                        onClick={() => handlePlayGame('Spin & Win')}
-                        disabled={isGameSpinning}
-                        className="bg-[#2874f0] hover:bg-[#1c62d6] p-2.5 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
-                      >
-                        <div>🎡 Instant Spin</div>
-                        <div className="text-[9px] text-blue-100">50 Coins • Up to 10x</div>
-                      </button>
-
-                      <button
-                        onClick={() => handlePlayGame('Coin Flip', 'heads')}
-                        disabled={isGameSpinning}
-                        className="bg-[#388e3c] hover:bg-emerald-700 p-2.5 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
-                      >
-                        <div>🪙 Heads Flip</div>
-                        <div className="text-[9px] text-emerald-100">50 Coins • 2x Win</div>
-                      </button>
-                    </div>
-
-                    {gameResultToast && (
-                      <div className={`mt-2 p-2 rounded-sm text-xs font-bold text-center border ${gameResultToast.isWin ? 'bg-emerald-50 text-[#388e3c] border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                        {gameResultToast.message}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Host Seat (Center Spotlight) */}
-                <div className="mt-4 flex flex-col items-center relative z-10">
-                  <div
-                    className="relative group cursor-pointer"
-                    onClick={() => {
-                      handleOpenPlayerModal(voiceRoomHost.userId, {
-                        userId: voiceRoomHost.userId,
-                        fullName: voiceRoomHost.userName,
-                        gameLevel: voiceRoomHost.gameLevel,
-                        charms: voiceRoomHost.charms,
-                        avatar: voiceRoomHost.userAvatar,
-                        roleTitle: voiceRoomHost.roleTitle || 'ESP Founder & Room Host',
-                        chosenServiceName: 'ESP FOUNDER & HOST (ALL 10 SERVICES)',
-                        status: 'approved',
-                        clanName: 'ESP Royals',
-                        clanRole: 'Founder & Host',
-                        roomAddress: 'ESP-ROOM-FOUNDER-01',
-                        coins: 999999,
+              <div className="relative">
+                <VoiceRoomStageCanvas
+                  currentUser={user}
+                  room={{
+                    ...(activeRoomDetail || {}),
+                    id: currentRoomId,
+                    title: activeRoomTitle,
+                    topic: activeRoomTopic,
+                    roomAddress: activeRoomAddress,
+                    hostUserId: activeRoomHostId,
+                  }}
+                  host={voiceRoomHost}
+                  seats={seats}
+                  chatMessages={roomChatMessages}
+                  audienceCount={audienceCount}
+                  mySeatIndex={mySeatIndex}
+                  hasJoinedRoom={
+                    activeRoomHostId === user.userId ||
+                    mySeatIndex !== null ||
+                    Boolean(activeRoomDetail?.audience?.includes(user.userId))
+                  }
+                  micPermission={micPermission}
+                  micLevel={micLevel}
+                  isMicMuted={isMicMuted}
+                  isRecordingVoice={isRecordingVoice}
+                  recordDuration={recordDuration}
+                  autoPlayAudio={autoPlayAudio}
+                  currentlyPlayingAudioId={currentlyPlayingAudioId}
+                  selectedVoiceEffect={selectedVoiceEffect}
+                  quickPhrases={PRESET_TALK_PHRASES}
+                  onOpenRoomsDirectory={() => {
+                    loadAvailableRooms(roomsSearchQuery);
+                    setShowRoomsModal(true);
+                  }}
+                  onJumpToMyPersonalRoom={() => loadMyPersonalRoom(true)}
+                  onJoinRoom={handleJoinCurrentRoom}
+                  onToggleFollowRoom={() => handleToggleFollowRoom(currentRoomId)}
+                  onOpenAudience={() => setShowAudienceModal(true)}
+                  onOpenDesignModal={(tab = 'design') =>
+                    setDesignModalState({ isOpen: true, tab })
+                  }
+                  onSeatClick={(seat, idx) => {
+                    if (!seat.userId) {
+                      if (seat.isLocked) {
+                        if (activeRoomHostId === user.userId || user.userId === 'EMO-MOM-MMO') {
+                          handleHostSeatAction('unlock_seat', idx);
+                        } else {
+                          showToast('🔒 यह सीट रूम मालिक द्वारा लॉक की गई है।', 'warning');
+                        }
+                        return;
+                      }
+                      setPendingJoinSeatIndex(idx);
+                      setShowVoiceEffectModal(true);
+                    } else {
+                      handleOpenPlayerModal(seat.userId, {
+                        userId: seat.userId,
+                        fullName: seat.userName,
+                        gameLevel: seat.gameLevel,
+                        charms: seat.charms,
+                        avatar: seat.userAvatar,
                       });
-                    }}
-                  >
-                    <AvatarFrame
-                      src={voiceRoomHost.userAvatar || "https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP"}
-                      alt="Room Host"
-                      size="xl"
-                      frameType="vip-gold"
-                      level={voiceRoomHost.gameLevel || 25}
-                      showCrown={voiceRoomHost.gameLevel >= 90}
-                      isSpeaking={hostSpeaking}
-                    />
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#ffe500] text-[#212121] text-[9px] font-black px-2.5 py-0.5 rounded-sm shadow flex items-center space-x-1 z-30 border border-amber-400">
-                      <Crown className="w-3 h-3" />
-                      <span>ROOM HOST</span>
-                    </div>
-
-                    {/* Speaking Soundwaves */}
-                    <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center space-x-1 bg-white px-2.5 py-0.5 rounded-full border border-[#2874f0] shadow-xs z-30">
-                      <div className="w-1 h-3 bg-[#2874f0] rounded-full animate-bounce" />
-                      <div className="w-1 h-4 bg-[#fb641b] rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1 h-2 bg-[#388e3c] rounded-full animate-bounce [animation-delay:0.4s]" />
-                      <span className="text-[9px] text-[#2874f0] font-bold ml-1">Speaking</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 text-center cursor-pointer" onClick={() => {
+                    }
+                  }}
+                  onHostToggleSeatLock={(idx, lock) =>
+                    handleHostSeatAction(lock ? 'lock_seat' : 'unlock_seat', idx)
+                  }
+                  onLeaveSeat={handleLeaveSeat}
+                  onOpenOwnerProfile={() =>
                     handleOpenPlayerModal(voiceRoomHost.userId, {
                       userId: voiceRoomHost.userId,
                       fullName: voiceRoomHost.userName,
                       gameLevel: voiceRoomHost.gameLevel,
                       charms: voiceRoomHost.charms,
                       avatar: voiceRoomHost.userAvatar,
-                      roleTitle: voiceRoomHost.roleTitle || 'ESP Founder & Room Host',
-                    });
-                  }}>
-                    <div className={`font-bold text-sm flex items-center justify-center space-x-1 ${isDarkStageBg ? 'text-white' : 'text-[#212121]'}`}>
-                      <span>{voiceRoomHost.userName}</span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#388e3c]" />
-                    </div>
-                    <div className={`text-[10px] font-mono font-bold ${isDarkStageBg ? 'text-[#ffe500]' : 'text-[#2874f0]'}`}>
-                      ID: {voiceRoomHost.userId} • {voiceRoomHost.charms?.toLocaleString()} Charms ✨
-                    </div>
+                      roleTitle: voiceRoomHost.roleTitle || 'Room Host',
+                      roomAddress: activeRoomAddress,
+                    })
+                  }
+                  onToggleAutoPlayAudio={() => setAutoPlayAudio((p) => !p)}
+                  onEnableMic={enableMicrophone}
+                  onTogglePhysicalMute={handleTogglePhysicalMute}
+                  onStartWalkieTalkie={startWalkieTalkie}
+                  onStopWalkieTalkie={stopWalkieTalkie}
+                  onSendChatText={handleSendChatText}
+                  onPlayAudioClip={playAudioClip}
+                  onOpenGiftModal={() => setShowGiftModal(true)}
+                  onOpenVoiceEffectModal={() => {
+                    setPendingJoinSeatIndex(null);
+                    setShowVoiceEffectModal(true);
+                  }}
+                  onSetYouTubeVideo={handleSetYouTubeVideo}
+                  onCopyFeedback={(msg) => showToast(msg, 'success')}
+                />
+
+                {soundEffectToast && (
+                  <div className="absolute top-16 right-4 bg-[#2874f0] text-white font-bold text-xs px-3 py-1.5 rounded-sm shadow-lg animate-bounce z-30">
+                    {soundEffectToast}
                   </div>
-                </div>
+                )}
+              </div>
 
-                {/* 8 Speaker Mic Seats Grid */}
-                <div className={`mt-6 pt-4 border-t relative z-10 ${isDarkStageBg ? 'border-white/20' : 'border-slate-200'}`}>
-                  <div className={`text-[11px] font-bold mb-3 flex flex-wrap items-center justify-between gap-2 ${isDarkStageBg ? 'text-white' : 'text-[#212121]'}`}>
-                    <span>SPEAKER MIC SEATS (8 सीटें - ग्रैब करें या बात करें):</span>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => {
-                          setPendingJoinSeatIndex(null);
-                          setShowVoiceEffectModal(true);
-                        }}
-                        className="text-[10px] text-[#2874f0] hover:bg-blue-100 font-bold flex items-center gap-1 bg-[#f5f8ff] px-2.5 py-1 rounded-sm border border-blue-200 cursor-pointer"
-                        title="वॉइस इफ़ेक्ट बदलें"
-                      >
-                        <span>{VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.icon || '🎭'}</span>
-                        <span>इफ़ेक्ट: {VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.name}</span>
-                      </button>
-                      {mySeatIndex !== null && (
-                        <button
-                          onClick={handleLeaveSeat}
-                          className="text-[10px] text-rose-600 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-sm border border-rose-200 font-bold cursor-pointer"
-                        >
-                          Leave My Mic (सीट छोड़ें)
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {seats.map((seat, idx) => {
-                      const isOccupied = Boolean(seat.userId);
-                      const isMe = mySeatIndex === idx;
-                      const isSharmaJiSeat = seat.userId === 'SHARMA-JI-VIP' || (seat.gameLevel || 0) >= 90;
-                      const frameType: FrameVariant = isSharmaJiSeat 
-                        ? 'royal-dragon-crown' 
-                        : seat.userId === 'BOT-JUDGE' 
-                        ? 'judge-justice'
-                        : seat.userId === 'BOT-WOLF'
-                        ? 'wolf-night'
-                        : seat.userId === 'BOT-CHAT'
-                        ? 'cosmic-neon'
-                        : seat.userId === 'BOT-BHAI'
-                        ? 'vip-gold'
-                        : 'standard';
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`flex flex-col items-center p-2.5 rounded-md border transition-all ${
-                            isOccupied
-                              ? isSharmaJiSeat 
-                                ? 'bg-amber-50/95 border-amber-400 shadow-xs cursor-pointer text-[#212121]'
-                                : 'bg-[#f5f8ff]/95 border-blue-200 shadow-xs hover:border-[#2874f0] cursor-pointer text-[#212121]'
-                              : 'bg-[#f9fafb]/95 border-dashed border-slate-300 hover:border-[#2874f0] cursor-pointer text-slate-600'
-                          }`}
-                          onClick={() => {
-                            if (!isOccupied) {
-                              setPendingJoinSeatIndex(idx);
-                              setShowVoiceEffectModal(true);
-                            } else if (seat.userId) {
-                              handleOpenPlayerModal(seat.userId, {
-                                userId: seat.userId,
-                                fullName: seat.userName,
-                                gameLevel: seat.gameLevel,
-                                charms: seat.charms,
-                                avatar: seat.userAvatar,
-                              });
-                            }
-                          }}
-                        >
-                          {isOccupied ? (
-                            <>
-                              <div className="relative">
-                                <AvatarFrame
-                                  src={seat.userAvatar}
-                                  alt={seat.userName}
-                                  size="md"
-                                  frameType={frameType}
-                                  level={seat.gameLevel || 1}
-                                  showCrown={isSharmaJiSeat}
-                                  isSpeaking={seat.isSpeaking}
-                                />
-                                <span className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-white border border-slate-300 text-[10px] z-30 shadow-xs">
-                                  {seat.isMuted ? <MicOff className="w-3 h-3 text-rose-600" /> : <Mic className="w-3 h-3 text-[#388e3c]" />}
-                                </span>
-                              </div>
-                              <span className={`text-[11px] font-bold mt-1.5 truncate max-w-[80px] ${
-                                isSharmaJiSeat ? 'text-[#fb641b] font-black' : 'text-[#212121]'
-                              }`}>
-                                {isMe ? 'You' : seat.userName}
-                              </span>
-                              {seat.userRollNumber && (
-                                <span className="text-[8px] font-bold text-amber-800 bg-amber-100 px-1 py-0.5 rounded-sm border border-amber-300">
-                                  {seat.userRollNumber}
-                                </span>
-                              )}
-                              <span className="text-[9px] text-[#2874f0] font-mono font-bold">
-                                Lvl {seat.gameLevel}
-                              </span>
-                              {isMe && (
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-sm bg-[#2874f0] text-white flex items-center gap-0.5 mt-0.5">
-                                  <span>{VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.icon || '🎙️'}</span>
-                                  <span className="uppercase">{VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.badge || 'ORIGINAL'}</span>
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <div className="py-2 flex flex-col items-center text-[#878787] hover:text-[#2874f0]">
-                              <div className="w-10 h-10 rounded-full border border-dashed border-slate-400 bg-white flex items-center justify-center">
-                                <Mic className="w-4 h-4" />
-                              </div>
-                              <span className="text-[10px] font-semibold mt-1 text-[#212121]">Seat {idx + 1}</span>
-                              <span className="text-[9px] text-[#2874f0] font-bold">सीट ग्रैब करें</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Quick Bot Interactive Bar */}
-                <div className="mt-4 p-2.5 rounded-md bg-[#f5f8ff]/95 border border-blue-200 flex flex-wrap items-center justify-between gap-2 relative z-10 text-[#212121]">
-                  <div className="flex items-center space-x-1.5 text-xs font-bold text-[#212121]">
-                    <Sparkles className="w-3.5 h-3.5 text-[#fb641b]" />
-                    <span>बॉट्स से लाइव एक्शन:</span>
-                  </div>
-
+              {/* Compact Stage Utilities, Soundboard & Mini-Games Strip */}
+              <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs space-y-3 text-[#212121]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
-                      onClick={() => handleBotAction('judge')}
-                      className="px-2.5 py-1 rounded-sm bg-white hover:bg-amber-50 border border-amber-300 text-amber-800 font-bold text-[11px] flex items-center space-x-1 cursor-pointer"
+                      onClick={() => setShowCreateRoomModal(true)}
+                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <span>⚖️ न्यायाधीश (+50c)</span>
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>नया रूम बनाएं</span>
                     </button>
-
                     <button
-                      onClick={() => handleBotAction('we_bhai')}
-                      className="px-2.5 py-1 rounded-sm bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-[#388e3c] font-bold text-[11px] flex items-center space-x-1 cursor-pointer"
+                      onClick={() => setShowStageGameOverlay(!showStageGameOverlay)}
+                      className="bg-[#f5f8ff] hover:bg-blue-100 text-[#2874f0] border border-blue-200 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <span>🤝 वी भाई (+100c)</span>
+                      <Gamepad2 className="w-3.5 h-3.5" />
+                      <span>Stage Games</span>
                     </button>
-
                     <button
-                      onClick={() => handleBotAction('we_chat')}
-                      className="px-2.5 py-1 rounded-sm bg-pink-50 hover:bg-pink-100 border border-pink-300 text-pink-700 font-bold text-[11px] flex items-center space-x-1 cursor-pointer"
+                      onClick={() => setShowWerewolfModal(true)}
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
                     >
-                      <span>💬 वी चैट शायरी</span>
+                      🐺 भेड़िया गेम
                     </button>
-
                     <button
-                      onClick={() => handleBotAction('sharma_ji')}
-                      className="px-2.5 py-1 rounded-sm bg-[#ffe500] hover:bg-yellow-300 text-[#212121] border border-amber-400 font-bold text-[11px] flex items-center space-x-1 shadow-xs cursor-pointer"
+                      onClick={() => setShowSpyGameModal(true)}
+                      className="bg-emerald-50 hover:bg-emerald-100 text-[#388e3c] border border-emerald-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
                     >
-                      <span>👑 शर्मा जी (+200c)</span>
+                      🕵️ जासूस कौन?
+                    </button>
+                    <button
+                      onClick={() => setShowTimedChestModal(true)}
+                      className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                    >
+                      🎁 8 बॉक्सेज
+                    </button>
+                    <button
+                      onClick={() => setShowFortuneSpinModal(true)}
+                      className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                    >
+                      🎡 24H स्पिन
+                    </button>
+                    <button
+                      onClick={() => setShowLeaderboardModal(true)}
+                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trophy className="w-3.5 h-3.5 text-[#fb641b]" />
+                      <span>रैंकिंग</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={testSpeakerAndMic}
+                      disabled={isLoopbackTesting}
+                      className="px-2.5 py-1.5 rounded-sm text-[11px] font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer"
+                    >
+                      {isLoopbackTesting ? '🔊 टेस्टिंग...' : '🔊 माइक चेक'}
+                    </button>
+                    <button
+                      onClick={toggleFullScreen}
+                      className="px-2.5 py-1.5 rounded-sm text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#212121] border border-slate-300 cursor-pointer"
+                    >
+                      {isFullscreen ? 'नॉर्मल' : '⛶ फुल'}
                     </button>
                   </div>
                 </div>
 
-                {/* REAL MICROPHONE HARDWARE CONTROLS & LIVE VOICE STREAMING */}
-                <div className="mt-4 p-3.5 bg-[#f9fafb]/95 rounded-md border border-slate-200 flex flex-col gap-3 relative z-10 text-[#212121]">
-                  {/* Top Status & Controls Row */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200">
-                    <div className="flex items-center space-x-2">
-                      {micPermission !== 'granted' ? (
-                        <button
-                          onClick={enableMicrophone}
-                          className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs"
-                        >
-                          <Mic className="w-4 h-4 text-white" />
-                          <span>🎙️ माइक चालू करें (Enable Microphone)</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center space-x-2">
-                          <span className="flex items-center space-x-1 text-xs font-bold text-[#388e3c] bg-emerald-50 px-2.5 py-1 rounded-sm border border-emerald-200">
-                            <span className="w-2 h-2 rounded-full bg-[#388e3c] animate-pulse" />
-                            <span>माइक चालू है ({micLevel}%)</span>
-                          </span>
+                {loopbackNotice && (
+                  <div className="p-2 rounded-sm bg-amber-50 text-amber-800 border border-amber-300 text-xs text-center font-bold">
+                    {loopbackNotice}
+                  </div>
+                )}
 
-                          <button
-                            onClick={handleTogglePhysicalMute}
-                            className={`px-2.5 py-1 rounded-sm text-xs font-bold flex items-center space-x-1 border cursor-pointer ${
-                              isMicMuted
-                                ? 'bg-rose-50 text-rose-700 border-rose-300'
-                                : 'bg-white text-[#212121] border-slate-300 hover:bg-slate-50'
-                            }`}
-                          >
-                            {isMicMuted ? <MicOff className="w-3.5 h-3.5 text-rose-600" /> : <Mic className="w-3.5 h-3.5 text-[#388e3c]" />}
-                            <span>{isMicMuted ? 'Muted' : 'Mic On'}</span>
-                          </button>
-                        </div>
-                      )}
+                {showStageGameOverlay && (
+                  <div className="bg-[#f9fafb] p-3.5 rounded-md border border-slate-200 animate-fadeIn">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                      <span className="text-xs font-bold text-[#212121]">
+                        🎮 STAGE MINI-GAME BATTLE (स्टेज पर गेम खेलें)
+                      </span>
+                      <button
+                        onClick={() => setShowStageGameOverlay(false)}
+                        className="text-slate-500 hover:text-[#212121] cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-
-                    <div className="flex items-center flex-wrap gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5">
                       <button
-                        onClick={testSpeakerAndMic}
-                        disabled={isLoopbackTesting}
-                        className={`px-3 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer ${
-                          isLoopbackTesting
-                            ? 'bg-[#ffe500] text-[#212121] font-black'
-                            : 'bg-[#2874f0] hover:bg-[#1c62d6] text-white'
-                        }`}
-                        title="Check if you can hear your voice in device speaker"
+                        onClick={() => setShowSpyGameModal(true)}
+                        className="bg-[#2874f0] hover:bg-[#1c62d6] p-2 rounded-sm text-center text-xs font-bold text-white cursor-pointer"
                       >
-                        <Volume2 className="w-3.5 h-3.5" />
-                        <span>{isLoopbackTesting ? '🔊 आवाज़ आ रही है...' : '🔊 आवाज़ चेक करें'}</span>
+                        <div>🕵️ जासूस कौन?</div>
+                        <div className="text-[9px] text-blue-100">Who is the Spy</div>
                       </button>
-
                       <button
-                        onClick={() => setAutoPlayAudio(!autoPlayAudio)}
-                        className={`px-2.5 py-1.5 rounded-sm text-[11px] font-bold flex items-center space-x-1 border cursor-pointer ${
-                          autoPlayAudio
-                            ? 'bg-emerald-50 text-[#388e3c] border-emerald-300'
-                            : 'bg-white text-[#878787] border-slate-300'
-                        }`}
-                        title="Auto-play voice audio sent by others"
+                        onClick={() => handlePlayGame('Lucky Dice', 'seven')}
+                        disabled={isGameSpinning}
+                        className="bg-[#fb641b] hover:bg-[#e8550f] p-2 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
                       >
-                        {autoPlayAudio ? <Volume2 className="w-3 h-3 text-[#388e3c]" /> : <VolumeX className="w-3 h-3 text-slate-500" />}
-                        <span>{autoPlayAudio ? 'स्पीकर: चालू' : 'स्पीकर: बंद'}</span>
+                        <div>🎲 Lucky 7 Dice</div>
+                        <div className="text-[9px] text-orange-100">50 Coins • 5x Win</div>
                       </button>
-
                       <button
-                        onClick={() => setShowEffectTrayInline(!showEffectTrayInline)}
-                        className={`px-2.5 py-1.5 rounded-sm text-[11px] font-bold flex items-center space-x-1 border transition cursor-pointer ${
-                          showEffectTrayInline
-                            ? 'bg-[#2874f0] text-white border-[#2874f0]'
-                            : 'bg-white text-[#212121] border-slate-300 hover:bg-slate-50'
-                        }`}
-                        title="वॉइस इफ़ेक्ट पैनल खोलें / बदलें"
+                        onClick={() => handlePlayGame('Spin & Win')}
+                        disabled={isGameSpinning}
+                        className="bg-[#2874f0] hover:bg-[#1c62d6] p-2 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
                       >
-                        <Sparkles className="w-3 h-3 text-[#fb641b]" />
-                        <span>{VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.icon || '🎭'} {VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect)?.name}</span>
-                        <Sliders className="w-3 h-3 ml-0.5" />
+                        <div>🎡 Instant Spin</div>
+                        <div className="text-[9px] text-blue-100">50 Coins • Up to 10x</div>
+                      </button>
+                      <button
+                        onClick={() => handlePlayGame('Coin Flip', 'heads')}
+                        disabled={isGameSpinning}
+                        className="bg-[#388e3c] hover:bg-emerald-700 p-2 rounded-sm text-center text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
+                      >
+                        <div>🪙 Heads Flip</div>
+                        <div className="text-[9px] text-emerald-100">50 Coins • 2x Win</div>
                       </button>
                     </div>
                   </div>
+                )}
 
-                  {/* Real Physical Voice Level Bar & Walkie-Talkie Row */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
-                      <span className="text-[10px] text-[#878787] font-bold whitespace-nowrap">माइक लेवल:</span>
-                      <div className="flex-1 h-3 bg-slate-200 rounded-full border border-slate-300 overflow-hidden p-0.5 flex items-center">
-                        <div
-                          className={`h-full rounded-full transition-all duration-75 ${
-                            micLevel > 50
-                              ? 'bg-gradient-to-r from-[#388e3c] via-amber-500 to-rose-500'
-                              : micLevel > 15
-                              ? 'bg-[#388e3c]'
-                              : 'bg-slate-400'
-                          }`}
-                          style={{ width: `${Math.min(100, Math.max(4, micLevel))}%` }}
-                        />
-                      </div>
-                      <span className="text-[10px] font-mono tabular-nums text-[#2874f0] w-8 text-right font-bold">{micLevel}%</span>
-                    </div>
+                <VoiceRoomMediaStage
+                  isHost={activeRoomHostId === user.userId}
+                  onOpenSpyGame={() => setShowSpyGameModal(true)}
+                  onOpenWerewolfGame={() => setShowWerewolfModal(true)}
+                  onOpenDailySpin={() => setShowDailySpinModal(true)}
+                  onOpenStageGameOverlay={() => setShowStageGameOverlay(true)}
+                  onSoundboardEffect={playSoundEffect}
+                />
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onMouseDown={startWalkieTalkie}
-                        onMouseUp={stopWalkieTalkie}
-                        onTouchStart={startWalkieTalkie}
-                        onTouchEnd={stopWalkieTalkie}
-                        className={`px-4 py-2 rounded-sm font-bold text-xs flex items-center space-x-2 transition-all select-none shadow-xs cursor-pointer ${
-                          isRecordingVoice
-                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
-                            : 'bg-[#fb641b] hover:bg-[#e8550f] text-white'
-                        }`}
-                      >
-                        <Disc className={`w-4 h-4 ${isRecordingVoice ? 'text-white animate-spin' : 'text-[#ffe500]'}`} />
-                        <span>
-                          {isRecordingVoice
-                            ? `🔴 रिकॉर्ड हो रहा है (${recordDuration}s) - छोड़ते ही आवाज़ जाएगी`
-                            : '🎙️ दबाकर बोलें (Push to Talk & Broadcast)'}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {loopbackNotice && (
-                    <div className="p-2 rounded-sm bg-amber-50 text-amber-800 border border-amber-300 text-xs text-center font-bold animate-fadeIn">
-                      {loopbackNotice}
-                    </div>
-                  )}
-
-                  {/* Inline Voice Effect Drawer / Tray */}
-                  {showEffectTrayInline && (
-                    <div className="pt-2 border-t border-slate-200 animate-fadeIn">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold text-[#2874f0] flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-[#fb641b]" />
-                          <span>वॉइस इफ़ेक्ट चुनें (Select Voice Modifier):</span>
-                        </span>
-                        <button
-                          onClick={() => setShowEffectTrayInline(false)}
-                          className="text-[10px] text-[#878787] hover:text-[#212121] font-bold cursor-pointer"
-                        >
-                          ✕ छिपाएं
-                        </button>
-                      </div>
-                      <VoiceEffectSelector
-                        currentEffect={selectedVoiceEffect}
-                        onSelectEffect={(effect) => {
-                          setSelectedVoiceEffect(effect);
-                          try {
-                            localStorage.setItem('esp_voice_effect', effect);
-                          } catch {}
-                          const cfg = VOICE_EFFECTS.find(v => v.id === effect);
-                          setSoundEffectToast(`🎭 आवाज़ इफ़ेक्ट सेट: ${cfg?.icon} ${cfg?.name} (${cfg?.hindiName})`);
-                          setTimeout(() => setSoundEffectToast(null), 3000);
-                        }}
-                        isModal={false}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Voice Talk Preset Phrases */}
-                <div className="mt-3 relative z-10">
-                  <div className={`text-[10px] font-bold mb-1.5 flex items-center space-x-1 ${isDarkStageBg ? 'text-slate-200' : 'text-[#878787]'}`}>
-                    <Volume1 className="w-3 h-3 text-[#2874f0]" />
-                    <span>QUICK VOICE TALK PHRASES (एक क्लिक में बात करें):</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PRESET_TALK_PHRASES.map((phrase, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSendQuickPhrase(phrase)}
-                        className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-blue-50 text-[#212121] border border-slate-300 text-[10px] font-semibold transition cursor-pointer"
-                      >
-                        {phrase}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Soundboard Bar */}
-                <div className={`mt-3 pt-3 border-t flex flex-wrap items-center justify-between gap-2 relative z-10 ${isDarkStageBg ? 'border-white/20' : 'border-slate-200'}`}>
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center space-x-1.5">
-                    <span className={`text-[10px] font-bold ${isDarkStageBg ? 'text-slate-200' : 'text-[#878787]'}`}>Soundboard:</span>
+                    <span className="text-[10px] font-bold text-[#878787]">Soundboard:</span>
                     <button onClick={() => playSoundEffect('👏', 'Applause')} className="p-1.5 bg-[#f1f3f6] hover:bg-blue-50 rounded-sm text-sm border border-slate-300 cursor-pointer" title="Clap">👏</button>
                     <button onClick={() => playSoundEffect('🥂', 'Cheers')} className="p-1.5 bg-[#f1f3f6] hover:bg-blue-50 rounded-sm text-sm border border-slate-300 cursor-pointer" title="Cheers">🥂</button>
                     <button onClick={() => playSoundEffect('🎺', 'Fanfare')} className="p-1.5 bg-[#f1f3f6] hover:bg-blue-50 rounded-sm text-sm border border-slate-300 cursor-pointer" title="Trumpet">🎺</button>
                     <button onClick={() => playSoundEffect('😂', 'Laugh')} className="p-1.5 bg-[#f1f3f6] hover:bg-blue-50 rounded-sm text-sm border border-slate-300 cursor-pointer" title="Laugh">😂</button>
                     <button onClick={() => playSoundEffect('🏆', 'Victory')} className="p-1.5 bg-[#f1f3f6] hover:bg-blue-50 rounded-sm text-sm border border-slate-300 cursor-pointer" title="Trophy">🏆</button>
                   </div>
-                </div>
-
-                {soundEffectToast && (
-                  <div className="absolute top-4 right-4 bg-[#2874f0] text-white font-bold text-xs px-3 py-1.5 rounded-sm shadow-lg animate-bounce z-30">
-                    {soundEffectToast}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setDesignModalState({ isOpen: true, tab: 'invite' })}
+                      className="px-2.5 py-1 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      <span>इनवाइट फ्रेंड्स</span>
+                    </button>
+                    {(activeRoomHostId === user.userId || user.userId === 'EMO-MOM-MMO') && (
+                      <button
+                        onClick={() => setDesignModalState({ isOpen: true, tab: 'design' })}
+                        className="px-2.5 py-1 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <ImageIcon className="w-3 h-3" />
+                        <span>कस्टम वॉलपेपर व सेटअप</span>
+                      </button>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
@@ -2776,17 +2456,22 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             {/* WEPLAY HOME LOBBY (100% MATCHING USER SCREENSHOT) */}
             <WePlayHomeLobby
               user={user}
+              onUpdateUser={onUpdateUser}
               onOpenRanking={() => setShowLeaderboardModal(true)}
               onOpenTasks={() => setShowDailyTasksModal(true)}
               onOpenFriends={() => setShowEspChatModal(true)}
               onOpenVoiceRoom={() => setActiveTab('voice_room')}
               onOpenGame={(gameKey) => setActiveInteractiveGame(gameKey)}
-              onOpenWeeklyRewards={() => setShowWeeklyRewardsModal(true)}
+              onOpenWeeklyRewards={() => setShowDailyTasksModal(true)}
               onOpenRecharge={() => setActiveTab('recharge_convert')}
-              onOpenProfile={() => setShowAvatarCustomizerModal(true)}
+              onOpenProfile={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
               onOpenChats={() => setShowEspChatModal(true)}
               onOpenAvatarCustomizer={() => setShowAvatarCustomizerModal(true)}
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+              onOpenDailySpin={() => setShowFortuneSpinModal(true)}
+              onOpenGiftCards={() => setShowDigitalGiftCardsModal(true)}
+              onOpenEarningSetup={onOpenEarningSetup}
+              onOpenServicesSetup={onOpenServicesSetup}
               onOpenClans={() => {
                 setActiveTab('clan_friends');
                 setShowTopClansModal(true);
@@ -2894,7 +2579,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             {selectedGame === 'snake' && (
               <SnakeRushGame
                 user={user}
-                onCoinsUpdated={(newCoins: number) => onUpdateUser({ ...user, coins: newCoins })}
+                onCoinsUpdated={(newCoins: number) => {
+                  const latest = api.getStoredUser();
+                  const merged =
+                    latest && latest.userId === user.userId
+                      ? { ...latest, coins: newCoins }
+                      : { ...user, coins: newCoins };
+                  onUpdateUser(merged);
+                }}
+                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
               />
             )}
 
@@ -2902,7 +2595,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             {selectedGame === 'bingo' && (
               <BingoGame
                 user={user}
-                onCoinsUpdated={(newCoins: number) => onUpdateUser({ ...user, coins: newCoins })}
+                onCoinsUpdated={(newCoins: number) => {
+                  const latest = api.getStoredUser();
+                  const merged =
+                    latest && latest.userId === user.userId
+                      ? { ...latest, coins: newCoins }
+                      : { ...user, coins: newCoins };
+                  onUpdateUser(merged);
+                }}
+                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
               />
             )}
 
@@ -2910,7 +2611,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             {selectedGame === 'cards' && (
               <OhMyCardGame
                 user={user}
-                onCoinsUpdated={(newCoins: number) => onUpdateUser({ ...user, coins: newCoins })}
+                onCoinsUpdated={(newCoins: number) => {
+                  const latest = api.getStoredUser();
+                  const merged =
+                    latest && latest.userId === user.userId
+                      ? { ...latest, coins: newCoins }
+                      : { ...user, coins: newCoins };
+                  onUpdateUser(merged);
+                }}
+                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
               />
             )}
 
@@ -2919,6 +2628,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               <DailyLuckySpin
                 user={user}
                 onUpdateUser={onUpdateUser}
+                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
               />
             )}
 
@@ -3082,21 +2792,40 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 </div>
 
                 {/* Main Play Action Button */}
-                <button
-                  onClick={() => handlePlayGame()}
-                  disabled={isGameSpinning}
-                  className="mt-5 bg-[#fb641b] hover:bg-[#e8550f] text-white py-3 px-8 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 disabled:opacity-50 cursor-pointer shadow-sm"
-                >
-                  <Zap className="w-4 h-4" />
-                  <span>{isGameSpinning ? 'Playing...' : `PLAY FOR ${betAmount} COINS 🚀`}</span>
-                </button>
+                {(user.coins || 0) >= betAmount ? (
+                  <button
+                    onClick={() => handlePlayGame()}
+                    disabled={isGameSpinning}
+                    className="mt-5 bg-[#fb641b] hover:bg-[#e8550f] text-white py-3 px-8 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 disabled:opacity-50 cursor-pointer shadow-sm"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span>{isGameSpinning ? 'Playing...' : `PLAY FOR ${betAmount} COINS 🚀`}</span>
+                  </button>
+                ) : (
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      onClick={() => setActiveTab('recharge_convert')}
+                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white py-3 px-6 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 cursor-pointer shadow-sm"
+                    >
+                      <Coins className="w-4 h-4" />
+                      <span>🪙 Buy Coins ({betAmount} Coins चाहिए)</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('rewards_tasks')}
+                      className="bg-[#2874f0] hover:bg-[#1c62d6] text-white py-3 px-5 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 cursor-pointer shadow-sm"
+                    >
+                      <Trophy className="w-4 h-4" />
+                      <span>टास्क पूरे करें (+5 🪙)</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* TAB 3: RECHARGE COINS & CONVERT TO REAL CASH                   */}
+        {/* TAB 3: REAL UPI COINS RECHARGE & COINS USAGE POLICY            */}
         {/* ============================================================== */}
         {activeTab === 'recharge_convert' && (
           <div className="space-y-6 animate-fadeIn w-full max-w-4xl mx-auto">
@@ -3131,7 +2860,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   {/* Pack Selector */}
                   <label className="text-xs font-bold text-[#212121] block mb-1.5">1. कॉइन पैक चुनें:</label>
                   <div className="grid grid-cols-3 gap-2">
-                    {RECHARGE_PACKS.map(pack => (
+                    {COIN_RECHARGE_PACKS.map(pack => (
                       <button
                         key={pack.id}
                         onClick={() => setSelectedPack(pack)}
@@ -3143,7 +2872,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                       >
                         <div className="flex items-center justify-between text-[9px] font-bold text-[#fb641b]">
                           <span>{pack.tag}</span>
-                          <span>+{pack.bonus}</span>
+                          {pack.bonus > 0 && <span>+{pack.bonus}</span>}
                         </div>
                         <div className="text-sm font-black text-[#212121] mt-0.5 tabular-nums">
                           🪙 {(pack.coins + pack.bonus).toLocaleString()}
@@ -3229,6 +2958,70 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                       className="w-full bg-white border border-slate-300 rounded-sm px-3 py-2.5 text-[#212121] font-mono font-bold text-center tracking-widest text-sm focus:outline-none focus:border-[#2874f0]"
                     />
                   </div>
+
+                  {/* Step 3: Payment Screenshot Upload (Required) */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-[#212121]">
+                        3. पेमेंट स्क्रीनशॉट अपलोड करें (Payment Screenshot):
+                      </label>
+                      <span className={`text-[10px] font-bold ${rechargeScreenshot ? 'text-[#388e3c]' : 'text-[#fb641b]'}`}>
+                        {rechargeScreenshot ? '✓ अपलोड हो गया' : 'अनिवार्य *'}
+                      </span>
+                    </div>
+
+                    {rechargeScreenshot ? (
+                      <div className="bg-[#f9fafb] border border-emerald-300 rounded-md p-2.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={rechargeScreenshot}
+                            alt="Payment Screenshot Preview"
+                            onClick={() => setPreviewRechargeShot(rechargeScreenshot)}
+                            className="w-16 h-16 rounded-sm object-cover border border-slate-300 bg-white cursor-pointer shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-[#388e3c]">पेमेंट स्क्रीनशॉट संलग्न ✓</p>
+                            <p className="text-[10px] text-slate-600 truncate">एडमिन सत्यापन के लिए तैयार (बड़ा देखने के लिए क्लिक करें)</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <label className="px-2.5 py-1.5 rounded-sm bg-white hover:bg-slate-100 border border-slate-300 text-[11px] font-bold text-[#2874f0] cursor-pointer">
+                            बदलें
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleRechargeScreenshotUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setRechargeScreenshot('')}
+                            className="p-1.5 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
+                            title="हटाएं"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-slate-300 hover:border-[#2874f0] bg-[#f9fafb] hover:bg-[#f5f8ff] rounded-md p-4 text-center cursor-pointer transition">
+                        <Upload className="w-5 h-5 text-[#2874f0]" />
+                        <span className="text-xs font-bold text-[#212121]">
+                          पेमेंट स्क्रीनशॉट चुनें (PhonePe / GPay / Paytm)
+                        </span>
+                        <span className="text-[10px] text-[#878787]">
+                          JPG, PNG या WEBP • अधिकतम 8MB (UTR + स्क्रीनशॉट दोनों आवश्यक)
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleRechargeScreenshotUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-200">
@@ -3237,79 +3030,69 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                     disabled={isRecharging}
                     className="w-full bg-[#fb641b] hover:bg-[#e8550f] py-3 rounded-sm font-bold text-xs sm:text-sm text-white disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm cursor-pointer transition"
                   >
-                    <span>{isRecharging ? 'सत्यापन अनुरोध भेजा जा रहा है...' : `₹${selectedPack.amount} का UTR सबमिट करें (+${selectedPack.coins + selectedPack.bonus} कॉइन्स)`}</span>
+                    <span>
+                      {isRecharging
+                        ? 'सत्यापन अनुरोध भेजा जा रहा है...'
+                        : `₹${selectedPack.amount} का UTR व स्क्रीनशॉट सबमिट करें (+${selectedPack.coins + selectedPack.bonus} कॉइन्स)`}
+                    </span>
                   </button>
                   <p className="text-[10px] text-center text-[#878787] mt-2">
-                    🔒 एडमिन द्वारा बैंक खाते में UTR सत्यापन के बाद सिक्के आपके प्रोफाइल में क्रेडिट होंगे।
+                    🔒 एडमिन पैनल में UTR व पेमेंट स्क्रीनशॉट सत्यापन के बाद सिक्के आपके प्रोफाइल में क्रेडिट होंगे।
                   </p>
                 </div>
               </div>
 
-              {/* Right Box: Convert Coins to Real Cash (₹) */}
+              {/* Right Box: Coins Usage Policy (No Cash Conversion) */}
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between text-[#212121]">
                 <div>
                   <div className="flex items-center space-x-2 mb-2">
-                    <span className="text-2xl">🔄</span>
+                    <span className="text-2xl">🪙</span>
                     <div>
                       <h3 className="font-bold text-sm sm:text-base text-[#212121]">
-                        Coins Convert to Real Cash (नकद निकासी)
+                        ESP Coins Wallet &amp; Usage Rules
                       </h3>
-                      <p className="text-[11px] text-[#388e3c] font-semibold">
-                        एक्सचेंज रेट: 100 Coins = ₹10 Withdrawable INR Cash
+                      <p className="text-[11px] text-[#2874f0] font-semibold">
+                        असली कॉइन्स केवल प्लेटफॉर्म फीचर्स, VIP व फ्रेम्स के लिए हैं
                       </p>
                     </div>
                   </div>
 
-                  {convertStatusMessage && (
-                    <div className="mb-3 p-2.5 rounded-md bg-emerald-50 text-[#388e3c] border border-emerald-200 text-xs font-bold text-center">
-                      {convertStatusMessage}
-                    </div>
-                  )}
-
                   <div className="bg-[#f9fafb] p-4 rounded-md border border-slate-200 mt-3 text-center">
-                    <div className="text-xs text-[#878787] font-medium">उपलब्ध रिडीमेबल कॉइन्स:</div>
+                    <div className="text-xs text-[#878787] font-medium">आपका वर्तमान कॉइन बैलेंस:</div>
                     <div className="text-2xl font-black text-[#fb641b] mt-1 tabular-nums">
                       🪙 {(user.coins || 0).toLocaleString()} Coins
                     </div>
-
-                    <div className="mt-4">
-                      <label className="text-xs text-[#212121] block mb-1 font-semibold">
-                        कैश में बदलने हेतु कॉइन्स दर्ज करें:
-                      </label>
-                      <input
-                        type="number"
-                        step={50}
-                        min={100}
-                        max={user.coins || 5000}
-                        value={convertCoinsInput}
-                        onChange={e => setConvertCoinsInput(Math.max(100, Number(e.target.value)))}
-                        className="w-full bg-white border border-slate-300 rounded-sm px-3 py-2 text-[#212121] font-mono text-center font-bold text-lg focus:outline-none focus:border-[#2874f0]"
-                      />
+                    <div className="text-[11px] text-slate-600 mt-2">
+                      असली कार्य/टास्क पूरे करके <strong>+5 Coins &amp; EXP</strong> पाएं या बाईं ओर से UPI पेमेंट द्वारा कॉइन्स खरीदें।
                     </div>
+                  </div>
 
-                    <div className="mt-3 p-3 bg-emerald-50 rounded-md border border-emerald-200 flex items-center justify-between text-xs">
-                      <span className="text-[#212121] font-medium">वॉलेट में प्राप्त होने वाली राशि:</span>
-                      <strong className="text-[#388e3c] text-base font-black tabular-nums">
-                        ₹{Math.floor(convertCoinsInput / 10)}
-                      </strong>
+                  <div className="mt-4 space-y-2 text-xs">
+                    <div className="p-2.5 rounded-sm bg-[#f5f8ff] border border-blue-100 flex items-center justify-between">
+                      <span className="font-semibold text-[#212121]">👑 VIP मेंबरशिप &amp; प्रीमियम फ्रेम्स</span>
+                      <span className="text-[#2874f0] font-bold">Coins से अनलॉक</span>
+                    </div>
+                    <div className="p-2.5 rounded-sm bg-[#f5f8ff] border border-blue-100 flex items-center justify-between">
+                      <span className="font-semibold text-[#212121]">🎁 वॉइस स्टेज गिफ्ट्स &amp; डिजिटल कार्ड</span>
+                      <span className="text-[#fb641b] font-bold">Coins से भेजें</span>
+                    </div>
+                    <div className="p-2.5 rounded-sm bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                      <span className="font-semibold text-[#212121]">💵 असली नकद निकासी (INR)</span>
+                      <span className="text-[#388e3c] font-bold">केवल प्लान/रेफरल वॉलेट से</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-200 space-y-2">
-                  <button
-                    onClick={handleConvertCoins}
-                    className="w-full bg-[#388e3c] hover:bg-emerald-700 py-3 rounded-sm font-bold text-xs sm:text-sm text-white cursor-pointer shadow-sm transition"
-                  >
-                    CONVERT {convertCoinsInput} COINS TO ₹{Math.floor(convertCoinsInput / 10)} CASH
-                  </button>
-
+                  <div className="text-[11px] text-[#878787] bg-amber-50 border border-amber-200 rounded-sm p-2.5 font-medium">
+                    ℹ️ Coins को INR Cash में बदलने का विकल्प बंद है। असली INR नकद कमाई (Referral, NWI Auto-Pool, SWI) के लिए Dashboard Withdrawal का उपयोग करें।
+                  </div>
                   {onOpenWithdrawal && (
                     <button
                       onClick={onOpenWithdrawal}
-                      className="w-full py-2 text-xs font-bold text-[#2874f0] hover:underline text-center cursor-pointer"
+                      className="w-full py-2.5 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-xs font-bold text-white text-center cursor-pointer transition shadow-xs"
                     >
-                      Go to Direct UPI Withdrawal Dashboard ➔
+                      Go to Direct UPI Cash Wallet Dashboard ➔
                     </button>
                   )}
                 </div>
@@ -3345,6 +3128,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                         <th className="py-2.5 px-3">राशि</th>
                         <th className="py-2.5 px-3">कॉइन्स</th>
                         <th className="py-2.5 px-3">12-अंक UTR</th>
+                        <th className="py-2.5 px-3">स्क्रीनशॉट</th>
                         <th className="py-2.5 px-3 text-right">स्थिति</th>
                       </tr>
                     </thead>
@@ -3365,6 +3149,20 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[#212121] select-all">
                             {item.paymentUtr}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {item.paymentScreenshot ? (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewRechargeShot(item.paymentScreenshot!)}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm bg-[#f5f8ff] hover:bg-blue-100 border border-blue-200 text-[#2874f0] font-bold text-[10px] cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>देखें</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">-</span>
+                            )}
                           </td>
                           <td className="py-2.5 px-3 text-right">
                             <span
@@ -3389,6 +3187,34 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 </div>
               )}
             </div>
+
+            {previewRechargeShot && (
+              <div
+                onClick={() => setPreviewRechargeShot(null)}
+                className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4"
+              >
+                <div
+                  onClick={e => e.stopPropagation()}
+                  className="bg-white rounded-lg p-4 max-w-lg w-full shadow-2xl space-y-3 border border-slate-200"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="text-sm font-bold text-[#212121]">पेमेंट स्क्रीनशॉट प्रीव्यू</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewRechargeShot(null)}
+                      className="p-1 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <img
+                    src={previewRechargeShot}
+                    alt="Payment Screenshot"
+                    className="w-full max-h-[70vh] object-contain rounded-sm border border-slate-200 bg-[#f9fafb]"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3407,7 +3233,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Clan / Family Profile */}
+              {/* Clan / Family Profile (Real User Clan State) */}
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm text-[#212121]">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div className="flex items-center space-x-3">
@@ -3416,35 +3242,39 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                     </div>
                     <div>
                       <h3 className="font-bold text-sm text-[#212121]">
-                        {user.clanName || 'Royal Warriors ESP'}
+                        {user.clanName || 'कोई क्लैन नहीं जुड़ा (No Clan Joined)'}
                       </h3>
                       <p className="text-[11px] text-[#2874f0] font-medium">
-                        Family Clan • Level 12 • Power: 85,400
+                        {user.clanName ? `Active Family Member • Level ${user.gameLevel || 1}` : 'ऊपर दी गई रियल क्लैन तालिका से जुड़ें'}
                       </p>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-sm bg-[#ffe500] text-[#212121] text-[10px] font-bold">
-                    {user.clanRole || 'Elder Member'}
+                    {user.clanRole || (user.clanName ? 'Member' : 'Free Agent')}
                   </span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
                   <div className="bg-[#f9fafb] p-2.5 rounded-md border border-slate-200">
-                    <div className="text-[10px] text-[#878787]">Clan Members</div>
-                    <div className="text-sm font-black text-[#212121] mt-0.5 tabular-nums">48 / 50 Active</div>
+                    <div className="text-[10px] text-[#878787]">आपका रैंक</div>
+                    <div className="text-sm font-black text-[#212121] mt-0.5 tabular-nums">
+                      Lvl {user.gameLevel || 1} ({user.gameXp || 0} EXP)
+                    </div>
                   </div>
                   <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200">
-                    <div className="text-[10px] text-[#878787]">Weekly Dividend</div>
-                    <div className="text-sm font-black text-[#fb641b] mt-0.5 tabular-nums">+15% Coins Boost</div>
+                    <div className="text-[10px] text-[#878787]">कुल कॉइन्स व चार्म्स</div>
+                    <div className="text-sm font-black text-[#fb641b] mt-0.5 tabular-nums">
+                      🪙 {(user.coins || 0).toLocaleString()} • ✨ {user.charms || 0}
+                    </div>
                   </div>
                 </div>
 
                 <div className="mt-4 bg-[#f5f8ff] p-3 rounded-md border border-blue-200 text-xs text-[#212121]">
-                  <div className="font-bold text-[#2874f0] mb-1">Clan Perks & Privileges:</div>
+                  <div className="font-bold text-[#2874f0] mb-1">रियल क्लैन और गेमिंग नियम:</div>
                   <ul className="space-y-1 text-[11px] list-disc list-inside text-[#878787]">
-                    <li>Special Royal Mic Seat Ring in Voice Stage</li>
-                    <li>Exclusive 10% discount on Luxury Gift shop</li>
-                    <li>Daily Clan Chest claimable every 24 hours</li>
+                    <li>सभी क्लैन स्कोर पंजीकृत सदस्यों के असली गेम लेवल और चार्म्स से जुड़ते हैं।</li>
+                    <li>नए सदस्य 0 कॉइन्स से शुरू करते हैं और असली टास्क पूरा करके +5 कॉइन्स + EXP कमाते हैं।</li>
+                    <li>VIP व प्रीमियम अवतार फ्रेम खरीदने के लिए कॉइन्स बैलेंस आवश्यक है।</li>
                   </ul>
                 </div>
               </div>
@@ -3452,14 +3282,23 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               {/* Friends System */}
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between text-[#212121]">
                 <div>
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 gap-2">
                     <div className="flex items-center space-x-2">
                       <Users className="w-4 h-4 text-[#2874f0]" />
                       <h3 className="font-bold text-sm text-[#212121]">ESP Gaming Friends</h3>
                     </div>
-                    <span className="text-[10px] text-[#388e3c] font-bold">
-                      {realPlayers.length > 0 ? `${realPlayers.length} Registered` : 'Live Online'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'search')}
+                        className="bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 px-2.5 py-1 rounded-sm text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+                      >
+                        <span>🔍 Search @Username</span>
+                      </button>
+                      <span className="text-[10px] text-[#388e3c] font-bold">
+                        {realPlayers.length > 0 ? `${realPlayers.length} Registered` : 'Live Online'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 space-y-2">
@@ -3467,7 +3306,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                       <div className="bg-[#f9fafb] p-4 rounded-md border border-slate-200 text-center text-xs text-[#878787]">
                         <p className="font-bold text-[#212121] mb-1">🤝 अभी कोई अन्य टीम मेंबर पंजीकृत नहीं है</p>
                         <p className="text-[11px] text-[#878787]">
-                          नीचे दिए गए बटन से अपने दोस्तों और डाउनलाइन को WhatsApp पर आमंत्रित करें। प्रत्येक सफल जॉइनिंग पर तुरंत 500 Coins + कमीशन प्राप्त करें!
+                          नीचे दिए गए बटन से अपने दोस्तों को रेफरल लिंक से आमंत्रित करें। सक्रिय प्लान नियमों के अनुसार रियल रेफरल कमीशन प्राप्त करें।
                         </p>
                       </div>
                     ) : (
@@ -3476,15 +3315,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                         .sort((a, b) => (b.gameLevel || 1) - (a.gameLevel || 1) || (b.charms || 0) - (a.charms || 0))
                         .slice(0, 15)
                         .map((f, idx) => {
-                          const isSharmaJi = f.userId === 'SHARMA-JI-VIP' || (f.gameLevel || 0) >= 90;
                           return (
                             <div
                               key={f.userId || idx}
-                              className={`p-2.5 rounded-md border flex items-center justify-between transition cursor-pointer ${
-                                isSharmaJi
-                                  ? 'bg-amber-50 border-amber-400 shadow-xs'
-                                  : 'bg-[#f9fafb] hover:bg-[#f5f8ff] border-slate-200'
-                              }`}
+                              className="p-2.5 rounded-md border flex items-center justify-between transition cursor-pointer bg-[#f9fafb] hover:bg-[#f5f8ff] border-slate-200"
                               onClick={() => handleOpenPlayerModal(f.userId, f)}
                             >
                               <div className="flex items-center space-x-2.5">
@@ -3492,20 +3326,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                                   src={f.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${f.userId}`}
                                   alt={f.fullName}
                                   size="sm"
-                                  frameType={isSharmaJi ? 'royal-dragon-crown' : 'vip-gold'}
+                                  frameType={(f.frameType as FrameVariant) || 'standard'}
                                   level={f.gameLevel || 1}
-                                  showCrown={isSharmaJi}
+                                  showCrown={f.vipTier === 'diamond' || f.frameType === 'mythic-crimson'}
                                 />
                                 <div>
                                   <div className="font-bold text-xs flex items-center space-x-1.5">
-                                    <span className={isSharmaJi ? 'text-[#fb641b] font-black' : 'text-[#212121]'}>
+                                    <span className="text-[#212121]">
                                       {f.fullName}
                                     </span>
-                                    {isSharmaJi && (
-                                      <span className="text-[8px] px-1.5 py-0.5 rounded-sm bg-[#ffe500] text-[#212121] font-black">
-                                        CROWN 👑
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="text-[9px] flex items-center space-x-1">
                                     <span className="text-[#fb641b] font-mono font-bold tabular-nums">✨ {(f.charms || 0).toLocaleString()} Charms</span>
@@ -3526,8 +3355,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                               </button>
                               <button
                                 onClick={() => {
-                                  setShowGiftModal(true);
                                   setGiftTarget(f.fullName);
+                                  setGiftTargetUserId(f.userId);
+                                  setShowGiftModal(true);
                                 }}
                                 className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 py-1 text-[10px] font-bold rounded-sm flex items-center space-x-1 cursor-pointer"
                               >
@@ -3545,7 +3375,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <div className="mt-4 pt-3 border-t border-slate-200">
                   <button
                     onClick={() => {
-                      const text = `Add me on ESP GAMING TIME! My Room ID is ${user.roomAddress || `ESP-ROOM-${user.userId}`}: ${window.location.origin}/?ref=${user.userId}`;
+                      const text = `Join ESP GAMING TIME! My Fixed Voice Room ID is ${cleanUserRoomFallback}: ${window.location.origin}/?room=${cleanUserRoomFallback}&ref=${user.userId}`;
                       navigator.clipboard.writeText(text);
                       setSoundEffectToast('📋 इनविटेशन लिंक कॉपी हो गया!');
                       setTimeout(() => setSoundEffectToast(null), 2500);
@@ -3553,7 +3383,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                     className="w-full bg-[#388e3c] hover:bg-emerald-700 text-white py-2.5 rounded-sm font-bold text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    <span>Invite Friends on WhatsApp (+500 Coins)</span>
+                    <span>दोस्तों को रेफरल लिंक शेयर करें</span>
                   </button>
                 </div>
               </div>
@@ -3562,143 +3392,26 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 5: 7-DAY LOGIN REWARDS & DAILY TASKS                       */}
+        {/* TAB 5: REAL VERIFIED TASKS (+5 COINS + EXP ONLY AFTER WORK)     */}
         {/* ============================================================== */}
         {activeTab === 'rewards_tasks' && (
           <div className="space-y-4 animate-fadeIn">
-            {/* Daily Lucky Spin Hero Banner */}
-            <div className="bg-[#f5f8ff] rounded-xl p-5 border border-blue-200 shadow-xs flex flex-wrap items-center justify-between gap-4 text-[#212121]">
-              <div className="flex items-center space-x-3.5">
-                <div className="w-14 h-14 rounded-md bg-[#ffe500] flex items-center justify-center text-3xl shadow-xs border border-amber-300">
-                  🎰
-                </div>
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h3 className="font-bold text-base sm:text-lg text-[#212121]">
-                      डेली लकी स्पिन (24H Daily Lucky Spin)
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-sm bg-[#2874f0] text-white text-[10px] font-bold">
-                      50 Coins
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#878787] mt-0.5">
-                    हर 24 घंटे में 50 कॉइन्स खर्च करें और जीतें 500 कॉइन्स, 50 चार्म्स या 250 एक्सपी तक का जैकपॉट!
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setShowDailySpinModal(true)}
-                  className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-5 py-2.5 rounded-sm font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                >
-                  <RotateCw className="w-4 h-4" />
-                  <span>अभी स्पिन करें ➔</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 7-Day Login Calendar */}
-            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm text-[#212121]">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
-                <div className="flex items-center space-x-2">
-                  <Calendar className="w-4 h-4 text-[#2874f0]" />
-                  <h3 className="font-bold text-sm text-[#212121]">
-                    7-Day Login Streak Reward Calendar
-                  </h3>
-                </div>
-                <div className="text-xs font-bold text-[#fb641b]">
-                  Current Streak: {user.loginStreak || 1} Days 🔥
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                {[
-                  { day: 1, coins: 50, icon: '🪙' },
-                  { day: 2, coins: 100, icon: '🪙' },
-                  { day: 3, coins: 150, icon: '⚡' },
-                  { day: 4, coins: 200, icon: '🪙' },
-                  { day: 5, coins: 350, icon: '💎' },
-                  { day: 6, coins: 500, icon: '👑' },
-                  { day: 7, coins: 1000, icon: '🎁', isMega: true },
-                ].map(r => {
-                  const isClaimed = (user.claimedDays || []).includes(r.day);
-                  const isCurrent = (user.loginStreak || 1) >= r.day && !isClaimed;
-
-                  return (
-                    <div
-                      key={r.day}
-                      className={`p-3 rounded-md border text-center flex flex-col items-center justify-between transition ${
-                        isClaimed
-                          ? 'bg-emerald-50 border-emerald-300 text-[#388e3c]'
-                          : isCurrent
-                          ? 'bg-amber-50 border-[#fb641b] text-[#212121] shadow-xs ring-1 ring-amber-300'
-                          : 'bg-[#f9fafb] border-slate-200 text-[#878787]'
-                      }`}
-                    >
-                      <div className="text-[10px] font-bold">Day {r.day}</div>
-                      <div className="text-2xl my-1">{r.icon}</div>
-                      <div className="text-xs font-black tabular-nums text-[#212121]">+{r.coins} Coins</div>
-
-                      {isClaimed ? (
-                        <span className="mt-2 text-[9px] font-bold text-[#388e3c] flex items-center space-x-0.5">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Claimed</span>
-                        </span>
-                      ) : isCurrent ? (
-                        <button
-                          onClick={() => handleClaimLoginReward(r.day)}
-                          className="mt-2 bg-[#fb641b] hover:bg-[#e8550f] text-white py-1 px-2.5 rounded-sm text-[9px] font-bold cursor-pointer"
-                        >
-                          CLAIM NOW
-                        </button>
-                      ) : (
-                        <span className="mt-2 text-[9px] text-slate-500">Locked</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Daily Tasks List */}
-            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm text-[#212121]">
-              <h3 className="font-bold text-sm text-[#212121] mb-3 flex items-center space-x-2">
-                <Trophy className="w-4 h-4 text-[#fb641b]" />
-                <span>Daily Coins Tasks (टास्क पूरा करें और सिक्के कमाएं)</span>
-              </h3>
-
-              <div className="space-y-2">
-                {[
-                  { title: 'Listen in Voice Room for 5 minutes', reward: '+50 Coins', done: true },
-                  { title: 'Play 3 Coin Games (Spin, Dice, Coin Flip)', reward: '+100 Coins', done: true },
-                  { title: 'Send 1 Luxury Gift to Host or Friends', reward: '+150 Coins', done: false },
-                  { title: 'Invite 1 Friend to ESP GAMING TIME', reward: '+500 Coins & ₹50 Cash', done: false },
-                ].map((task, idx) => (
-                  <div key={idx} className="bg-[#f9fafb] p-3 rounded-md border border-slate-200 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-bold text-[#212121]">{task.title}</div>
-                      <div className="text-[#fb641b] text-[10px] font-bold mt-0.5">{task.reward}</div>
-                    </div>
-                    {task.done ? (
-                      <span className="px-2.5 py-1 rounded-sm bg-emerald-50 text-[#388e3c] border border-emerald-200 text-[10px] font-bold flex items-center space-x-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Completed</span>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          showToast('टास्क सक्रिय! कार्य पूरा करने के बाद रिवॉर्ड अपने आप जुड़ जाएगा।', 'info');
-                        }}
-                        className="bg-[#2874f0] hover:bg-[#1c62d6] px-3 py-1 rounded-sm text-[10px] font-bold text-white cursor-pointer"
-                      >
-                        Start Task
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <DailyTasks
+              user={user}
+              onUpdateUser={onUpdateUser}
+              onNavigateToGames={() => setActiveTab('games')}
+              onNavigateToVoiceRoom={() => setActiveTab('voice_room')}
+              onNavigateTab={(actionTab) => {
+                if (actionTab === 'profile') {
+                  setShowAvatarCustomizerModal(true);
+                } else if (actionTab === 'voice_room' || actionTab === 'voice-room') {
+                  setActiveTab('voice_room');
+                } else {
+                  setActiveTab('games');
+                }
+              }}
+              onOpenBuyCoins={() => setActiveTab('recharge_convert')}
+            />
           </div>
         )}
       </div>
@@ -3740,15 +3453,16 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 </div>
                 <div className="bg-[#f9fafb] p-2.5 rounded-sm border border-slate-200">
                   <div className="text-[10px] text-[#878787] font-bold">Charms</div>
-                  <div className="font-black text-pink-600">{selectedSeatAction.charms || 150} ✨</div>
+                  <div className="font-black text-pink-600">{selectedSeatAction.charms || 0} ✨</div>
                 </div>
               </div>
 
               <div className="mt-5 space-y-2">
                 <button
                   onClick={() => {
-                    setShowGiftModal(true);
                     setGiftTarget(selectedSeatAction.userName || 'Member');
+                    setGiftTargetUserId(selectedSeatAction.userId);
+                    setShowGiftModal(true);
                     setSelectedSeatAction(null);
                   }}
                   className="w-full bg-[#fb641b] hover:bg-[#e8550f] py-2.5 rounded-sm font-black text-xs text-white flex items-center justify-center space-x-1.5 shadow-sm transition cursor-pointer"
@@ -3955,7 +3669,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <input
                   type="text"
                   value={giftTarget}
-                  onChange={e => setGiftTarget(e.target.value)}
+                  onChange={e => {
+                    setGiftTarget(e.target.value);
+                    setGiftTargetUserId(undefined);
+                  }}
                   className="w-full bg-white border border-slate-300 focus:border-[#2874f0] rounded-sm px-3 py-2 text-xs text-[#212121] outline-none"
                 />
               </div>
@@ -3989,43 +3706,154 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleSendGift()}
-                  className="bg-[#fb641b] hover:bg-[#e8550f] py-2.5 px-6 rounded-sm font-black text-xs text-white shadow-sm transition cursor-pointer"
-                >
-                  SEND {selectedGift?.name.toUpperCase()} 🎁
-                </button>
+                {(user.coins || 0) >= (selectedGift?.coinCost || 0) ? (
+                  <button
+                    onClick={() => handleSendGift()}
+                    className="bg-[#fb641b] hover:bg-[#e8550f] py-2.5 px-6 rounded-sm font-black text-xs text-white shadow-sm transition cursor-pointer"
+                  >
+                    SEND {selectedGift?.name.toUpperCase()} 🎁
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowGiftModal(false);
+                      setActiveTab('recharge_convert');
+                    }}
+                    className="bg-[#fb641b] hover:bg-[#e8550f] py-2.5 px-5 rounded-sm font-black text-xs text-white shadow-sm transition cursor-pointer flex items-center space-x-1.5"
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>🪙 Buy Coins ({selectedGift?.coinCost}c चाहिए)</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Real Player Digital Profile Dashboard Modal */}
-      {selectedPlayerProfile && (
-        <PlayerInfoModal
-          player={selectedPlayerProfile}
-          onClose={() => setSelectedPlayerProfile(null)}
-          onSendGift={(p) => {
-            setSelectedPlayerProfile(null);
-            setGiftTarget(p.fullName);
-            setShowGiftModal(true);
-          }}
-        />
+      {/* WePlay-Style Rich Profile Sheet Modal (Profile Setup, Unique @Username, Cover, Moments, Gift Wall, Add Friend) */}
+      <UserProfileSheetModal
+        isOpen={profileSheetState.isOpen}
+        onClose={() => setProfileSheetState(prev => ({ ...prev, isOpen: false }))}
+        currentUser={user}
+        targetUserId={profileSheetState.targetUserId}
+        initialProfile={profileSheetState.initialProfile}
+        initialMode={profileSheetState.initialMode || 'view'}
+        onUpdateUser={onUpdateUser}
+        onSendGift={(p, initialGiftId) => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          setGiftTarget(p.fullName);
+          setGiftTargetUserId(p.userId);
+          setAppGiftPreset({
+            giftId: initialGiftId,
+            targetName: p.fullName,
+            targetUserId: p.userId,
+          });
+          setShowAppGiftModal(true);
+        }}
+        onOpenAvatarCustomizer={() => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          setShowAvatarCustomizerModal(true);
+        }}
+        onOpenMoments={() => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          setShowEspChatModal(true);
+        }}
+        onVisitVoiceRoom={(roomAddressOrUserId) => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          openRoomByLookup(roomAddressOrUserId, true);
+        }}
+      />
+
+      {/* Voice Room Design, Custom Wallpaper Upload & Invite Modal */}
+      <VoiceRoomDesignModal
+        isOpen={designModalState.isOpen}
+        initialTab={designModalState.tab}
+        currentUser={user}
+        room={{
+          ...(activeRoomDetail || {}),
+          id: currentRoomId,
+          title: activeRoomTitle,
+          topic: activeRoomTopic,
+          category: activeRoomCategory as any,
+          roomAddress: activeRoomAddress,
+          hostUserId: activeRoomHostId,
+        }}
+        seats={seats}
+        onClose={() => setDesignModalState((p) => ({ ...p, isOpen: false }))}
+        onDesignSaved={(res) => {
+          applyVoiceRoomPayload(res);
+          loadAvailableRooms(roomsSearchQuery);
+        }}
+        onHostSeatAction={handleHostSeatAction}
+      />
+
+      {/* Private Room Passcode Prompt Modal (Replaces window.prompt) */}
+      {privatePasscodePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-3 text-[#212121]">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-[#fb641b]" />
+                <span>प्राइवेट रूम पासकोड</span>
+              </h3>
+              <button
+                onClick={() => setPrivatePasscodePrompt(null)}
+                className="p-1 rounded hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              रूम <strong>{privatePasscodePrompt.room?.title}</strong> (ID: <span className="font-mono font-bold">{privatePasscodePrompt.room?.roomAddress}</span>) में शामिल होने के लिए पासकोड दर्ज करें:
+            </p>
+            <input
+              type="password"
+              autoFocus
+              value={privatePasscodePrompt.passcode}
+              onChange={(e) =>
+                setPrivatePasscodePrompt({ ...privatePasscodePrompt, passcode: e.target.value, error: undefined })
+              }
+              placeholder="पासकोड लिखें..."
+              className="w-full border border-slate-300 focus:border-[#2874f0] rounded-lg px-3 py-2 text-xs font-mono outline-none"
+            />
+            {privatePasscodePrompt.error && (
+              <p className="text-xs font-bold text-rose-600">⚠️ {privatePasscodePrompt.error}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPrivatePasscodePrompt(null)}
+                className="flex-1 py-2 rounded-lg bg-slate-100 text-xs font-bold cursor-pointer"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleJoinAndSwitchRoom(privatePasscodePrompt.room, privatePasscodePrompt.passcode)
+                }
+                className="flex-1 py-2 rounded-lg bg-[#2874f0] text-white text-xs font-black cursor-pointer"
+              >
+                अनलॉक व जॉइन करें
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* 1. Create New Voice Room Modal */}
+      {/* 1. Create New Voice Room Modal (With Custom Wallpaper & Stage Layout Picker) */}
       {showCreateRoomModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border border-slate-200 rounded-md max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto text-[#212121]">
+          <div className="bg-white border border-slate-200 rounded-md max-w-lg w-full shadow-2xl relative max-h-[92vh] overflow-y-auto text-[#212121]">
             <div className="bg-[#2874f0] px-5 py-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-sm bg-white/15 flex items-center justify-center text-xl">
                   🎙️
                 </div>
                 <div>
-                  <h3 className="text-base font-black">अपना वॉइस रूम बनाएं</h3>
-                  <p className="text-[11px] text-blue-100">आप इस रूम के होस्ट (Owner) होंगे</p>
+                  <h3 className="text-base font-black">नया एडवांस वॉइस रूम बनाएं</h3>
+                  <p className="text-[11px] text-blue-100">बिना Symbol वाला यूनिक Room ID अपने आप मिलेगा</p>
                 </div>
               </div>
               <button
@@ -4040,10 +3868,6 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             </div>
 
             <div className="p-5">
-              <p className="text-xs text-[#878787] mb-4">
-                आप टॉपिक निर्धारित कर सकते हैं और दोस्तों को आमंत्रित कर सकते हैं।
-              </p>
-
               <form onSubmit={handleCreateCustomRoom} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-[#212121] mb-1">
@@ -4074,6 +3898,56 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-[#212121] mb-1">
+                    वॉलपेपर थीम चुनें (Wallpaper Design)
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {VOICE_WALLPAPER_PRESETS.map((wp) => (
+                      <button
+                        key={wp.id}
+                        type="button"
+                        onClick={() => setNewRoomWallpaperId(wp.id)}
+                        className={`rounded-md overflow-hidden border-2 text-left transition cursor-pointer ${
+                          newRoomWallpaperId === wp.id
+                            ? 'border-[#2874f0] ring-2 ring-blue-200'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        <img src={wp.imageUrl} alt={wp.name} className="w-full h-14 object-cover" />
+                        <div className="p-1 text-[9px] font-bold truncate text-center bg-white">
+                          {wp.badge} {wp.name.split(' ')[0]}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
+                    स्टेज लेआउट चुनें (Stage Layout)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {STAGE_LAYOUT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setNewRoomStageLayout(opt.id)}
+                        className={`p-2 rounded-sm border text-left transition cursor-pointer ${
+                          newRoomStageLayout === opt.id
+                            ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0]'
+                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">
+                          {opt.icon} {opt.title}
+                        </div>
+                        <div className="text-[9px] text-[#878787]">{opt.hindiTitle}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
                     रूम श्रेणी (Category)
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -4088,7 +3962,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                         key={cat.id}
                         type="button"
                         onClick={() => setNewRoomCategory(cat.id as any)}
-                        className={`p-2.5 rounded-sm border text-left transition cursor-pointer ${
+                        className={`p-2 rounded-sm border text-left transition cursor-pointer ${
                           newRoomCategory === cat.id
                             ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0] shadow-xs'
                             : 'bg-[#f9fafb] border-slate-200 text-[#212121] hover:border-slate-300'
@@ -4163,7 +4037,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         </div>
       )}
 
-      {/* 2. All Community Voice Rooms Modal */}
+      {/* 2. All Community Voice Rooms Directory Modal (Search by Room ID, Filter, Join & Follow) */}
       {showRoomsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-white border border-slate-200 rounded-md max-w-2xl w-full shadow-2xl relative max-h-[90vh] flex flex-col overflow-hidden text-[#212121]">
@@ -4173,9 +4047,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   🌐
                 </div>
                 <div>
-                  <h3 className="text-base font-black">सभी लाइव कम्युनिटी वॉइस रूम्स</h3>
+                  <h3 className="text-base font-black">सभी लाइव वॉइस रूम्स व रूम ID खोज</h3>
                   <p className="text-[11px] text-blue-100">
-                    उपलब्ध रूम्स में जाएं या दोस्तों के साथ अपना रूम शुरू करें
+                    यूनिक काउंटिंग व VIP Room ID (जैसे 1111, 2222, 10001) से रूम खोजें, फॉलो करें और जॉइन करें
                   </p>
                 </div>
               </div>
@@ -4187,90 +4061,200 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               </button>
             </div>
 
-            <div className="p-5 flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between pb-3">
-                <div className="text-xs font-bold text-[#2874f0]">
-                  कुल एक्टिव रूम्स: {availableRooms.length}
+            <div className="p-4 sm:p-5 flex-1 flex flex-col overflow-hidden space-y-3">
+              {/* Search Bar + Go to Room ID */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={roomsSearchQuery}
+                    onChange={(e) => setRoomsSearchQuery(e.target.value)}
+                    placeholder="VIP Room ID (जैसे 1111, 1234), Room ID (10001) या नाम खोजें..."
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-[#2874f0] rounded-sm pl-9 pr-3 py-2 text-xs font-semibold outline-none"
+                  />
                 </div>
+                {roomsSearchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => openRoomByLookup(roomsSearchQuery, true)}
+                    className="px-3.5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white text-xs font-black cursor-pointer shrink-0"
+                  >
+                    🔍 ID से खोलें
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setShowRoomsModal(false);
                     setShowCreateRoomModal(true);
                   }}
-                  className="bg-[#fb641b] hover:bg-[#e8550f] px-3.5 py-1.5 rounded-sm text-xs font-black text-white flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  className="bg-[#fb641b] hover:bg-[#e8550f] px-3.5 py-2 rounded-sm text-xs font-black text-white flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer shrink-0"
                 >
                   <PlusCircle className="w-4 h-4" />
-                  अपना नया रूम बनाएं
+                  नया रूम बनाएं
                 </button>
               </div>
 
-              <div className="overflow-y-auto space-y-3 pr-1 flex-1">
-                {availableRooms.map((room) => {
-                  const isCurrent = room.id === currentRoomId;
-                  const occupiedCount = room.seats ? room.seats.filter((s: any) => s.userId).length : 0;
-                  return (
-                    <div
-                      key={room.id}
-                      className={`p-4 rounded-sm border transition ${
-                        isCurrent
-                          ? 'bg-[#f5f8ff] border-[#2874f0] shadow-xs'
-                          : 'bg-[#f9fafb] border-slate-200 hover:border-blue-300'
+              {/* Directory Filter Tabs */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { id: 'all', label: `🌐 सभी रूम्स (${availableRooms.length})` },
+                    {
+                      id: 'vip',
+                      label: `👑 VIP रूम्स (${availableRooms.filter(r => r.isVipRoom || isVipFancyRoomNumber(r.roomAddress)).length})`,
+                    },
+                    { id: 'my_room', label: '🏠 मेरा फिक्स्ड रूम' },
+                    { id: 'followed', label: '⭐ फॉलोड रूम्स' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setRoomsFilterTab(tab.id as any)}
+                      className={`px-3 py-1.5 rounded-sm text-xs font-bold border transition cursor-pointer ${
+                        roomsFilterTab === tab.id
+                          ? 'bg-[#2874f0] text-white border-[#2874f0]'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <img
-                            src={room.hostAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${room.hostUserId}`}
-                            alt={room.hostName}
-                            className="w-12 h-12 rounded-sm bg-white border border-slate-200 object-cover flex-shrink-0"
-                          />
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-black text-[#212121]">{room.title}</span>
-                              <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-black bg-blue-50 text-[#2874f0] border border-blue-200 uppercase">
-                                {room.category}
-                              </span>
-                              {room.isPrivate && (
-                                <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold bg-[#ffe500] text-[#212121] flex items-center gap-1">
-                                  <Lock className="w-2.5 h-2.5" /> लॉक
-                                </span>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRoomsModal(false);
+                    loadMyPersonalRoom(true);
+                  }}
+                  className="text-xs font-black text-indigo-700 hover:underline cursor-pointer font-mono tabular-nums"
+                >
+                  🏠 मेरा रूम ({cleanUserRoomFallback}) ➔
+                </button>
+              </div>
+
+              <div className="overflow-y-auto space-y-2.5 pr-1 flex-1">
+                {availableRooms
+                  .filter((room) => {
+                    if (roomsFilterTab === 'vip') {
+                      return Boolean(room.isVipRoom || isVipFancyRoomNumber(room.roomAddress));
+                    }
+                    if (roomsFilterTab === 'my_room') {
+                      return room.hostUserId === user.userId;
+                    }
+                    if (roomsFilterTab === 'followed') {
+                      return Boolean(room.isFollowed);
+                    }
+                    return true;
+                  })
+                  .map((room) => {
+                    const isCurrent = room.id === currentRoomId;
+                    const occupiedCount = room.seats ? room.seats.filter((s: any) => s.userId).length : 0;
+                    const isVipRoom = Boolean(room.isVipRoom || isVipFancyRoomNumber(room.roomAddress));
+                    const wpThumb =
+                      room.customWallpaperUrl ||
+                      VOICE_WALLPAPER_PRESETS.find((w) => w.id === room.wallpaperId)?.imageUrl;
+                    return (
+                      <div
+                        key={room.id}
+                        className={`p-3.5 rounded-md border transition ${
+                          isCurrent
+                            ? 'bg-[#f5f8ff] border-[#2874f0] shadow-xs'
+                            : isVipRoom
+                            ? 'bg-amber-50/40 border-amber-300 hover:border-amber-400'
+                            : 'bg-[#f9fafb] border-slate-200 hover:border-blue-300'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className="relative w-12 h-12 rounded-md overflow-hidden border border-slate-200 shrink-0 bg-slate-900">
+                              {wpThumb && (
+                                <img
+                                  src={wpThumb}
+                                  alt={room.title}
+                                  className="absolute inset-0 w-full h-full object-cover opacity-55"
+                                />
                               )}
-                              <span className="flex items-center gap-1 text-[9px] font-bold text-[#388e3c]">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#388e3c] animate-ping" /> LIVE
-                              </span>
+                              <img
+                                src={room.hostAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${room.hostUserId}`}
+                                alt={room.hostName}
+                                className="relative z-10 w-8 h-8 rounded-full border border-white object-cover m-auto mt-2"
+                              />
                             </div>
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-[#212121]">{room.title}</span>
+                                {isVipRoom && (
+                                  <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-black bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 border border-amber-400 shadow-2xs">
+                                    👑 {room.vipRoomLabel || 'VIP ROOM'}
+                                  </span>
+                                )}
+                                {room.isPersonalFixed && (
+                                  <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-black bg-indigo-600 text-white">
+                                    FIXED
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.5 rounded-sm text-[9px] font-black border font-mono tabular-nums ${
+                                  isVipRoom
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                    : 'bg-blue-50 text-[#2874f0] border-blue-200'
+                                }`}>
+                                  ID:{room.roomAddress}
+                                </span>
+                                {room.isPrivate && (
+                                  <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold bg-[#ffe500] text-[#212121] flex items-center gap-1">
+                                    <Lock className="w-2.5 h-2.5" /> लॉक
+                                  </span>
+                                )}
+                              </div>
 
-                            <div className="text-[11px] text-[#878787] mt-1 line-clamp-1">
-                              {room.topic || 'No topic set'}
-                            </div>
+                              <div className="text-[11px] text-[#878787] mt-0.5 line-clamp-1">
+                                {room.topic || 'No topic set'}
+                              </div>
 
-                            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-[#878787] flex-wrap">
-                              <span>👑 होस्ट: <strong className="text-[#212121]">{room.hostName}</strong></span>
-                              <span>👥 {room.listenersCount || 1} श्रोता</span>
-                              <span>🎙️ {occupiedCount}/8 सीट्स भरी</span>
-                              <span className="text-slate-400 font-mono text-[9px]">ID: {room.roomAddress}</span>
+                              <div className="flex items-center gap-2.5 mt-1 text-[10px] text-[#878787] flex-wrap">
+                                <span>👑 {room.hostName}</span>
+                                <span>👥 {room.listenersCount || 1} Online</span>
+                                <span>⭐ {room.followersCount || 0} Follow</span>
+                                <span>🎙️ {occupiedCount}/8</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex-shrink-0">
-                          {isCurrent ? (
-                            <div className="px-4 py-2 rounded-sm bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-black flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4" /> वर्तमान रूम
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => handleSwitchRoom(room.id)}
-                              className="w-full sm:w-auto px-4 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              जॉइन करें ➔
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {room.hostUserId !== user.userId && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleFollowRoom(room.id)}
+                                className={`px-2.5 py-2 rounded-sm text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  room.isFollowed
+                                    ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                <Star className="w-3 h-3" />
+                                <span>{room.isFollowed ? 'Following' : 'Follow'}</span>
+                              </button>
+                            )}
+
+                            {isCurrent ? (
+                              <div className="px-3.5 py-2 rounded-sm bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-black flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> लाइव रूम
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleJoinAndSwitchRoom(room)}
+                                className="px-4 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-black text-xs shadow-sm transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <LogIn className="w-3.5 h-3.5" />
+                                <span>Join Room</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -4324,20 +4308,20 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 </div>
               </div>
 
-              {/* Manage Seats */}
+              {/* Manage Seats (0-based seatIdx) */}
               <div className="p-4 rounded-sm bg-[#f9fafb] border border-slate-200 space-y-3">
                 <div className="text-xs font-bold text-[#212121]">
-                  🎙️ सीट्स प्रबंधन (Mute & Kick Members)
+                  🎙️ सीट्स प्रबंधन (Mute, Lock & Kick Members)
                 </div>
                 <div className="space-y-2">
-                  {seats.map((seat) => (
+                  {seats.map((seat, idx) => (
                     <div
                       key={seat.seatNumber}
                       className="flex items-center justify-between p-2.5 rounded-sm bg-white border border-slate-200 text-xs"
                     >
                       <div className="flex items-center gap-2.5">
                         <div className="w-6 h-6 rounded-full bg-[#f5f8ff] border border-blue-100 flex items-center justify-center text-[10px] font-black text-[#2874f0]">
-                          #{seat.seatNumber + 1}
+                          #{idx + 1}
                         </div>
                         {seat.userId ? (
                           <div>
@@ -4352,30 +4336,44 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <div className="text-[#878787] italic">सीट खाली है</div>
+                          <div className="text-[#878787] italic">
+                            {seat.isLocked ? '🔒 सीट लॉक है' : 'सीट खाली है'}
+                          </div>
                         )}
                       </div>
 
-                      {seat.userId && seat.userId !== user.userId && (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {seat.userId && seat.userId !== user.userId && (
+                          <>
+                            <button
+                              onClick={() => handleHostMuteSeat(idx, !seat.isMuted)}
+                              className={`px-2 py-1 rounded-sm text-[10px] font-bold border transition cursor-pointer ${
+                                seat.isMuted
+                                  ? 'bg-emerald-50 border-emerald-200 text-[#388e3c]'
+                                  : 'bg-amber-50 border-amber-200 text-amber-800'
+                              }`}
+                            >
+                              {seat.isMuted ? 'अनम्यूट' : 'म्यूट'}
+                            </button>
+                            <button
+                              onClick={() => handleHostKickSeat(idx)}
+                              className="px-2 py-1 rounded-sm text-[10px] font-bold bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition cursor-pointer"
+                            >
+                              हटाएं
+                            </button>
+                          </>
+                        )}
+                        {!seat.userId && (
                           <button
-                            onClick={() => handleHostMuteSeat(seat.seatNumber, !seat.isMuted)}
-                            className={`px-2.5 py-1 rounded-sm text-[10px] font-bold border transition cursor-pointer ${
-                              seat.isMuted
-                                ? 'bg-emerald-50 border-emerald-200 text-[#388e3c]'
-                                : 'bg-amber-50 border-amber-200 text-amber-800'
-                            }`}
+                            onClick={() =>
+                              handleHostSeatAction(seat.isLocked ? 'unlock_seat' : 'lock_seat', idx)
+                            }
+                            className="px-2 py-1 rounded-sm text-[10px] font-bold bg-slate-100 border border-slate-300 text-slate-700 cursor-pointer"
                           >
-                            {seat.isMuted ? 'अनम्यूट करें' : 'म्यूट करें'}
+                            {seat.isLocked ? 'अनलॉक करें' : 'लॉक करें'}
                           </button>
-                          <button
-                            onClick={() => handleHostKickSeat(seat.seatNumber)}
-                            className="px-2.5 py-1 rounded-sm text-[10px] font-bold bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition cursor-pointer"
-                          >
-                            सीट से हटाएं
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4392,44 +4390,6 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* 4. WePlay AI Bot Hub & Sharma Ji Spotlight Modal */}
-      {showBotHubModal && (
-        <WePlayBotHubModal
-          user={user}
-          bots={availableBots}
-          onClose={() => setShowBotHubModal(false)}
-          onInviteBotToSeat={(botId) => {
-            handleInviteBotToSeat(botId, selectedSeatForBot ?? undefined);
-            setSelectedSeatForBot(null);
-            setShowBotHubModal(false);
-          }}
-          onSummonAllBots={() => {
-            handleSummonAllBots();
-            setShowBotHubModal(false);
-          }}
-          onBotAction={(code, type) => handleBotAction(code, type)}
-          onOpenWerewolfGame={() => {
-            setShowBotHubModal(false);
-            setShowWerewolfModal(true);
-          }}
-          onOpenSharmaJiProfile={() => {
-            setShowBotHubModal(false);
-            handleOpenPlayerModal('SHARMA-JI-VIP', {
-              userId: 'SHARMA-JI-VIP',
-              fullName: '👑 Sharma Ji (शर्मा जी)',
-              gameLevel: 99,
-              charms: 98765,
-              roleTitle: '👑 ESP PLAY Grand Emperor (सर्वोच्च महाराजा)',
-              coins: 999999,
-              roomAddress: 'ESP-ROOM-SHARMAJI-ROYAL',
-              houseName: '👑 शर्मा जी का राजमहल (Sharma Ji Royal Palace)',
-              clanName: '👑 Sharma Ji Royals',
-              clanRole: 'Leader',
-            });
-          }}
-        />
       )}
 
       {/* 5. WePlay Werewolf Game Modal */}
@@ -4483,6 +4443,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           user={user}
           onUpdateUser={onUpdateUser}
           isModal={true}
+          onOpenBuyCoins={() => {
+            setShowDailySpinModal(false);
+            setActiveTab('recharge_convert');
+          }}
           onClose={() => setShowDailySpinModal(false)}
         />
       )}
@@ -4516,16 +4480,19 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             <LeaderboardWidget
               currentUser={user}
               onOpenPlayerProfile={(p) => {
-                setSelectedPlayerProfile({
-                  userId: p.userId,
-                  fullName: p.fullName,
-                  avatar: p.avatar,
-                  frameType: p.frameType,
-                  gameLevel: p.gameLevel,
-                  charms: p.charms,
-                  clanName: p.clanName,
-                  roleTitle: p.badge || 'Player',
-                });
+                openUserProfileSheet(
+                  p.userId,
+                  {
+                    userId: p.userId,
+                    fullName: p.fullName,
+                    avatar: p.avatar,
+                    frameType: p.frameType,
+                    gameLevel: p.gameLevel,
+                    charms: p.charms,
+                    clanName: p.clanName,
+                  },
+                  'view'
+                );
               }}
             />
           </div>
@@ -4537,85 +4504,139 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         <DailyFortuneSpinModal
           user={user}
           onUpdateUser={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowFortuneSpinModal(false);
+            setActiveTab('recharge_convert');
+          }}
           onClose={() => setShowFortuneSpinModal(false)}
         />
       )}
 
-      {/* 11. 8 Timed Mystery Boxes (Rewards Center) Modal */}
+      {/* 11. Real Verified Task Milestone Boxes Modal */}
       {showTimedChestModal && (
         <TimedMysteryChestModal
           user={user}
           onUpdateUser={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowTimedChestModal(false);
+            setActiveTab('recharge_convert');
+          }}
           onClose={() => setShowTimedChestModal(false)}
         />
       )}
 
-      {/* 12. WePlay App Gift Sheet (5 to 50 Lakh coins, Diwali specials, combo and coins-back) */}
+      {/* 12. WePlay App Gift Sheet (Server-verified real coins & Gift Wall recording) */}
       {showAppGiftModal && (
         <WePlayAppGiftModal
           user={user}
           seats={seats}
-          onClose={() => setShowAppGiftModal(false)}
-          onSendGift={(gift, count, target, coinsBack) => {
+          initialGiftId={appGiftPreset?.giftId}
+          initialTargetName={appGiftPreset?.targetName}
+          initialTargetUserId={appGiftPreset?.targetUserId}
+          onClose={() => {
+            setShowAppGiftModal(false);
+            setAppGiftPreset(null);
+          }}
+          onOpenBuyCoins={() => {
+            setShowAppGiftModal(false);
+            setAppGiftPreset(null);
+            setActiveTab('recharge_convert');
+          }}
+          onSendGift={async (gift, count, target, _coinsBackWon, explicitTargetUserId) => {
             const cost = gift.coinCost * count;
             const baseCharms = gift.charmValue * count;
             const { newCombo, multiplier, bonusCharms, totalCharmsAwarded } = registerGiftCombo(
               baseCharms,
               gift.hindiName
             );
-            const updatedCoins = (user.coins || 0) - cost + coinsBack;
-            const updatedCharms = (user.charms || 0) + totalCharmsAwarded;
-            onUpdateUser({
-              ...user,
-              coins: Math.max(0, updatedCoins),
-              charms: updatedCharms,
-            });
-            setShowAppGiftModal(false);
-            setActiveGiftAnimation({
-              gift: {
-                id: gift.id,
-                name: gift.name,
-                hindiName: gift.hindiName,
-                icon: gift.icon,
-                coinCost: gift.coinCost,
-                charmValue: totalCharmsAwarded,
-                animationType: gift.animationType as any,
-                gradient: gift.gradient,
-              },
-              sender: user.fullName,
-              target,
-            });
-            const comboText = newCombo >= 2 ? `🔥 [COMBO x${newCombo}! ${multiplier}x Multiplier] (+${bonusCharms} Extra Charms!)` : '';
-            setGiftAnnouncement(`🎁 ${user.fullName} ने ${target} को ${count}x ${gift.hindiName} भेजा! (+${totalCharmsAwarded}✨ Charms) ${comboText} ${coinsBack > 0 ? `[💰 ${coinsBack} Coins वापस मिले!]` : ''}`);
-            playSynthesizedChime(newCombo >= 2 ? 'win' : 'gift');
-            confetti({
-              particleCount: newCombo >= 2 ? 220 : 140,
-              spread: 100,
-              origin: { y: 0.6 }
-            });
-            setRoomChatMessages(prev => [
-              ...prev,
-              {
-                id: `gift-${Date.now()}`,
-                sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'APP GIFT',
-                isGift: true,
-                text: `🎁 ${user.fullName} sent ${count}x ${gift.name} ${gift.icon} to ${target}! (+${totalCharmsAwarded} Charms ${comboText})`,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              }
-            ]);
-            setTimeout(() => {
-              setActiveGiftAnimation(null);
-              setGiftAnnouncement(null);
-            }, 4500);
+            const resolvedTargetUserId = explicitTargetUserId || appGiftPreset?.targetUserId;
+            try {
+              const res = await api.sendRoomGift(
+                user.userId,
+                target,
+                gift.id,
+                `${count}x ${gift.name}`,
+                cost,
+                totalCharmsAwarded,
+                gift.icon,
+                resolvedTargetUserId,
+                count
+              );
+              const updatedCoins = res?.coins ?? Math.max(0, (user.coins || 0) - cost);
+              onUpdateUser({
+                ...user,
+                coins: updatedCoins,
+                charms: (user.charms || 0) + Math.round(totalCharmsAwarded * 0.2),
+              });
+              setShowAppGiftModal(false);
+              setAppGiftPreset(null);
+              setActiveGiftAnimation({
+                gift: {
+                  id: gift.id,
+                  name: gift.name,
+                  hindiName: gift.hindiName,
+                  icon: gift.icon,
+                  coinCost: gift.coinCost,
+                  charmValue: totalCharmsAwarded,
+                  animationType: gift.animationType as any,
+                  gradient: gift.gradient,
+                },
+                sender: user.fullName,
+                target,
+              });
+              const comboText = newCombo >= 2 ? `🔥 [COMBO x${newCombo}! ${multiplier}x Multiplier] (+${bonusCharms} Extra Charms!)` : '';
+              setGiftAnnouncement(`🎁 ${user.fullName} ने ${target} को ${count}x ${gift.hindiName} भेजा! (+${totalCharmsAwarded}✨ Charms) ${comboText}`);
+              playSynthesizedChime(newCombo >= 2 ? 'win' : 'gift');
+              confetti({
+                particleCount: newCombo >= 2 ? 220 : 140,
+                spread: 100,
+                origin: { y: 0.6 }
+              });
+              setRoomChatMessages(prev => [
+                ...prev,
+                {
+                  id: `gift-${Date.now()}`,
+                  senderId: user.userId,
+                  sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'APP GIFT',
+                  isGift: true,
+                  text: `🎁 ${user.fullName} sent ${count}x ${gift.name} ${gift.icon} to ${target}! (+${totalCharmsAwarded} Charms ${comboText})`,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              ]);
+              setTimeout(() => {
+                setActiveGiftAnimation(null);
+                setGiftAnnouncement(null);
+              }, 4500);
+            } catch (err: any) {
+              setSoundEffectToast(err?.message || 'गिफ्ट भेजने के लिए पर्याप्त कॉइन्स नहीं हैं।');
+              setTimeout(() => setSoundEffectToast(null), 3500);
+              setShowAppGiftModal(false);
+              setAppGiftPreset(null);
+              setActiveTab('recharge_convert');
+            }
           }}
         />
       )}
 
-      {/* 13. Daily Tasks & 7-Day Login Calendar Modal */}
+      {/* 13. Real Verified Tasks & Milestone Chests Modal */}
       {showDailyTasksModal && (
         <DailyTasksAndLoginModal
           user={user}
           onUpdateUser={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowDailyTasksModal(false);
+            setActiveTab('recharge_convert');
+          }}
+          onNavigateTab={(actionTab) => {
+            setShowDailyTasksModal(false);
+            if (actionTab === 'profile') {
+              setShowAvatarCustomizerModal(true);
+            } else if (actionTab === 'voice_room' || actionTab === 'voice-room') {
+              setActiveTab('voice_room');
+            } else {
+              setActiveTab('games');
+            }
+          }}
           onClose={() => setShowDailyTasksModal(false)}
         />
       )}
@@ -4635,6 +4656,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             setTimeout(() => setSoundEffectToast(null), 3000);
           }}
           onUpdateUser={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowRoomStoreModal(false);
+            setActiveTab('recharge_convert');
+          }}
           onClose={() => setShowRoomStoreModal(false)}
         />
       )}
@@ -4647,16 +4672,25 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           onClose={() => setShowDailyMissionsModal(false)}
           onUpdateUser={onUpdateUser}
           onPerformAction={handlePerformDailyMissionAction}
+          onOpenBuyCoins={() => {
+            setShowDailyMissionsModal(false);
+            setActiveTab('recharge_convert');
+          }}
         />
       )}
 
-      {/* 16. Avatar & Status Frame Customizer Modal */}
+      {/* 16. Avatar & Status Frame Customizer & VIP Pass Store Modal */}
       {showAvatarCustomizerModal && (
         <AvatarCustomizerModal
           user={user}
           isOpen={showAvatarCustomizerModal}
           onClose={() => setShowAvatarCustomizerModal(false)}
           onSaveAvatar={handleSaveAvatarCustomization}
+          onUpdateUser={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowAvatarCustomizerModal(false);
+            setActiveTab('recharge_convert');
+          }}
         />
       )}
 
@@ -4673,6 +4707,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             </button>
             <TopClansDataTable
               currentUser={user}
+              onUpdateUser={onUpdateUser}
               onSelectClan={(clan) => {
                 setSoundEffectToast(`🛡️ ${clan.name} (Rank #${clan.rank}) चयनित हुआ!`);
                 setTimeout(() => setSoundEffectToast(null), 3000);
@@ -4688,48 +4723,41 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         user={user}
         onClose={() => setShowDigitalGiftCardsModal(false)}
         onUpdateUser={onUpdateUser}
-      />
-
-      {/* 19. Real-Time Weekly Rewards Modal with Missed Day logic */}
-      <DailyLoginRewardsModal
-        user={user}
-        isOpen={showWeeklyRewardsModal}
-        onClose={() => setShowWeeklyRewardsModal(false)}
-        onClaim={(updatedUser, reward) => {
-          onUpdateUser(updatedUser);
-          api.setStoredUser(updatedUser);
-          setSoundEffectToast(`🎉 +${reward.coins} कॉइन्स मिले!`);
-          setTimeout(() => setSoundEffectToast(null), 3000);
+        onOpenBuyCoins={() => {
+          setShowDigitalGiftCardsModal(false);
+          setActiveTab('recharge_convert');
         }}
       />
 
-      {/* 20. ESP CHAT Modal (Facebook-style Social Friend Making & 1-on-1 Chat) */}
+      {/* 19. ESP CHAT Modal (Facebook-style Social Friend Making & 1-on-1 Chat) */}
       <EspChatModal
         currentUser={user}
         isOpen={showEspChatModal}
         onClose={() => setShowEspChatModal(false)}
+        onUpdateUser={onUpdateUser}
       />
 
-      {/* 21. Interactive 8D Gaming Arena Modal (Who's the Spy, Ludo, Space Werewolf, etc.) */}
+      {/* 20. Interactive 8D Gaming Arena Modal (Who's the Spy, Ludo, Space Werewolf, etc.) */}
       {activeInteractiveGame && (
         <InteractiveGameArenaModal
           gameKey={activeInteractiveGame}
           currentUser={user}
           isOpen={Boolean(activeInteractiveGame)}
           onClose={() => setActiveInteractiveGame(null)}
+          onOpenBuyCoins={() => {
+            setActiveInteractiveGame(null);
+            setActiveTab('recharge_convert');
+          }}
           onUpdateCoins={(newCoins) => {
-            const updated = { ...user, coins: newCoins };
+            const latest = api.getStoredUser();
+            const updated =
+              latest && latest.userId === user.userId
+                ? { ...latest, coins: newCoins }
+                : { ...user, coins: newCoins };
             onUpdateUser(updated);
             api.setStoredUser(updated);
           }}
         />
-      )}
-
-      {/* Floating Seating Reward Toast Notice */}
-      {seatingRewardNotice && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black px-4 py-2 rounded-2xl shadow-2xl border-2 border-emerald-300 animate-bounce text-xs sm:text-sm flex items-center gap-2">
-          <span>{seatingRewardNotice}</span>
-        </div>
       )}
     </div>
   );

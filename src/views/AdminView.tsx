@@ -21,15 +21,20 @@ import {
   Clock,
   Filter,
   Image,
-  UserPlus,
-  Edit,
   Sparkles,
-  X
+  Gift,
+  X,
+  Bell,
+  MessageSquare,
+  Crown,
+  Hash
 } from 'lucide-react';
-import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest } from '../types/index.ts';
+import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem } from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore } from '../services/firebase.ts';
+import { CURATED_VIP_ROOM_NUMBERS, isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface AdminViewProps {
   adminPassword: string;
@@ -44,7 +49,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onUpdateSettings,
   onLogoutAdmin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'members' | 'services' | 'payouts' | 'coin_recharges' | 'settings' | 'audits' | 'slider_photos' | 'demo_users'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'services' | 'payouts' | 'coin_recharges' | 'messages' | 'gift_cards' | 'vip_rooms' | 'settings' | 'audits' | 'slider_photos'>('members');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all');
   
   const [stats, setStats] = useState<any>(null);
@@ -52,6 +57,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
   const [coinRecharges, setCoinRecharges] = useState<CoinRechargeRequest[]>([]);
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
+  const [adminNotifications, setAdminNotifications] = useState<NotificationItem[]>([]);
+  const [previewScreenshot, setPreviewScreenshot] = useState<{
+    url: string;
+    recharge?: CoinRechargeRequest;
+    title: string;
+  } | null>(null);
   const [rechargeProcessingId, setRechargeProcessingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchMember, setSearchMember] = useState('');
@@ -95,23 +107,44 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [newSlideLink, setNewSlideLink] = useState('');
   const [sliderSaving, setSliderSaving] = useState(false);
 
-  // Demo User & Profile Editor States
-  const [demoForm, setDemoForm] = useState({
-    fullName: '',
-    phone: '',
-    email: '',
-    avatar: '',
-    roleTitle: 'VIP Community Member',
-    coins: 10000,
-    charms: 500,
-    gameLevel: 10,
-    clanName: 'Royal Warriors ESP',
-    houseName: '',
-  });
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [showAddDemoModal, setShowAddDemoModal] = useState(false);
+  // Gift Card Redemptions (Admin Voucher Fulfillment)
+  const [giftCardRedemptions, setGiftCardRedemptions] = useState<GiftCardRedemption[]>([]);
+  const [giftCardProcessingId, setGiftCardProcessingId] = useState<string | null>(null);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+
+  // VIP Numeric Room ID Management State
+  const [vipSearchQuery, setVipSearchQuery] = useState('');
+  const [vipSelectedUserId, setVipSelectedUserId] = useState('');
+  const [vipRoomNumberInput, setVipRoomNumberInput] = useState('');
+  const [vipRoomLabelInput, setVipRoomLabelInput] = useState('VIP Royal');
+  const [vipCheckResult, setVipCheckResult] = useState<{
+    available: boolean;
+    normalized: string;
+    valid: boolean;
+    isFancyVip?: boolean;
+    conflictOwner?: string | null;
+    message?: string;
+  } | null>(null);
+  const [vipChecking, setVipChecking] = useState(false);
+  const [vipSaving, setVipSaving] = useState(false);
+
+  // Reusable React Confirmation & Input Modal (replaces browser confirm/prompt)
+  const [actionModal, setActionModal] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    variant: 'approve' | 'reject';
+    needsInput?: boolean;
+    inputLabel?: string;
+    inputPlaceholder?: string;
+    inputRequired?: boolean;
+    secondaryInputLabel?: string;
+    secondaryInputPlaceholder?: string;
+    onConfirm: (inputVal: string, secondaryVal: string) => Promise<void>;
+  } | null>(null);
+  const [actionModalInput, setActionModalInput] = useState('');
+  const [actionModalSecondary, setActionModalSecondary] = useState('');
+  const [actionModalBusy, setActionModalBusy] = useState(false);
 
   const loadAdminData = async () => {
     setLoading(true);
@@ -122,20 +155,40 @@ export const AdminView: React.FC<AdminViewProps> = ({
         setUsers(data.users || []);
         setServices(data.services || []);
         setPayouts(data.payouts || []);
+        if (Array.isArray(data.coinRecharges)) {
+          setCoinRecharges(data.coinRecharges);
+        }
+        if (Array.isArray(data.contactMessages)) {
+          setContactMessages(data.contactMessages);
+        }
+        if (Array.isArray(data.adminNotifications)) {
+          setAdminNotifications(data.adminNotifications);
+        }
         if (data.settings) {
           setSettingsForm(data.settings);
           onUpdateSettings(data.settings);
         }
       }
 
-      // Load coin recharge requests
+      // Load coin recharge requests (supports both Array return & { success, recharges } return)
       try {
-        const rcData = await api.getCoinRecharges(adminPassword);
-        if (rcData.success) {
-          setCoinRecharges(rcData.recharges || []);
-        }
+        const rcData: any = await api.getCoinRecharges(adminPassword);
+        const rcList = Array.isArray(rcData)
+          ? rcData
+          : (rcData?.recharges || rcData?.coinRecharges || []);
+        setCoinRecharges(rcList);
       } catch (err) {
         console.error('Failed to load coin recharges', err);
+      }
+
+      // Load contact messages & coin alert messages
+      try {
+        const msgList = await api.getAdminContactMessages(adminPassword);
+        if (Array.isArray(msgList)) {
+          setContactMessages(msgList);
+        }
+      } catch (err) {
+        console.error('Failed to load admin contact messages', err);
       }
 
       // Load slider photos
@@ -155,11 +208,47 @@ export const AdminView: React.FC<AdminViewProps> = ({
       } catch (err) {
         console.error('Failed to load plan upgrades', err);
       }
+
+      // Load Gift Card Redemptions
+      try {
+        const gcList = await api.getGiftCardRedemptions(undefined, adminPassword);
+        setGiftCardRedemptions(gcList || []);
+      } catch (err) {
+        console.error('Failed to load gift card redemptions', err);
+      }
     } catch {
       showToast('एडमिन सुरक्षा सत्यापन विफल रहा।', 'error');
       onLogoutAdmin();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAdminCloudSync = async () => {
+    if (cloudSyncing) return;
+    setCloudSyncing(true);
+    try {
+      let fbUser = auth.currentUser;
+      if (!fbUser || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
+        fbUser = await signInWithGoogle();
+      }
+      if (fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
+        showToast(`कृपया एडमिन ईमेल (${ADMIN_GOOGLE_EMAIL}) से Google साइन-इन करें।`, 'error');
+        return;
+      }
+      const res = await syncAdminDatasetToFirestore({
+        users,
+        payouts,
+        giftCards: giftCardRedemptions,
+      });
+      showToast(
+        `☁️ Firestore सिंक पूर्ण: ${res.syncedUsers} Members, ${res.syncedPayouts} Payouts, ${res.syncedGiftCards} Gift Cards!`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(err?.message || 'Firestore Admin Sync विफल रहा', 'error');
+    } finally {
+      setCloudSyncing(false);
     }
   };
 
@@ -227,98 +316,186 @@ export const AdminView: React.FC<AdminViewProps> = ({
     } catch {}
   };
 
-  const handleCreateDemoUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!demoForm.fullName.trim()) {
-      showToast('डेमो यूजर का नाम आवश्यक है', 'error');
-      return;
-    }
-    setProfileSaving(true);
-    try {
-      const res = await api.createDemoUser(adminPassword, demoForm);
-      if (res.success) {
-        showToast('डेमो यूजर सफलतापूर्वक जोड़ा गया!', 'success');
-        setUsers(prev => [res.user, ...prev]);
-        setShowAddDemoModal(false);
-        setDemoForm({
-          fullName: '',
-          phone: '',
-          email: '',
-          avatar: '',
-          roleTitle: 'VIP Community Member',
-          coins: 10000,
-          charms: 500,
-          gameLevel: 10,
-          clanName: 'Royal Warriors ESP',
-          houseName: '',
-        });
-      }
-    } catch (err: any) {
-      showToast(err.message || 'त्रुटि हुई', 'error');
-    } finally {
-      setProfileSaving(false);
-    }
+  const openActionModal = (config: NonNullable<typeof actionModal>) => {
+    setActionModalInput('');
+    setActionModalSecondary('');
+    setActionModal(config);
   };
 
-  const handleSaveEditUser = async (userId: string) => {
-    setProfileSaving(true);
-    try {
-      const res = await api.editUserDetails(userId, adminPassword, editForm);
-      if (res.success) {
-        showToast('यूजर प्रोफाइल सफलतापूर्वक अपडेट हुई!', 'success');
-        setUsers(prev => prev.map(u => u.userId === userId ? res.user : u));
-        setEditingUserId(null);
-      }
-    } catch (err: any) {
-      showToast(err.message || 'अपडेट विफल', 'error');
-    } finally {
-      setProfileSaving(false);
-    }
+  const handleApproveRecharge = (id: string) => {
+    openActionModal({
+      title: 'कॉइन रिचार्ज स्वीकृत करें',
+      description:
+        'क्या आप पुष्टि करते हैं कि इस 12-अंक UPI UTR का बैंक खाते में सत्यापन हो गया है? स्वीकृति के बाद यूजर के प्रोफाइल में तुरंत कॉइन्स क्रेडिट हो जाएंगे।',
+      confirmLabel: 'हाँ, कॉइन्स क्रेडिट करें',
+      variant: 'approve',
+      onConfirm: async () => {
+        setRechargeProcessingId(id);
+        try {
+          const res = await api.approveCoinRecharge(id, adminPassword);
+          if (res.success) {
+            showToast('सफलता: कॉइन रिचार्ज स्वीकृत! यूजर के वॉलेट में कॉइन्स क्रेडिट कर दिए गए हैं।', 'success');
+            setCoinRecharges(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
+            loadAdminData();
+          } else {
+            showToast(res.message || res.error || 'स्वीकृति विफल रही', 'error');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'त्रुटि आई', 'error');
+        } finally {
+          setRechargeProcessingId(null);
+        }
+      },
+    });
   };
 
-  const handleApproveRecharge = async (id: string) => {
-    if (!confirm('क्या आप पुष्टि करते हैं कि इस 12-अंक UPI UTR का बैंक खाते में सत्यापन हो गया है? स्वीकृति के बाद यूजर के प्रोफाइल में तुरंत कॉइन्स क्रेडिट हो जाएंगे।')) {
-      return;
-    }
-    setRechargeProcessingId(id);
-    try {
-      const res = await api.approveCoinRecharge(id, adminPassword);
-      if (res.success) {
-        showToast('सफलता: कॉइन रिचार्ज स्वीकृत! यूजर के वॉलेट में कॉइन्स क्रेडिट कर दिए गए हैं।', 'success');
-        setCoinRecharges(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
-        loadAdminData();
-      } else {
-        showToast(res.error || 'स्वीकृति विफल रही', 'error');
-      }
-    } catch (e: any) {
-      showToast(e.message || 'त्रुटि आई', 'error');
-    } finally {
-      setRechargeProcessingId(null);
-    }
-  };
-
-  const handleRejectRecharge = async (id: string) => {
-    const reason = prompt('अस्वीकृति का कारण दर्ज करें (उदा. अमान्य/गलत UTR नंबर, पेमेंट प्राप्त नहीं हुआ):');
-    if (reason === null) return;
-    setRechargeProcessingId(id);
-    try {
-      const res = await api.rejectCoinRecharge(id, reason || 'गलत UTR अथवा पेमेंट बैंक खाते में प्राप्त नहीं हुआ', adminPassword);
-      if (res.success) {
-        showToast('कॉइन रिचार्ज अनुरोध अस्वीकृत कर दिया गया।', 'info');
-        setCoinRecharges(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
-      } else {
-        showToast(res.error || 'अस्वीकृति विफल रही', 'error');
-      }
-    } catch (e: any) {
-      showToast(e.message || 'त्रुटि आई', 'error');
-    } finally {
-      setRechargeProcessingId(null);
-    }
+  const handleRejectRecharge = (id: string) => {
+    openActionModal({
+      title: 'कॉइन रिचार्ज अस्वीकृत करें',
+      description: 'यदि यह UTR अमान्य है या पेमेंट प्राप्त नहीं हुआ है, तो कारण दर्ज कर अनुरोध अस्वीकृत करें।',
+      confirmLabel: 'अनुरोध अस्वीकृत करें',
+      variant: 'reject',
+      needsInput: true,
+      inputLabel: 'अस्वीकृति का कारण',
+      inputPlaceholder: 'उदा. गलत UTR नंबर / बैंक खाते में पेमेंट प्राप्त नहीं हुआ',
+      inputRequired: false,
+      onConfirm: async (reason) => {
+        setRechargeProcessingId(id);
+        try {
+          const res = await api.rejectCoinRecharge(
+            id,
+            reason.trim() || 'गलत UTR अथवा पेमेंट बैंक खाते में प्राप्त नहीं हुआ',
+            adminPassword
+          );
+          if (res.success) {
+            showToast('कॉइन रिचार्ज अनुरोध अस्वीकृत कर दिया गया।', 'info');
+            setCoinRecharges(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
+            loadAdminData();
+          } else {
+            showToast(res.message || res.error || 'अस्वीकृति विफल रही', 'error');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'त्रुटि आई', 'error');
+        } finally {
+          setRechargeProcessingId(null);
+        }
+      },
+    });
   };
 
   useEffect(() => {
     loadAdminData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'vip_rooms') return;
+    if (!vipSelectedUserId && users.length > 0) {
+      setVipSelectedUserId(users[0].userId);
+    }
+  }, [activeTab, users, vipSelectedUserId]);
+
+  useEffect(() => {
+    if (activeTab !== 'vip_rooms') return;
+    const cleanDigits = vipRoomNumberInput.replace(/\D/g, '');
+    if (!cleanDigits) {
+      setVipCheckResult(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setVipChecking(true);
+      try {
+        const res = await api.checkVipRoomAvailability(
+          adminPassword,
+          cleanDigits,
+          vipSelectedUserId || undefined
+        );
+        if (!cancelled && res) {
+          setVipCheckResult({
+            available: Boolean(res.available),
+            normalized: res.normalized || cleanDigits,
+            valid: res.valid !== false,
+            isFancyVip: res.isFancyVip,
+            conflictOwner: res.conflictOwner || null,
+            message: res.message,
+          });
+        }
+      } catch {
+        if (!cancelled) setVipCheckResult(null);
+      } finally {
+        if (!cancelled) setVipChecking(false);
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeTab, vipRoomNumberInput, vipSelectedUserId, adminPassword]);
+
+  const handleAssignVipRoom = async () => {
+    const cleanDigits = vipRoomNumberInput.replace(/\D/g, '');
+    if (!vipSelectedUserId) {
+      showToast('कृपया पहले किसी सदस्य का चयन करें', 'error');
+      return;
+    }
+    if (cleanDigits.length < 3 || cleanDigits.length > 10) {
+      showToast('VIP Room ID केवल 3 से 10 अंकों का नंबर होना चाहिए (जैसे 1111, 2222, 1234)', 'error');
+      return;
+    }
+    setVipSaving(true);
+    try {
+      const res = await api.assignVipRoomNumber(
+        adminPassword,
+        vipSelectedUserId,
+        cleanDigits,
+        true,
+        vipRoomLabelInput.trim() || 'VIP Royal'
+      );
+      if (res?.success) {
+        showToast(res.message || `👑 VIP Room ID ${cleanDigits} असाइन हो गया!`, 'success');
+        const updatedUser = res.user;
+        if (updatedUser) {
+          setUsers(prev => prev.map(u => (u.userId === updatedUser.userId ? { ...u, ...updatedUser } : u)));
+        }
+        await loadAdminData();
+      } else {
+        showToast(res?.message || 'VIP Room ID असाइन करने में त्रुटि आई', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'VIP Room ID पहले से उपयोग में है या अमान्य है', 'error');
+    } finally {
+      setVipSaving(false);
+    }
+  };
+
+  const handleResetVipRoom = (targetUser: UserProfile) => {
+    openActionModal({
+      title: 'Standard Sequential Room ID पर रीसेट करें',
+      description: `क्या आप ${targetUser.fullName} (${targetUser.userId}) का VIP Room ID (${targetUser.roomAddress}) हटाकर सामान्य काउंटिंग ID (10001+) पर रीसेट करना चाहते हैं?`,
+      confirmLabel: 'हाँ, Count ID पर रीसेट करें',
+      variant: 'reject',
+      onConfirm: async () => {
+        setVipSaving(true);
+        try {
+          const res = await api.resetVipRoomNumber(adminPassword, targetUser.userId);
+          if (res?.success) {
+            const nextRoomId = res.user?.roomAddress || res.room?.roomAddress || '';
+            showToast(res.message || `रूम ID रीसेट हो गया: ${nextRoomId}`, 'info');
+            if (targetUser.userId === vipSelectedUserId && nextRoomId) {
+              setVipRoomNumberInput(nextRoomId);
+            }
+            await loadAdminData();
+          } else {
+            showToast(res?.message || 'रीसेट विफल रहा', 'error');
+          }
+        } catch (err: any) {
+          showToast(err?.message || 'रीसेट करने में त्रुटि आई', 'error');
+        } finally {
+          setVipSaving(false);
+        }
+      },
+    });
+  };
 
   const handleOpenUserAudit = async (userId: string) => {
     setAuditLoading(true);
@@ -391,41 +568,129 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
   };
 
-  const handleApprovePlanUpgrade = async (upgradeId: string, status: 'approved' | 'rejected') => {
+  const handleApprovePlanUpgrade = (upgradeId: string, status: 'approved' | 'rejected') => {
     const label = status === 'approved' ? 'स्वीकृत (Approve)' : 'अस्वीकृत (Reject)';
-    if (!confirm(`क्या आप इस प्लान अपग्रेड अनुरोध को ${label} करना चाहते हैं?`)) return;
-    setUpgradeProcessingId(upgradeId);
-    try {
-      const res = await api.approvePlanUpgrade(upgradeId, status, adminPassword);
-      if (res.success) {
-        showToast(
-          status === 'approved' ? 'प्लान अपग्रेड स्वीकृत हो गया व स्पॉन्सर बोनस क्रेडिट हो गया!' : 'अपग्रेड अनुरोध रद्द किया गया।',
-          'success'
-        );
-        setPlanUpgrades(prev => prev.map(u => (u.id === upgradeId ? { ...u, status } : u)));
-        loadAdminData();
-      } else {
-        showToast(res.message || 'कार्रवाई विफल रही', 'error');
-      }
-    } catch (err: any) {
-      showToast(err.message || 'त्रुटि हुई', 'error');
-    } finally {
-      setUpgradeProcessingId(null);
-    }
+    openActionModal({
+      title: `प्लान अपग्रेड ${label} करें`,
+      description: `क्या आप इस प्लान अपग्रेड अनुरोध को ${label} करना चाहते हैं?`,
+      confirmLabel: label,
+      variant: status === 'approved' ? 'approve' : 'reject',
+      onConfirm: async () => {
+        setUpgradeProcessingId(upgradeId);
+        try {
+          const res = await api.approvePlanUpgrade(upgradeId, status, adminPassword);
+          if (res.success) {
+            showToast(
+              status === 'approved' ? 'प्लान अपग्रेड स्वीकृत हो गया व स्पॉन्सर बोनस क्रेडिट हो गया!' : 'अपग्रेड अनुरोध रद्द किया गया।',
+              'success'
+            );
+            setPlanUpgrades(prev => prev.map(u => (u.id === upgradeId ? { ...u, status } : u)));
+            loadAdminData();
+          } else {
+            showToast(res.message || 'कार्रवाई विफल रही', 'error');
+          }
+        } catch (err: any) {
+          showToast(err.message || 'त्रुटि हुई', 'error');
+        } finally {
+          setUpgradeProcessingId(null);
+        }
+      },
+    });
   };
 
-  const handleApprovePayout = async (payoutId: string) => {
-    const ref = prompt('Enter Bank / UPI Transaction UTR for this payout:');
-    if (!ref) return;
+  const handleApprovePayout = (payoutId: string) => {
+    openActionModal({
+      title: 'UPI निकासी भुगतान स्वीकृत करें',
+      description: 'यूजर के UPI खाते में राशि भेजने के बाद बैंक / UPI UTR रेफरेंस नंबर दर्ज करें।',
+      confirmLabel: 'Mark Paid (Approve)',
+      variant: 'approve',
+      needsInput: true,
+      inputLabel: 'Bank / UPI Transaction UTR Reference *',
+      inputPlaceholder: 'उदा. 412345678901',
+      inputRequired: true,
+      onConfirm: async (ref) => {
+        try {
+          const res = await api.approvePayout(payoutId, ref.trim(), adminPassword);
+          if (res.success) {
+            showToast('पेआउट सफलतापूर्वक स्वीकृत व सेटल किया गया!', 'success');
+            setPayouts(payouts.map(p => (p.id === payoutId ? { ...p, status: 'approved', transactionRef: ref.trim() } : p)));
+            loadAdminData();
+          } else {
+            showToast(res.message || 'Failed to approve payout', 'error');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'Failed to approve payout', 'error');
+        }
+      },
+    });
+  };
 
-    try {
-      const res = await api.approvePayout(payoutId, ref, adminPassword);
-      if (res.success) {
-        setPayouts(payouts.map(p => (p.id === payoutId ? { ...p, status: 'approved', transactionRef: ref } : p)));
-      }
-    } catch (e: any) {
-      showToast(e.message || 'Failed to approve payout', 'error');
-    }
+  const handleRejectPayout = (payoutId: string, amount: number, userName: string) => {
+    openActionModal({
+      title: 'निकासी अस्वीकृत कर राशि वॉलेट में वापस करें',
+      description: `${userName} का ₹${amount} निकासी अनुरोध अस्वीकृत करने पर एस्क्रो में लॉक ₹${amount} स्वतः यूजर के उपलब्ध वॉलेट बैलेंस में रिफंड हो जाएगा।`,
+      confirmLabel: 'Reject & Refund Balance',
+      variant: 'reject',
+      needsInput: true,
+      inputLabel: 'अस्वीकृति का कारण',
+      inputPlaceholder: 'उदा. गलत UPI ID / खाता सत्यापन विफल',
+      inputRequired: false,
+      onConfirm: async (reason) => {
+        try {
+          const res = await api.rejectPayout(
+            payoutId,
+            reason.trim() || 'अमान्य UPI पता अथवा एडमिन द्वारा रद्द',
+            adminPassword
+          );
+          if (res.success) {
+            showToast(`निकासी अस्वीकृत व ₹${amount} यूजर वॉलेट में रिफंड कर दिया गया!`, 'info');
+            setPayouts(payouts.map(p => (p.id === payoutId ? { ...p, status: 'rejected', rejectionReason: reason.trim() } : p)));
+            loadAdminData();
+          } else {
+            showToast(res.message || 'अस्वीकृति विफल रही', 'error');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'अस्वीकृति विफल रही', 'error');
+        }
+      },
+    });
+  };
+
+  const handleFulfillGiftCard = (gc: GiftCardRedemption) => {
+    openActionModal({
+      title: `वाउचर कोड जारी करें (${gc.brand})`,
+      description: `${gc.userName} (${gc.userId}) ने ₹${gc.denomination} (${gc.coinsSpent} Coins) का रिडेम्पशन अनुरोध किया है। रियल डिजिटल वाउचर कोड दर्ज करें।`,
+      confirmLabel: 'वाउचर कोड भेजें (Fulfill)',
+      variant: 'approve',
+      needsInput: true,
+      inputLabel: 'Official Digital Voucher / Redeem Code *',
+      inputPlaceholder: 'उदा. AMZN-XXXX-YYYY-ZZZZ',
+      inputRequired: true,
+      secondaryInputLabel: 'Voucher PIN (यदि लागू हो, वैकल्पिक)',
+      secondaryInputPlaceholder: '6-digit PIN (optional)',
+      onConfirm: async (voucherCode, voucherPin) => {
+        setGiftCardProcessingId(gc.id);
+        try {
+          const res = await api.fulfillGiftCardRedemption(gc.id, voucherCode.trim(), adminPassword, voucherPin.trim());
+          if (res.success) {
+            showToast('डिजिटल वाउचर कोड सफलतापूर्वक यूजर को डिलीवर हो गया!', 'success');
+            setGiftCardRedemptions(prev =>
+              prev.map(item =>
+                item.id === gc.id
+                  ? { ...item, status: 'fulfilled', voucherCode: voucherCode.trim(), voucherPin: voucherPin.trim() || undefined }
+                  : item
+              )
+            );
+          } else {
+            showToast(res.message || 'वाउचर जारी करने में विफल', 'error');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'त्रुटि हुई', 'error');
+        } finally {
+          setGiftCardProcessingId(null);
+        }
+      },
+    });
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -467,16 +732,24 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
   };
 
-  const handleDeleteService = async (serviceId: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove the service "${name}"?`)) return;
-    try {
-      const res = await api.deleteService(serviceId, adminPassword);
-      if (res.success) {
-        setServices(res.services);
-      }
-    } catch (e: any) {
-      showToast(e.message || 'Failed to delete service', 'error');
-    }
+  const handleDeleteService = (serviceId: string, name: string) => {
+    openActionModal({
+      title: 'सर्विस प्लान हटाएं',
+      description: `क्या आप वाकई "${name}" सर्विस प्लान को कैटलॉग से हटाना चाहते हैं?`,
+      confirmLabel: 'Remove Service',
+      variant: 'reject',
+      onConfirm: async () => {
+        try {
+          const res = await api.deleteService(serviceId, adminPassword);
+          if (res.success) {
+            setServices(res.services);
+            showToast('सर्विस हटाई गई', 'info');
+          }
+        } catch (e: any) {
+          showToast(e.message || 'Failed to delete service', 'error');
+        }
+      },
+    });
   };
 
   const handleQrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -492,12 +765,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   const filteredUsers = users.filter(u => {
     if (statusFilter !== 'all' && u.status !== statusFilter) return false;
-    const q = searchMember.toLowerCase();
+    const q = (searchMember || '').toLowerCase();
     return (
-      u.fullName.toLowerCase().includes(q) ||
-      u.userId.toLowerCase().includes(q) ||
-      u.phone.includes(q) ||
-      u.paymentUtr.toLowerCase().includes(q)
+      (u.fullName || '').toLowerCase().includes(q) ||
+      (u.userId || '').toLowerCase().includes(q) ||
+      (u.phone || '').includes(q) ||
+      (u.paymentUtr || '').toLowerCase().includes(q)
     );
   });
 
@@ -522,12 +795,21 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onLogoutAdmin}
-          className="px-4 py-2 rounded-sm text-xs font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 transition cursor-pointer shadow-2xs"
-        >
-          Exit Admin Mode
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleAdminCloudSync}
+            disabled={cloudSyncing}
+            className="px-4 py-2 rounded-sm text-xs font-bold text-[#212121] bg-[#ffe500] hover:bg-yellow-300 transition cursor-pointer shadow-2xs disabled:opacity-60"
+          >
+            {cloudSyncing ? '☁️ Syncing Cloud...' : '☁️ Sync Cloud (Firestore)'}
+          </button>
+          <button
+            onClick={onLogoutAdmin}
+            className="px-4 py-2 rounded-sm text-xs font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 transition cursor-pointer shadow-2xs"
+          >
+            Exit Admin Mode
+          </button>
+        </div>
       </div>
 
       {/* Metrics Row */}
@@ -553,6 +835,37 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <p className="text-xl sm:text-2xl font-bold text-[#2874f0]">{services.length}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">Catalog</p>
           </div>
+        </div>
+      )}
+
+      {/* Live Coin Recharge & Admin Alert Banner */}
+      {coinRecharges.filter(r => r.status === 'pending').length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-md p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#fb641b] text-white flex items-center justify-center shrink-0 animate-pulse">
+              <Bell className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-[#212121]">
+                🪙 {coinRecharges.filter(r => r.status === 'pending').length} नया कॉइन रिचार्ज अनुरोध पेंडिंग है!
+              </p>
+              {(() => {
+                const latestPending = coinRecharges.find(r => r.status === 'pending');
+                if (!latestPending) return null;
+                return (
+                  <p className="text-[11px] text-amber-900 mt-0.5">
+                    ताज़ा संदेश: <strong>{latestPending.userName}</strong> ({latestPending.userId}) ने <strong>₹{latestPending.amount}</strong> (+{latestPending.coins + latestPending.bonusCoins} Coins) • UTR: <span className="font-mono font-bold">{latestPending.paymentUtr}</span>
+                  </p>
+                );
+              })()}
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('coin_recharges')}
+            className="px-4 py-2 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white text-xs font-bold shadow-2xs transition cursor-pointer shrink-0"
+          >
+            UTR व स्क्रीनशॉट देखें ➔
+          </button>
         </div>
       )}
 
@@ -603,6 +916,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('messages')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'messages'
+              ? 'bg-[#2874f0] text-white'
+              : 'text-[#212121] hover:bg-[#f1f3f6]'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>📩 Messages &amp; Alerts ({contactMessages.filter(m => m.status === 'unread').length + adminNotifications.filter(n => !n.read).length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('settings')}
           className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap ${
             activeTab === 'settings'
@@ -626,6 +951,30 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('gift_cards')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'gift_cards'
+              ? 'bg-[#2874f0] text-white'
+              : 'text-[#212121] hover:bg-[#f1f3f6]'
+          }`}
+        >
+          <Gift className="w-3.5 h-3.5" />
+          <span>🎁 Gift Cards ({giftCardRedemptions.filter(g => g.status === 'pending_fulfillment').length} Pending)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('vip_rooms')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'vip_rooms'
+              ? 'bg-[#2874f0] text-white'
+              : 'text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+          }`}
+        >
+          <Crown className="w-3.5 h-3.5" />
+          <span>👑 VIP Room IDs ({users.filter(u => u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)).length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('slider_photos')}
           className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
             activeTab === 'slider_photos'
@@ -635,18 +984,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
         >
           <Image className="w-3.5 h-3.5" />
           <span>🖼️ होम पॉपअप 7-फोटो स्लाइडर ({sliderPhotos.length}/7)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('demo_users')}
-          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
-            activeTab === 'demo_users'
-              ? 'bg-[#2874f0] text-white'
-              : 'text-[#212121] hover:bg-[#f1f3f6]'
-          }`}
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>👥 डेमो व प्रोफाइल एडिटर</span>
         </button>
       </div>
 
@@ -1350,20 +1687,39 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${
                             po.status === 'approved'
                               ? 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
+                              : po.status === 'rejected'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
                               : 'bg-amber-50 text-amber-800 border border-amber-200'
                           }`}
                         >
                           {po.status.toUpperCase()}
                         </span>
+                        {po.transactionRef && (
+                          <span className="block text-[10px] font-mono text-slate-500 mt-0.5">
+                            UTR: {po.transactionRef}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-right">
-                        {po.status === 'pending' && (
-                          <button
-                            onClick={() => handleApprovePayout(po.id)}
-                            className="px-3 py-1 rounded-sm text-xs font-bold bg-[#388e3c] text-white hover:bg-[#2e7d32] cursor-pointer"
-                          >
-                            Mark Paid
-                          </button>
+                        {po.status === 'pending' ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleApprovePayout(po.id)}
+                              className="px-2.5 py-1 rounded-sm text-xs font-bold bg-[#388e3c] text-white hover:bg-[#2e7d32] cursor-pointer"
+                            >
+                              Mark Paid
+                            </button>
+                            <button
+                              onClick={() => handleRejectPayout(po.id, po.amount, po.userName)}
+                              className="px-2.5 py-1 rounded-sm text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 cursor-pointer"
+                            >
+                              Reject &amp; Refund
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 font-semibold">
+                            {po.status === 'approved' ? 'Settled ✓' : 'Refunded to Wallet'}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -1413,13 +1769,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     <th className="py-2.5 px-3">रुपये (₹)</th>
                     <th className="py-2.5 px-3">कुल कॉइन्स</th>
                     <th className="py-2.5 px-3">12-अंक UPI UTR</th>
+                    <th className="py-2.5 px-3">पेमेंट स्क्रीनशॉट</th>
                     <th className="py-2.5 px-3">स्थिति</th>
                     <th className="py-2.5 px-3 text-right">एडमिन एक्शन</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {coinRecharges.map(rc => (
-                    <tr key={rc.id} className="hover:bg-[#f5f8ff]">
+                    <tr key={rc.id} className={rc.status === 'pending' ? 'bg-amber-50/40 hover:bg-amber-50/80' : 'hover:bg-[#f5f8ff]'}>
                       <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
                         <div className="font-mono text-[11px]">{rc.createdAt ? new Date(rc.createdAt).toLocaleDateString('hi-IN') : '-'}</div>
                         <div className="text-[10px] text-slate-500">{rc.createdAt ? new Date(rc.createdAt).toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
@@ -1447,6 +1804,33 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <span className="px-2 py-1 rounded-sm bg-[#f9fafb] border border-slate-300 block text-center text-xs tracking-wider">
                           {rc.paymentUtr}
                         </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        {rc.paymentScreenshot ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewScreenshot({
+                                url: rc.paymentScreenshot!,
+                                recharge: rc,
+                                title: `${rc.userName} (${rc.userId}) • ₹${rc.amount} • UTR: ${rc.paymentUtr}`,
+                              })
+                            }
+                            className="group flex items-center gap-2 p-1 rounded-sm border border-slate-300 bg-white hover:border-[#2874f0] transition cursor-pointer"
+                          >
+                            <img
+                              src={rc.paymentScreenshot}
+                              alt="Payment Proof"
+                              className="w-11 h-11 object-cover rounded-xs bg-slate-100"
+                            />
+                            <span className="text-[10px] font-bold text-[#2874f0] pr-1 flex items-center gap-1">
+                              <Eye className="w-3 h-3" />
+                              देखें
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">स्क्रीनशॉट नहीं</span>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <span
@@ -1498,6 +1882,113 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ===================== TAB: ADMIN MESSAGES & ALERTS ===================== */}
+      {activeTab === 'messages' && (
+        <div className="bg-white rounded-md p-5 border border-slate-200 space-y-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-bold text-[#212121] flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-[#2874f0]" />
+                <span>Admin Inbox: कॉइन अलर्ट्स व यूजर संदेश (Messages &amp; Alerts)</span>
+              </h3>
+              <p className="text-xs text-slate-600 mt-0.5">
+                जब भी कोई यूजर कॉइन रिचार्ज अनुरोध या संपर्क संदेश भेजेगा, वह यहाँ तुरंत दिखाई देगा।
+              </p>
+            </div>
+            <button
+              onClick={loadAdminData}
+              className="px-3 py-1.5 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-xs font-bold text-[#212121] border border-slate-300 transition self-start sm:self-auto cursor-pointer"
+            >
+              🔄 रीफ्रेश संदेश
+            </button>
+          </div>
+
+          {adminNotifications.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-[#2874f0] uppercase tracking-wider">
+                🔔 लाइव पेमेंट व कॉइन अलर्ट्स ({adminNotifications.length})
+              </h4>
+              <div className="space-y-2">
+                {adminNotifications.map(n => (
+                  <div
+                    key={n.id}
+                    className="p-3 rounded-sm bg-[#f5f8ff] border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-[#212121]">{n.title}</div>
+                      <div className="text-xs text-slate-700 mt-0.5">{n.message}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        {new Date(n.date).toLocaleString('hi-IN')}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('coin_recharges')}
+                      className="px-3 py-1.5 rounded-sm bg-[#2874f0] hover:bg-[#1e60d5] text-white text-[11px] font-bold shrink-0 cursor-pointer"
+                    >
+                      कॉइन ऑर्डर खोलें ➔
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+              📩 सभी इनबॉक्स व संपर्क संदेश ({contactMessages.length})
+            </h4>
+            {contactMessages.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-500 border border-slate-200 rounded-md bg-[#f9fafb]">
+                कोई संदेश अभी तक प्राप्त नहीं हुआ है।
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {contactMessages.map(msg => (
+                  <div
+                    key={msg.id}
+                    className={`p-3.5 rounded-md border ${
+                      msg.status === 'unread' ? 'bg-amber-50/50 border-amber-300' : 'bg-[#f9fafb] border-slate-200'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-bold text-[#212121]">{msg.subject}</div>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase ${
+                          msg.status === 'unread'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
+                        }`}
+                      >
+                        {msg.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-700 mt-1.5 leading-relaxed">{msg.message}</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-200 text-[11px] text-slate-600">
+                      <span>
+                        <strong>{msg.name}</strong> {msg.phone ? `• 📞 ${msg.phone}` : ''} • {msg.email}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(msg.createdAt).toLocaleString('hi-IN')}
+                        </span>
+                        {msg.id.startsWith('CNT-CR-') && (
+                          <button
+                            onClick={() => setActiveTab('coin_recharges')}
+                            className="px-2.5 py-1 rounded-sm bg-[#fb641b] text-white text-[10px] font-bold cursor-pointer"
+                          >
+                            स्क्रीनशॉट व UTR देखें
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -2044,416 +2535,610 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </div>
       )}
 
-      {/* ===================== TAB 8: DEMO USERS & PROFILE EDITOR ===================== */}
-      {activeTab === 'demo_users' && (
-        <div className="space-y-4">
-          <div className="p-4 sm:p-5 rounded-md bg-white border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold uppercase text-[#2874f0] bg-blue-50 px-2.5 py-0.5 rounded-sm border border-blue-200">
-                User Management &amp; Identity
-              </span>
-              <h3 className="text-base sm:text-xl font-bold text-[#212121]">
-                डेमो यूजर बनाएं एवं किसी भी यूजर की प्रोफाइल एडिट करें
+      {/* ===================== TAB 8: REAL GIFT CARD REDEMPTIONS ===================== */}
+      {activeTab === 'gift_cards' && (
+        <div className="bg-white rounded-md p-5 border border-slate-200 space-y-4 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-bold text-[#212121] flex items-center space-x-2">
+                <Gift className="w-5 h-5 text-[#2874f0]" />
+                <span>डिजिटल गिफ्ट कार्ड रिडेम्पशन फुलफिलमेंट (Real Voucher Orders)</span>
               </h3>
-              <p className="text-xs text-slate-600 max-w-xl">
-                यहाँ से आप नए डेमो यूजर जोड़ सकते हैं, उनकी प्रोफाइल फोटो, नाम, कॉइन्स, गेम लेवल, हाउस नेम व अन्य विवरण बदल सकते हैं।
+              <p className="text-xs text-slate-600 mt-0.5">
+                यूजर द्वारा कॉइन्स खर्च कर अनुरोध किए गए वाउचर्स के लिए रियल ऑफिशियल रिडीम कोड जारी करें।
               </p>
             </div>
-
             <button
-              onClick={() => setShowAddDemoModal(true)}
-              className="px-5 py-2.5 rounded-sm font-bold text-xs bg-[#fb641b] hover:bg-[#e5530d] text-white shadow-2xs flex items-center space-x-1.5 transition cursor-pointer shrink-0"
+              onClick={loadAdminData}
+              className="px-3 py-1.5 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-xs font-bold text-[#212121] border border-slate-300 transition self-start sm:self-auto cursor-pointer"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>+ नया डेमो यूजर जोड़ें</span>
+              🔄 रीफ्रेश लिस्ट
             </button>
           </div>
 
-          {/* Members Profile List with Direct Edit */}
-          <div className="space-y-3">
-            <h4 className="font-bold text-xs sm:text-sm text-[#212121]">
-              सभी रजिस्टर्ड व डेमो मेंबर्स ({users.length})
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {users.map(u => (
-                <div
-                  key={u.id || u.userId}
-                  className="p-4 rounded-md bg-white border border-slate-200 shadow-2xs space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center space-x-3">
-                      <img
-                        src={u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
-                        alt={u.fullName}
-                        className="w-12 h-12 rounded-md object-cover border border-slate-200 shadow-2xs shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-1.5">
-                          <h5 className="font-bold text-xs sm:text-sm text-[#212121] truncate">
-                            {u.fullName}
-                          </h5>
-                          {u.userId.startsWith('ESP-DEMO') && (
-                            <span className="text-[9px] bg-blue-50 text-[#2874f0] border border-blue-200 px-1.5 py-0.2 rounded-sm font-bold">
-                              DEMO
+          {giftCardRedemptions.length === 0 ? (
+            <div className="text-center py-10 space-y-2">
+              <Gift className="w-10 h-10 text-slate-400 mx-auto" />
+              <p className="text-sm font-semibold text-slate-600">अभी तक कोई गिफ्ट कार्ड रिडेम्पशन अनुरोध नहीं मिला है।</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-600 uppercase text-[10px] bg-[#f9fafb]">
+                    <th className="py-2.5 px-3">Order ID</th>
+                    <th className="py-2.5 px-3">Member</th>
+                    <th className="py-2.5 px-3">Brand / Value</th>
+                    <th className="py-2.5 px-3">Coins Spent</th>
+                    <th className="py-2.5 px-3">Status / Voucher Code</th>
+                    <th className="py-2.5 px-3 text-right">Admin Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {giftCardRedemptions.map(gc => (
+                    <tr key={gc.id} className="hover:bg-[#f5f8ff]">
+                      <td className="py-3 px-3 font-mono text-[11px] text-slate-600">{gc.id}</td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-[#212121]">{gc.userName}</div>
+                        <div className="font-mono text-[11px] text-[#2874f0] font-semibold">{gc.userId}</div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="font-bold text-[#212121] block">{gc.brand}</span>
+                        <span className="text-[11px] text-[#388e3c] font-bold">₹{gc.denomination} • {gc.title}</span>
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-amber-700">
+                        🪙 {gc.coinsSpent.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-3">
+                        {gc.status === 'fulfilled' ? (
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-emerald-50 text-[#388e3c] border border-emerald-200 inline-block">
+                              FULFILLED ✓
                             </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] font-mono text-[#2874f0] font-semibold truncate">{u.userId}</p>
-                        <p className="text-[10px] text-slate-500">{u.phone}</p>
-                      </div>
-                    </div>
+                            <p className="font-mono font-bold text-[#212121] text-[11px] select-all">
+                              Code: {gc.voucherCode}
+                            </p>
+                          </div>
+                        ) : gc.status === 'rejected' ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-rose-50 text-rose-700 border border-rose-200">
+                            REJECTED
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-amber-50 text-amber-800 border border-amber-200">
+                            PENDING VOUCHER
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        {gc.status === 'pending_fulfillment' ? (
+                          <button
+                            disabled={giftCardProcessingId === gc.id}
+                            onClick={() => handleFulfillGiftCard(gc)}
+                            className="px-3 py-1.5 rounded-sm text-xs font-bold bg-[#2874f0] hover:bg-[#1e60d5] text-white transition cursor-pointer disabled:opacity-50"
+                          >
+                            वाउचर कोड जारी करें
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 font-semibold">Delivered</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#f9fafb] p-2.5 rounded-sm border border-slate-200">
-                      <div>
-                        <span className="text-slate-500 block text-[9px] uppercase font-bold">Coins</span>
-                        <span className="font-mono font-bold text-amber-700">🪙 {u.coins || 0}</span>
+      {/* ===================== TAB 9: VIP ROOM IDs & COUNT SYSTEM ===================== */}
+      {activeTab === 'vip_rooms' && (() => {
+        const standardNumbers = users
+          .map(u => Number(u.roomAddress))
+          .filter(n => Number.isFinite(n) && n >= 10001 && n <= 999999);
+        const nextAutoCountId = String(Math.max(10000, ...standardNumbers) + 1);
+        const vipAssignedCount = users.filter(u => u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)).length;
+        const selectedUser = users.find(u => u.userId === vipSelectedUserId) || null;
+        const takenRoomMap = new Map<string, UserProfile>();
+        users.forEach(u => {
+          if (u.roomAddress) {
+            takenRoomMap.set(String(u.roomAddress).replace(/\D/g, ''), u);
+          }
+        });
+        const filteredRoomUsers = users.filter(u => {
+          const q = vipSearchQuery.trim().toLowerCase();
+          if (!q) return true;
+          return (
+            u.fullName.toLowerCase().includes(q) ||
+            u.userId.toLowerCase().includes(q) ||
+            (u.username || '').toLowerCase().includes(q) ||
+            (u.roomAddress || '').toLowerCase().includes(q) ||
+            (u.vipRoomLabel || '').toLowerCase().includes(q)
+          );
+        });
+
+        return (
+          <div className="space-y-4">
+            {/* Summary Metrics Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">कुल सक्रिय पर्सनल रूम्स</span>
+                <div className="text-2xl font-black text-[#212121] mt-1 font-mono tabular-nums">
+                  {users.length}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">प्रत्येक यूजर का यूनिक न्यूमेरिक रूम नंबर</p>
+              </div>
+              <div className="bg-white border border-amber-200 rounded-md p-4 shadow-2xs">
+                <span className="text-[11px] font-bold text-amber-700 uppercase">VIP रूम IDs (1111, 2222, 1234...)</span>
+                <div className="text-2xl font-black text-amber-600 mt-1 font-mono tabular-nums">
+                  👑 {vipAssignedCount}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">फैंसी 3-4 अंक VIP नंबर सीधे सर्च में शीर्ष पर</p>
+              </div>
+              <div className="bg-white border border-blue-200 rounded-md p-4 shadow-2xs">
+                <span className="text-[11px] font-bold text-[#2874f0] uppercase">अगला ऑटो काउंट रूम ID</span>
+                <div className="text-2xl font-black text-[#2874f0] mt-1 font-mono tabular-nums">
+                  #{nextAutoCountId}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">नए यूजर को क्रमानुसार (10001, 10002...) आवंटित</p>
+              </div>
+            </div>
+
+            {/* VIP Assignment Panel */}
+            <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
+                <div>
+                  <h3 className="text-base font-bold text-[#212121] flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-amber-500" />
+                    <span>VIP Room ID आवंटन व प्रबंधन (Admin VIP Room Setup)</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    किसी भी सदस्य को यूनिक VIP नंबर (जैसे 1111, 2222, 1234, 7777, 9999) असाइन करें — कोई दो सदस्य एक ही Room ID नहीं रख सकते।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadAdminData}
+                  className="px-3 py-1.5 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-xs font-bold text-[#212121] border border-slate-300 transition self-start sm:self-auto cursor-pointer"
+                >
+                  🔄 रीफ्रेश लिस्ट
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                {/* Left 5 cols: Select Member */}
+                <div className="lg:col-span-5 space-y-3 bg-[#f9fafb] border border-slate-200 rounded-md p-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#212121] mb-1">
+                      1. सदस्य चुनें (Select Member)
+                    </label>
+                    <select
+                      value={vipSelectedUserId}
+                      onChange={e => {
+                        const uid = e.target.value;
+                        setVipSelectedUserId(uid);
+                        const u = users.find(x => x.userId === uid);
+                        if (u) {
+                          setVipRoomNumberInput(u.roomAddress || '');
+                          setVipRoomLabelInput(u.vipRoomLabel || 'VIP Royal');
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-xs font-semibold text-[#212121] outline-none focus:border-[#2874f0]"
+                    >
+                      {users.map(u => (
+                        <option key={u.userId} value={u.userId}>
+                          {u.fullName} ({u.userId}) — Room #{u.roomAddress || 'N/A'} {u.isVipRoom ? '[VIP]' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedUser && (
+                    <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={selectedUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedUser.userId}`}
+                            alt={selectedUser.fullName}
+                            className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-[#212121] truncate">
+                              {selectedUser.fullName}
+                            </div>
+                            <div className="text-[11px] font-mono text-[#2874f0] truncate">
+                              {selectedUser.userId} {selectedUser.username ? `• @${selectedUser.username}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-sm text-[10px] font-black font-mono tabular-nums shrink-0 ${
+                          selectedUser.isVipRoom || isVipFancyRoomNumber(selectedUser.roomAddress)
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : 'bg-slate-100 text-slate-700 border border-slate-300'
+                        }`}>
+                          #{selectedUser.roomAddress || '—'}
+                        </span>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px] uppercase font-bold">Level</span>
-                        <span className="font-bold text-[#2874f0]">Lv. {u.gameLevel || 1}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px] uppercase font-bold">Clan</span>
-                        <span className="font-semibold text-[#212121] truncate block">{u.clanName || 'None'}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px] uppercase font-bold">Status</span>
-                        <span className={`font-bold capitalize ${u.status === 'active' ? 'text-[#388e3c]' : 'text-[#fb641b]'}`}>
-                          {u.status}
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1.5 border-t border-slate-100">
+                        <span>वर्तमान स्टेटस:</span>
+                        <span className="font-bold text-[#212121]">
+                          {selectedUser.isVipRoom
+                            ? `👑 ${selectedUser.vipRoomLabel || 'VIP Room'}`
+                            : 'Standard Sequential Room'}
                         </span>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200 flex justify-end">
-                    <button
-                      onClick={() => {
-                        setEditingUserId(u.userId);
-                        setEditForm({
-                          fullName: u.fullName,
-                          avatar: u.avatar || '',
-                          phone: u.phone,
-                          email: u.email,
-                          coins: u.coins || 0,
-                          charms: u.charms || 0,
-                          gameLevel: u.gameLevel || 1,
-                          status: u.status,
-                          clanName: u.clanName || '',
-                          houseName: u.houseName || '',
-                          bio: u.bio || '',
-                        });
-                      }}
-                      className="px-3.5 py-1.5 rounded-sm text-xs font-bold bg-[#2874f0] hover:bg-[#1e60d5] text-white transition cursor-pointer flex items-center space-x-1"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                      <span>प्रोफाइल एडिट करें</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===================== ADD DEMO USER MODAL ===================== */}
-      {showAddDemoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative max-w-lg w-full bg-white text-[#212121] rounded-md border border-slate-200 shadow-xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h4 className="font-bold text-base text-[#2874f0] flex items-center space-x-2">
-                <UserPlus className="w-5 h-5" />
-                <span>नया डेमो यूजर जोड़ें (Create Demo User)</span>
-              </h4>
-              <button
-                onClick={() => setShowAddDemoModal(false)}
-                className="w-8 h-8 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateDemoUser} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-[#212121] mb-1">पूरा नाम (Full Name) *</label>
-                <input
-                  type="text"
-                  required
-                  value={demoForm.fullName}
-                  onChange={e => setDemoForm({ ...demoForm, fullName: e.target.value })}
-                  placeholder="e.g. Rohit Sharma"
-                  className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-[#212121] mb-1">
-                  प्रोफाइल फोटो लिंक / कैमरा अपलोड
-                </label>
-                <input
-                  type="text"
-                  value={demoForm.avatar}
-                  onChange={e => setDemoForm({ ...demoForm, avatar: e.target.value })}
-                  placeholder="https://... या नीचे से फोटो चुनें"
-                  className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                />
-                <div className="mt-1.5 flex items-center space-x-2">
-                  <label className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] text-[11px] font-bold border border-slate-300 cursor-pointer flex items-center space-x-1">
-                    <Upload className="w-3 h-3 text-[#2874f0]" />
-                    <span>फाइल चुनें</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = ev => {
-                            if (ev.target?.result) setDemoForm(prev => ({ ...prev, avatar: ev.target?.result as string }));
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">मोबाइल नंबर</label>
-                  <input
-                    type="tel"
-                    value={demoForm.phone}
-                    onChange={e => setDemoForm({ ...demoForm, phone: e.target.value })}
-                    placeholder="9876543210"
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">गेम लेवल</label>
-                  <input
-                    type="number"
-                    value={demoForm.gameLevel}
-                    onChange={e => setDemoForm({ ...demoForm, gameLevel: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">कॉइन्स बैलेंस</label>
-                  <input
-                    type="number"
-                    value={demoForm.coins}
-                    onChange={e => setDemoForm({ ...demoForm, coins: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">क्लैन (Clan Name)</label>
-                  <input
-                    type="text"
-                    value={demoForm.clanName}
-                    onChange={e => setDemoForm({ ...demoForm, clanName: e.target.value })}
-                    placeholder="Royal Warriors ESP"
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowAddDemoModal(false)}
-                  className="px-4 py-2 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] font-bold border border-slate-300 cursor-pointer"
-                >
-                  रद्द करें
-                </button>
-                <button
-                  type="submit"
-                  disabled={profileSaving}
-                  className="px-5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1e60d5] text-white font-bold cursor-pointer"
-                >
-                  {profileSaving ? 'बन रहा है...' : 'डेमो यूजर जोड़ें'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ===================== EDIT USER PROFILE MODAL ===================== */}
-      {editingUserId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative max-w-lg w-full bg-white text-[#212121] rounded-md border border-slate-200 shadow-xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h4 className="font-bold text-base text-[#2874f0] flex items-center space-x-2">
-                <Edit className="w-5 h-5" />
-                <span>यूजर प्रोफाइल विवरण एडिट करें ({editingUserId})</span>
-              </h4>
-              <button
-                onClick={() => setEditingUserId(null)}
-                className="w-8 h-8 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-[#212121] mb-1">पूरा नाम (Full Name)</label>
-                <input
-                  type="text"
-                  value={editForm.fullName || ''}
-                  onChange={e => setEditForm({ ...editForm, fullName: e.target.value })}
-                  className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-[#212121] mb-1">
-                  प्रोफाइल फोटो (Profile Pic Avatar)
-                </label>
-                <input
-                  type="text"
-                  value={editForm.avatar || ''}
-                  onChange={e => setEditForm({ ...editForm, avatar: e.target.value })}
-                  placeholder="Image URL"
-                  className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                />
-                <div className="mt-1.5 flex items-center space-x-2">
-                  <label className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] text-[11px] font-bold border border-slate-300 cursor-pointer flex items-center space-x-1">
-                    <Upload className="w-3 h-3 text-[#2874f0]" />
-                    <span>गैलरी / कैमरा से फोटो अपलोड करें</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = ev => {
-                            if (ev.target?.result) setEditForm((prev: any) => ({ ...prev, avatar: ev.target?.result as string }));
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                  {editForm.avatar && (
-                    <img
-                      src={editForm.avatar}
-                      alt="Avatar"
-                      className="w-8 h-8 rounded-sm object-cover border border-[#2874f0]"
-                    />
                   )}
                 </div>
+
+                {/* Right 7 cols: Enter / Pick VIP Room ID */}
+                <div className="lg:col-span-7 space-y-3 bg-[#f9fafb] border border-slate-200 rounded-md p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#212121] mb-1">
+                        2. नया VIP Room Number (केवल अंक / 3-10 Digits)
+                      </label>
+                      <div className="relative">
+                        <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={vipRoomNumberInput}
+                          onChange={e => setVipRoomNumberInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          placeholder="जैसे: 1111, 2222, 1234, 7777"
+                          className="w-full pl-9 pr-3 py-2 rounded-sm bg-white border border-slate-300 text-sm font-mono tabular-nums font-black text-[#212121] outline-none focus:border-[#2874f0]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#212121] mb-1">
+                        3. VIP बैज लेबल (Optional Badge Title)
+                      </label>
+                      <select
+                        value={vipRoomLabelInput}
+                        onChange={e => setVipRoomLabelInput(e.target.value)}
+                        className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-xs font-bold text-[#212121] outline-none focus:border-[#2874f0]"
+                      >
+                        <option value="VIP Royal">👑 VIP Royal</option>
+                        <option value="VIP King">👑 VIP King</option>
+                        <option value="VIP Queen">👑 VIP Queen</option>
+                        <option value="VIP Diamond">💎 VIP Diamond</option>
+                        <option value="VIP Supreme">⚡ VIP Supreme</option>
+                        <option value="VIP Room">⭐ VIP Room</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Live Conflict / Availability Banner */}
+                  {vipRoomNumberInput && (
+                    <div className={`px-3 py-2 rounded-sm border text-xs font-semibold flex items-center justify-between gap-2 ${
+                      vipChecking
+                        ? 'bg-slate-100 border-slate-300 text-slate-700'
+                        : vipCheckResult?.available
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-800'
+                    }`}>
+                      <span>
+                        {vipChecking
+                          ? 'उपलब्धता की जाँच हो रही है...'
+                          : vipCheckResult?.available
+                          ? `✓ Room ID #${vipCheckResult.normalized} उपलब्ध है! ${vipCheckResult.isFancyVip ? '(Fancy VIP Tier)' : ''}`
+                          : vipCheckResult?.conflictOwner
+                          ? `✕ Room ID #${vipCheckResult.normalized} पहले से ${vipCheckResult.conflictOwner} के पास है`
+                          : vipCheckResult?.message || 'कम से कम 3 अंकों की संख्या दर्ज करें'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Quick Curated VIP Numbers Picker */}
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-600 mb-1.5">
+                      क्विक VIP फैंसी नंबर चुनें (तुरंत उपलब्धता देखें):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CURATED_VIP_ROOM_NUMBERS.map(num => {
+                        const holder = takenRoomMap.get(num);
+                        const isMine = holder && holder.userId === vipSelectedUserId;
+                        const isTakenByOther = Boolean(holder && !isMine);
+                        const isSelected = vipRoomNumberInput === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setVipRoomNumberInput(num)}
+                            title={holder ? `Assigned to ${holder.fullName}` : 'Available VIP Number'}
+                            className={`px-2.5 py-1 rounded-sm text-xs font-mono tabular-nums font-black border transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#2874f0] text-white border-[#2874f0]'
+                                : isMine
+                                ? 'bg-amber-100 text-amber-900 border-amber-400'
+                                : isTakenByOther
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                                : 'bg-white text-[#212121] border-amber-300 hover:bg-amber-50'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Submit / Reset Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      disabled={vipSaving || !vipSelectedUserId || vipRoomNumberInput.length < 3 || (vipCheckResult !== null && !vipCheckResult.available)}
+                      onClick={handleAssignVipRoom}
+                      className="px-4 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1e60d5] text-white text-xs font-black transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Crown className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{vipSaving ? 'सेव हो रहा है...' : '👑 VIP Room ID असाइन करें'}</span>
+                    </button>
+
+                    {selectedUser && (selectedUser.isVipRoom || isVipFancyRoomNumber(selectedUser.roomAddress)) && (
+                      <button
+                        type="button"
+                        disabled={vipSaving}
+                        onClick={() => handleResetVipRoom(selectedUser)}
+                        className="px-3.5 py-2 rounded-sm bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                      >
+                        ↺ Standard Count ID (10001+) पर रीसेट करें
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">मोबाइल नंबर</label>
-                  <input
-                    type="tel"
-                    value={editForm.phone || ''}
-                    onChange={e => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">ईमेल</label>
-                  <input
-                    type="email"
-                    value={editForm.email || ''}
-                    onChange={e => setEditForm({ ...editForm, email: e.target.value })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">कॉइन्स (Coins)</label>
-                  <input
-                    type="number"
-                    value={editForm.coins || 0}
-                    onChange={e => setEditForm({ ...editForm, coins: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0] font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">चार्म्स (Charms)</label>
-                  <input
-                    type="number"
-                    value={editForm.charms || 0}
-                    onChange={e => setEditForm({ ...editForm, charms: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0] font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">गेम लेवल</label>
-                  <input
-                    type="number"
-                    value={editForm.gameLevel || 1}
-                    onChange={e => setEditForm({ ...editForm, gameLevel: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">अकाउंट स्टेटस</label>
-                  <select
-                    value={editForm.status || 'active'}
-                    onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
-                  >
-                    <option value="active">Active (सक्रिय)</option>
-                    <option value="pending">Pending (समीक्षाधीन)</option>
-                    <option value="rejected">Rejected (अस्वीकृत)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#212121] mb-1">क्लैन का नाम</label>
+            {/* Members & Room Numbers Table */}
+            <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h4 className="text-sm font-bold text-[#212121]">
+                  सभी सदस्यों के यूनिक न्यूमेरिक रूम IDs ({filteredRoomUsers.length})
+                </h4>
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
-                    value={editForm.clanName || ''}
-                    onChange={e => setEditForm({ ...editForm, clanName: e.target.value })}
-                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-[#212121] focus:outline-none focus:border-[#2874f0]"
+                    value={vipSearchQuery}
+                    onChange={e => setVipSearchQuery(e.target.value)}
+                    placeholder="Room ID (1111, 10001), @username या नाम..."
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3 py-1.5 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-600 uppercase text-[10px] bg-[#f9fafb]">
+                      <th className="py-2.5 px-3">Member / @Username</th>
+                      <th className="py-2.5 px-3">User ID</th>
+                      <th className="py-2.5 px-3">Account / Plan</th>
+                      <th className="py-2.5 px-3">Room Number</th>
+                      <th className="py-2.5 px-3">Tier / Badge</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredRoomUsers.map(u => {
+                      const isVip = Boolean(u.isVipRoom || isVipFancyRoomNumber(u.roomAddress));
+                      return (
+                        <tr key={u.userId} className="hover:bg-[#f5f8ff]">
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-[#212121]">{u.fullName}</div>
+                            {u.username && (
+                              <div className="text-[11px] font-mono text-slate-500">@{u.username}</div>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-[11px] font-bold text-[#2874f0]">
+                            {u.userId}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="text-[11px] font-semibold text-slate-700">
+                              {u.chosenServiceName || u.chosenServiceCode || 'Member'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-sm font-mono tabular-nums font-black text-xs border ${
+                              isVip
+                                ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                : 'bg-blue-50 text-[#2874f0] border-blue-200'
+                            }`}>
+                              #{u.roomAddress || '—'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {isVip ? (
+                              <span className="px-2 py-0.5 rounded-sm text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                👑 {u.vipRoomLabel || 'VIP ROOM'}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold bg-slate-100 text-slate-600">
+                                Standard Count
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setVipSelectedUserId(u.userId);
+                                  setVipRoomNumberInput(u.roomAddress || '');
+                                  setVipRoomLabelInput(u.vipRoomLabel || 'VIP Royal');
+                                }}
+                                className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-blue-50 text-[#2874f0] border border-slate-300 text-[11px] font-bold cursor-pointer"
+                              >
+                                Edit / Set VIP
+                              </button>
+                              {isVip && (
+                                <button
+                                  type="button"
+                                  disabled={vipSaving}
+                                  onClick={() => handleResetVipRoom(u)}
+                                  className="px-2.5 py-1 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer"
+                                >
+                                  Reset
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================== REUSABLE INLINE ADMIN ACTION MODAL ===================== */}
+      {actionModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-md p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 text-[#212121]">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <h3 className={`text-sm sm:text-base font-bold ${actionModal.variant === 'reject' ? 'text-rose-700' : 'text-[#2874f0]'}`}>
+                {actionModal.title}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActionModal(null)}
+                className="p-1 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">{actionModal.description}</p>
+
+            {actionModal.needsInput && (
+              <div className="space-y-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#212121] mb-1">
+                    {actionModal.inputLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={actionModalInput}
+                    onChange={e => setActionModalInput(e.target.value)}
+                    placeholder={actionModal.inputPlaceholder}
+                    className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-xs text-[#212121] font-mono outline-none focus:border-[#2874f0]"
+                  />
+                </div>
+                {actionModal.secondaryInputLabel && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#212121] mb-1">
+                      {actionModal.secondaryInputLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={actionModalSecondary}
+                      onChange={e => setActionModalSecondary(e.target.value)}
+                      placeholder={actionModal.secondaryInputPlaceholder}
+                      className="w-full px-3 py-2 rounded-sm bg-[#f9fafb] border border-slate-300 text-xs text-[#212121] font-mono outline-none focus:border-[#2874f0]"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActionModal(null)}
+                disabled={actionModalBusy}
+                className="px-4 py-2 rounded-sm text-xs font-bold text-[#212121] bg-[#f1f3f6] hover:bg-slate-200 border border-slate-300 cursor-pointer"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="button"
+                disabled={actionModalBusy || (actionModal.needsInput && actionModal.inputRequired && !actionModalInput.trim())}
+                onClick={async () => {
+                  setActionModalBusy(true);
+                  try {
+                    await actionModal.onConfirm(actionModalInput, actionModalSecondary);
+                    setActionModal(null);
+                  } finally {
+                    setActionModalBusy(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-sm text-xs font-bold text-white cursor-pointer disabled:opacity-50 ${
+                  actionModal.variant === 'reject'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-[#388e3c] hover:bg-[#2e7d32]'
+                }`}
+              >
+                {actionModalBusy ? 'Processing...' : actionModal.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== PAYMENT SCREENSHOT LIGHTBOX MODAL ===================== */}
+      {previewScreenshot && (
+        <div
+          onClick={() => setPreviewScreenshot(null)}
+          className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-md p-4 sm:p-5 max-w-xl w-full shadow-2xl space-y-3 text-[#212121]"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 pb-2.5 gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#212121]">पेमेंट स्क्रीनशॉट सत्यापन</h3>
+                <p className="text-xs text-[#2874f0] font-semibold mt-0.5">{previewScreenshot.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewScreenshot(null)}
+                className="p-1 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#f9fafb] border border-slate-200 rounded-sm p-2 flex items-center justify-center">
+              <img
+                src={previewScreenshot.url}
+                alt="Payment Proof Full Preview"
+                className="max-h-[65vh] w-auto object-contain rounded-xs"
+              />
+            </div>
+
+            {previewScreenshot.recharge && previewScreenshot.recharge.status === 'pending' && (
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setEditingUserId(null)}
-                  className="px-4 py-2 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] font-bold border border-slate-300 cursor-pointer"
+                  onClick={() => {
+                    const targetId = previewScreenshot.recharge!.id;
+                    setPreviewScreenshot(null);
+                    handleRejectRecharge(targetId);
+                  }}
+                  className="px-3 py-2 rounded-sm text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
                 >
                   रद्द करें
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSaveEditUser(editingUserId)}
-                  disabled={profileSaving}
-                  className="px-6 py-2 rounded-sm bg-[#fb641b] hover:bg-[#e5530d] text-white font-bold shadow-2xs cursor-pointer"
+                  onClick={() => {
+                    const targetId = previewScreenshot.recharge!.id;
+                    setPreviewScreenshot(null);
+                    handleApproveRecharge(targetId);
+                  }}
+                  className="px-4 py-2 rounded-sm text-xs font-bold bg-[#388e3c] hover:bg-[#2e7d32] text-white cursor-pointer"
                 >
-                  {profileSaving ? 'सेव हो रहा है...' : 'विवरण सेव करें ✓'}
+                  ✓ स्वीकृत करें (+{(previewScreenshot.recharge.coins + previewScreenshot.recharge.bonusCoins).toLocaleString()} Coins)
                 </button>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

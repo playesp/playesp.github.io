@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
-import { 
-  Sparkles, Trophy, Clock, Coins, Zap, Heart, 
-  RotateCw, Gift, Crown, AlertCircle, CheckCircle2, ChevronRight, X 
+import {
+  Clock,
+  Coins,
+  RotateCw,
+  X,
 } from 'lucide-react';
 import type { UserProfile } from '../../types/index.ts';
 import { api } from '../../services/api.ts';
@@ -34,7 +36,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 100,
     charms: 0,
     xp: 20,
-    color: '#059669', // Emerald
+    color: '#059669',
     textColor: '#a7f3d0',
     borderColor: '#34d399',
     badge: '2X RETURN',
@@ -49,7 +51,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 0,
     charms: 50,
     xp: 30,
-    color: '#be185d', // Pink
+    color: '#be185d',
     textColor: '#fbcfe8',
     borderColor: '#f472b6',
     badge: 'CHARM BOOST',
@@ -64,7 +66,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 0,
     charms: 10,
     xp: 150,
-    color: '#0284c7', // Sky Blue
+    color: '#0284c7',
     textColor: '#bae6fd',
     borderColor: '#38bdf8',
     badge: 'FAST LEVEL',
@@ -79,7 +81,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 300,
     charms: 50,
     xp: 100,
-    color: '#d97706', // Gold Amber
+    color: '#d97706',
     textColor: '#fef3c7',
     borderColor: '#fbbf24',
     badge: 'MEGA WIN',
@@ -94,7 +96,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 50,
     charms: 25,
     xp: 25,
-    color: '#7c3aed', // Violet
+    color: '#7c3aed',
     textColor: '#ddd6fe',
     borderColor: '#a78bfa',
     badge: 'COMBO PACK',
@@ -109,7 +111,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 0,
     charms: 15,
     xp: 250,
-    color: '#2563eb', // Royal Blue
+    color: '#2563eb',
     textColor: '#bfdbfe',
     borderColor: '#60a5fa',
     badge: 'LEVEL UP',
@@ -124,7 +126,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 500,
     charms: 100,
     xp: 200,
-    color: '#b45309', // Deep Gold
+    color: '#b45309',
     textColor: '#fef08a',
     borderColor: '#facc15',
     badge: 'SUPER JACKPOT',
@@ -139,7 +141,7 @@ export const LUCKY_SPIN_SECTORS: SpinRewardSector[] = [
     coins: 80,
     charms: 30,
     xp: 50,
-    color: '#9333ea', // Purple
+    color: '#9333ea',
     textColor: '#f5d0fe',
     borderColor: '#c084fc',
     badge: 'SECRET GIFT',
@@ -155,6 +157,7 @@ interface DailyLuckySpinProps {
   onUpdateUser: (updatedUser: UserProfile) => void;
   onClose?: () => void;
   isModal?: boolean;
+  onOpenBuyCoins?: () => void;
 }
 
 export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
@@ -162,20 +165,14 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
   onUpdateUser,
   onClose,
   isModal = false,
+  onOpenBuyCoins,
 }) => {
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotationAngle, setRotationAngle] = useState(0);
   const [lastSpinDate, setLastSpinDate] = useState<number | null>(() => {
     try {
       const userPropTime = user.lastDailySpin ? new Date(user.lastDailySpin).getTime() : null;
-      const localTime = localStorage.getItem(`esp_last_daily_spin_${user.userId}`);
-      if (localTime) {
-        const parsed = Number(localTime);
-        if (!isNaN(parsed) && (!userPropTime || parsed > userPropTime)) {
-          return parsed;
-        }
-      }
-      return userPropTime;
+      return userPropTime && !isNaN(userPropTime) ? userPropTime : null;
     } catch {
       return null;
     }
@@ -189,18 +186,20 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const currentAngleRef = useRef<number>(0);
 
-  // Play synthesized tick or celebration sounds
+  useEffect(() => {
+    if (user.lastDailySpin) {
+      const parsed = new Date(user.lastDailySpin).getTime();
+      if (!isNaN(parsed)) setLastSpinDate(parsed);
+    }
+  }, [user.lastDailySpin]);
+
   const playSound = (type: 'tick' | 'win' | 'click' | 'deny') => {
     try {
       const AudioClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioClass) return;
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioClass();
-      }
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioClass();
       const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -216,13 +215,12 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
         osc.start();
         osc.stop(ctx.currentTime + 0.05);
       } else if (type === 'win') {
-        // High celebratory chime
         const now = ctx.currentTime;
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, now); // C5
-        osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
-        osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.3); // G5
-        osc.frequency.exponentialRampToValueAtTime(1046.50, now + 0.5); // C6
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15);
+        osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.3);
+        osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.5);
         gain.gain.setValueAtTime(0.35, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
         osc.start();
@@ -242,26 +240,17 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
         osc.start();
         osc.stop(ctx.currentTime + 0.08);
       }
-    } catch {
-      // Audio synthesis fallback
-    }
+    } catch {}
   };
 
-  // Cooldown countdown loop (runs every second)
   useEffect(() => {
     const updateCooldown = () => {
       if (!lastSpinDate) {
         setRemainingTimeSec(0);
         return;
       }
-      const now = Date.now();
-      const elapsed = now - lastSpinDate;
-      const leftMs = COOLDOWN_MS - elapsed;
-      if (leftMs > 0) {
-        setRemainingTimeSec(Math.ceil(leftMs / 1000));
-      } else {
-        setRemainingTimeSec(0);
-      }
+      const leftMs = COOLDOWN_MS - (Date.now() - lastSpinDate);
+      setRemainingTimeSec(leftMs > 0 ? Math.ceil(leftMs / 1000) : 0);
     };
 
     updateCooldown();
@@ -269,7 +258,6 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
     return () => clearInterval(interval);
   }, [lastSpinDate]);
 
-  // Format remaining seconds into HH:MM:SS
   const formatCountdown = (totalSec: number) => {
     const hours = Math.floor(totalSec / 3600);
     const minutes = Math.floor((totalSec % 3600) / 60);
@@ -281,21 +269,18 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
   const userCoins = user.coins || 0;
   const canAfford = userCoins >= SPIN_COST;
 
-  // Execute Spin Action
   const handleSpinWheel = async () => {
     if (isSpinning) return;
 
     if (isCooldownActive) {
       playSound('deny');
       setStatusFeedback(`⏳ 24 घंटे का कूलडाउन सक्रिय है! अगला स्पिन ${formatCountdown(remainingTimeSec)} बाद उपलब्ध होगा।`);
-      setTimeout(() => setStatusFeedback(null), 4000);
       return;
     }
 
     if (!canAfford) {
       playSound('deny');
       setStatusFeedback(`❌ सिक्के कम हैं! स्पिन करने के लिए ${SPIN_COST} कॉइन्स चाहिए (आपके पास: ${userCoins})।`);
-      setTimeout(() => setStatusFeedback(null), 4000);
       return;
     }
 
@@ -304,101 +289,60 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
     setStatusFeedback(null);
     setWinningSector(null);
 
-    // Pick target sector with Math.random()
-    // Sector indices 0 to 7
-    // Weighted probabilities giving exciting rewards:
-    // 0: 20%, 1: 15%, 2: 15%, 3: 10%, 4: 15%, 5: 12%, 6: 5%, 7: 8%
-    const rand = Math.random();
-    let targetIndex = 0;
-    if (rand < 0.20) targetIndex = 0;
-    else if (rand < 0.35) targetIndex = 1;
-    else if (rand < 0.50) targetIndex = 2;
-    else if (rand < 0.60) targetIndex = 3;
-    else if (rand < 0.75) targetIndex = 4;
-    else if (rand < 0.87) targetIndex = 5;
-    else if (rand < 0.92) targetIndex = 6;
-    else targetIndex = 7;
+    // Validate and commit spin server-side BEFORE animating wheel
+    let serverRes: any = null;
+    try {
+      serverRes = await api.dailyLuckySpin(user.userId);
+    } catch (err: any) {
+      setIsSpinning(false);
+      playSound('deny');
+      setStatusFeedback(`❌ ${err?.message || 'स्पिन असफल रहा (अपर्याप्त कॉइन्स या कूलडाउन)।'}`);
+      return;
+    }
+
+    const targetIndex =
+      typeof serverRes?.sectorIndex === 'number' &&
+      serverRes.sectorIndex >= 0 &&
+      serverRes.sectorIndex < LUCKY_SPIN_SECTORS.length
+        ? serverRes.sectorIndex
+        : 0;
 
     const chosenSector = LUCKY_SPIN_SECTORS[targetIndex];
-
-    // Angular calculation:
-    // Wheel has 8 slices: each slice is 45deg (360 / 8)
-    // Pointer is at the top (0deg / 12 o'clock).
-    // When the wheel rotates clockwise by angle θ, the slice positioned at 0deg is:
-    // (360 - (θ % 360)) / 45.
-    // To land on targetIndex: θ % 360 = (360 - (targetIndex * 45) - 22.5) % 360
-    const sectorAngle = 360 / 8; // 45 deg
-    const targetOffset = 360 - (targetIndex * sectorAngle) - (sectorAngle / 2);
-    // Extra 5 full rotations for dramatic spinning excitement
+    const sectorAngle = 360 / 8;
+    const targetOffset = 360 - targetIndex * sectorAngle - sectorAngle / 2;
     const fullRotations = 360 * 6;
     const currentRot = currentAngleRef.current;
-    const nextRotation = currentRot + fullRotations + ((targetOffset - (currentRot % 360) + 360) % 360);
+    const nextRotation =
+      currentRot + fullRotations + ((targetOffset - (currentRot % 360) + 360) % 360);
 
     currentAngleRef.current = nextRotation;
     setRotationAngle(nextRotation);
 
-    // Audio click cadence while wheel spins
     let tickCount = 0;
-    const totalTicks = 32;
-    const startTickInterval = 65;
     const tickInterval = setInterval(() => {
       playSound('tick');
       tickCount++;
-      if (tickCount >= totalTicks) {
-        clearInterval(tickInterval);
-      }
-    }, startTickInterval + tickCount * 6);
+      if (tickCount >= 32) clearInterval(tickInterval);
+    }, 65);
 
-    // Animation runs for 4.2 seconds
-    setTimeout(async () => {
+    setTimeout(() => {
       clearInterval(tickInterval);
       setIsSpinning(false);
       setWinningSector(chosenSector);
       playSound('win');
-      confetti({
-        particleCount: 100,
-        spread: 80,
-        origin: { y: 0.6 },
-      });
+      confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
 
-      // Update timestamp
-      const nowIso = new Date().toISOString();
-      const nowMs = Date.now();
-      setLastSpinDate(nowMs);
-      try {
-        localStorage.setItem(`esp_last_daily_spin_${user.userId}`, String(nowMs));
-      } catch {}
-
-      // Calculate updated balances
-      const updatedCoins = Math.max(0, userCoins - SPIN_COST) + chosenSector.coins;
-      const updatedCharms = (user.charms || 0) + chosenSector.charms;
-      const updatedXp = (user.gameXp || 0) + chosenSector.xp;
-      const updatedLevel = Math.max(1, Math.floor(updatedXp / 100) + 1);
-
-      const updatedUser: UserProfile = {
-        ...user,
-        coins: updatedCoins,
-        charms: updatedCharms,
-        gameXp: updatedXp,
-        gameLevel: updatedLevel,
-        lastDailySpin: nowIso,
-      };
-
-      onUpdateUser(updatedUser);
-      setShowWinModal(true);
-
-      // Persist to server API
-      try {
-        await api.dailyLuckySpin(user.userId, targetIndex);
-      } catch (err: any) {
-        console.warn('Daily spin server persist notice:', err?.message);
+      setLastSpinDate(Date.now());
+      if (serverRes?.user) {
+        onUpdateUser(serverRes.user);
       }
+      setShowWinModal(true);
     }, 4200);
   };
 
   const content = (
     <div className="bg-white border border-slate-200 rounded-md w-full max-w-lg mx-auto shadow-2xl relative overflow-hidden text-[#212121] animate-fadeIn">
-      {/* Header Banner */}
+      {/* Header */}
       <div className="bg-[#2874f0] px-5 py-3.5 flex items-center justify-between text-white">
         <div className="flex items-center space-x-2.5">
           <div className="w-10 h-10 rounded-sm bg-white/15 flex items-center justify-center text-xl">
@@ -410,11 +354,11 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
                 डेली लकी स्पिन (Daily Lucky Spin)
               </h3>
               <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-sm bg-[#ffe500] text-[#212121]">
-                24H VIP
+                50 COINS
               </span>
             </div>
             <p className="text-[11px] text-blue-100">
-              50 कॉइन्स खर्च करें और जीतें भारी कॉइन्स, चार्म्स व एक्सपी!
+              50 असली कॉइन्स लगाकर व्हील घुमाएं — गेम टास्क भी पूरा होगा!
             </p>
           </div>
         </div>
@@ -430,10 +374,9 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
       </div>
 
       <div className="p-5 sm:p-6">
-        {/* Top Status & Balance Ribbon */}
         <div className="grid grid-cols-3 gap-2">
           <div className="bg-[#f9fafb] p-2.5 rounded-sm border border-slate-200 text-center">
-            <span className="text-[10px] text-[#878787] block font-semibold">आपका कॉइन बैलेंस</span>
+            <span className="text-[10px] text-[#878787] block font-semibold">कॉइन बैलेंस</span>
             <span className="text-xs sm:text-sm font-black text-amber-600 flex items-center justify-center gap-1 mt-0.5">
               <span>🪙</span>
               <span>{userCoins.toLocaleString()}</span>
@@ -450,16 +393,17 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
 
           <div className="bg-[#f9fafb] p-2.5 rounded-sm border border-slate-200 text-center">
             <span className="text-[10px] text-[#878787] block font-semibold">उपलब्धता</span>
-            <span className={`text-[10px] font-black flex items-center justify-center gap-1 mt-1 ${
-              isCooldownActive ? 'text-rose-600 animate-pulse' : 'text-[#388e3c]'
-            }`}>
+            <span
+              className={`text-[10px] font-black flex items-center justify-center gap-1 mt-1 ${
+                isCooldownActive ? 'text-rose-600' : 'text-[#388e3c]'
+              }`}
+            >
               <Clock className="w-3 h-3" />
               <span>{isCooldownActive ? 'कूलडाउन' : 'तैयार है'}</span>
             </span>
           </div>
         </div>
 
-        {/* Feedback Toast */}
         {statusFeedback && (
           <div className="mt-3 p-2.5 rounded-sm bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold text-center animate-fadeIn">
             {statusFeedback}
@@ -468,34 +412,12 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
 
         {/* WHEEL CONTAINER */}
         <div className="my-5 flex flex-col items-center justify-center relative bg-[#f5f8ff] rounded-md border border-blue-100 py-5">
-          {/* Pointer Arrow Top Needle */}
           <div className="relative z-30 -mb-4 flex flex-col items-center">
             <div className="w-0 h-0 border-l-[14px] border-l-transparent border-r-[14px] border-r-transparent border-t-[24px] border-t-[#fb641b] filter drop-shadow-md" />
             <div className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 shadow -mt-4" />
           </div>
 
-          {/* Rotating Wheel Frame */}
           <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full p-2 bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 shadow-lg border-4 border-amber-200">
-            
-            {/* Outer Bulb Lights Rim */}
-            <div className="absolute inset-0 rounded-full flex items-center justify-center pointer-events-none">
-              {Array.from({ length: 16 }).map((_, i) => {
-                const deg = i * (360 / 16);
-                return (
-                  <div
-                    key={i}
-                    className={`absolute w-2 h-2 rounded-full shadow ${
-                      i % 2 === 0 ? 'bg-amber-200 shadow-amber-300' : 'bg-white shadow-blue-300'
-                    } ${isSpinning ? 'animate-ping' : ''}`}
-                    style={{
-                      transform: `rotate(${deg}deg) translate(0, -122px)`,
-                    }}
-                  />
-                );
-              })}
-            </div>
-
-            {/* Sliced SVG Wheel Canvas */}
             <div
               className="w-full h-full rounded-full overflow-hidden relative shadow-inner"
               style={{
@@ -522,19 +444,16 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
                   ))}
                 </defs>
 
-                {/* 8 Triangular Slices (45 degrees each) */}
                 {LUCKY_SPIN_SECTORS.map((sector, idx) => {
                   const angle = 45;
                   const startAngle = idx * angle;
                   const endAngle = startAngle + angle;
                   const radStart = (Math.PI / 180) * (startAngle - 90);
                   const radEnd = (Math.PI / 180) * (endAngle - 90);
-
                   const x1 = 150 + 150 * Math.cos(radStart);
                   const y1 = 150 + 150 * Math.sin(radStart);
                   const x2 = 150 + 150 * Math.cos(radEnd);
                   const y2 = 150 + 150 * Math.sin(radEnd);
-
                   const d = `M 150 150 L ${x1} ${y1} A 150 150 0 0 1 ${x2} ${y2} Z`;
 
                   return (
@@ -553,7 +472,6 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
                           fontSize="12"
                           fontWeight="900"
                           textAnchor="middle"
-                          style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
                         >
                           {sector.icon} {sector.title}
                         </text>
@@ -573,79 +491,84 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
                 })}
               </svg>
 
-              {/* Center Golden Knob Hub */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-16 h-16 rounded-full bg-[#ffe500] shadow-lg border-2 border-white flex flex-col items-center justify-center text-center">
                   <span className="text-sm font-black text-[#212121] leading-none">ESP</span>
-                  <span className="text-[8px] font-black uppercase text-[#2874f0] tracking-tighter mt-0.5">LUCKY</span>
+                  <span className="text-[8px] font-black uppercase text-[#2874f0] tracking-tighter mt-0.5">
+                    LUCKY
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* COOLDOWN / ACTION SECTION */}
+        {/* ACTION SECTION */}
         <div className="space-y-3">
           {isCooldownActive ? (
-            <div className="bg-rose-50 p-4 rounded-sm border border-rose-200 text-center animate-fadeIn">
+            <div className="bg-rose-50 p-4 rounded-sm border border-rose-200 text-center">
               <div className="flex items-center justify-center space-x-1.5 text-xs font-black text-rose-700">
-                <Clock className="w-4 h-4 text-rose-600 animate-spin" />
-                <span>24 घंटे का कूलडाउन सक्रिय (Cooldown Active)</span>
+                <Clock className="w-4 h-4 text-rose-600" />
+                <span>24 घंटे का कूलडाउन सक्रिय</span>
               </div>
-              
-              <div className="text-xl sm:text-2xl font-mono font-black text-[#212121] my-1 tracking-wider">
+              <div className="text-xl sm:text-2xl font-mono font-black text-[#212121] my-1">
                 {formatCountdown(remainingTimeSec)}
               </div>
-
               <p className="text-[11px] text-[#878787]">
-                यह स्पिन 24 घंटे में सिर्फ 1 बार घुमाया जा सकता है। कृपया उल्टी गिनती खत्म होने तक प्रतीक्षा करें।
+                यह स्पिन 24 घंटे में 1 बार 50 कॉइन्स के साथ घुमाया जा सकता है।
               </p>
-
-              <button
-                disabled
-                className="w-full mt-3 py-3 rounded-sm bg-slate-200 text-slate-500 font-bold text-xs cursor-not-allowed border border-slate-300"
-              >
-                ⏳ अगला स्पिन उपलब्ध होने में समय बाकी है
-              </button>
             </div>
           ) : (
             <div className="space-y-2">
               <button
                 onClick={handleSpinWheel}
                 disabled={isSpinning || !canAfford}
-                className={`w-full py-3.5 rounded-sm font-black text-sm sm:text-base flex items-center justify-center space-x-2 transition-all shadow-sm cursor-pointer ${
+                className={`w-full py-3.5 rounded-sm font-black text-sm sm:text-base flex items-center justify-center space-x-2 transition-all shadow-sm ${
                   !canAfford
                     ? 'bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed'
                     : isSpinning
                     ? 'bg-amber-400 text-[#212121] animate-pulse'
-                    : 'bg-[#fb641b] hover:bg-[#e8550f] text-white'
+                    : 'bg-[#fb641b] hover:bg-[#e8550f] text-white cursor-pointer'
                 }`}
               >
                 <RotateCw className={`w-5 h-5 ${isSpinning ? 'animate-spin' : ''}`} />
                 <span>
                   {isSpinning
-                    ? 'व्हील घूम रहा है... (Spinning...)'
+                    ? 'व्हील घूम रहा है...'
                     : !canAfford
-                    ? `अपर्याप्त कॉइन्स - 50 कॉइन्स चाहिए (Need 50c)`
+                    ? `अपर्याप्त कॉइन्स - 50 कॉइन्स चाहिए (आपके पास: ${userCoins})`
                     : `🎰 व्हील घुमाएं - 50 कॉइन्स (SPIN FOR 50 COINS)`}
                 </span>
               </button>
 
               {!canAfford && (
-                <p className="text-[11px] text-center text-rose-600 font-semibold">
-                  ⚠️ आपके पास केवल {userCoins} कॉइन्स हैं। कृपया रिचार्ज सेक्शन से कॉइन्स प्राप्त करें।
-                </p>
+                <div className="bg-rose-50 border border-rose-200 rounded-sm p-3 text-center space-y-2">
+                  <p className="text-[11px] text-rose-700 font-semibold">
+                    ⚠️ आपके पास केवल {userCoins} कॉइन्स हैं। असली टास्क पूरे करें (+5c) या कॉइन्स खरीदें।
+                  </p>
+                  {onOpenBuyCoins && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose?.();
+                        onOpenBuyCoins();
+                      }}
+                      className="px-4 py-2 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white text-xs font-black inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Coins className="w-4 h-4" />
+                      <span>🪙 Buy Coins (कॉइन्स खरीदें)</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
 
-          {/* Sectors Quick Preview Bar */}
           <div className="pt-3 border-t border-slate-200">
             <div className="text-[10px] text-[#878787] font-bold mb-2 flex items-center justify-between">
-              <span>संभावित पुरस्कार सूची (POSSIBLE REWARDS):</span>
-              <span className="text-[#388e3c] font-mono">100% Guaranteed Win</span>
+              <span>संभावित पुरस्कार सूची (SERVER VERIFIED):</span>
+              <span className="text-[#388e3c] font-mono">50 Coins Entry</span>
             </div>
-
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               {LUCKY_SPIN_SECTORS.map((s) => (
                 <div
@@ -664,26 +587,18 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
         </div>
       </div>
 
-      {/* WIN CELEBRATION MODAL */}
       {showWinModal && winningSector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white border border-slate-200 rounded-md p-6 max-w-sm w-full text-center shadow-2xl relative animate-scaleUp text-[#212121]">
+          <div className="bg-white border border-slate-200 rounded-md p-6 max-w-sm w-full text-center shadow-2xl text-[#212121]">
             <div className="w-16 h-16 rounded-full bg-[#ffe500] mx-auto flex items-center justify-center text-3xl shadow-md mb-3">
               🎉
             </div>
-
             <div className="text-xs font-black uppercase tracking-widest text-[#388e3c]">
-              बधाई हो! जीत का जश्न!
+              बधाई हो!
             </div>
-            
-            <h2 className="text-xl font-black text-[#212121] mt-1">
-              {winningSector.title}
-            </h2>
-            <p className="text-xs text-[#2874f0] font-bold mt-0.5">
-              {winningSector.hindiTitle}
-            </p>
+            <h2 className="text-xl font-black text-[#212121] mt-1">{winningSector.title}</h2>
+            <p className="text-xs text-[#2874f0] font-bold mt-0.5">{winningSector.hindiTitle}</p>
 
-            {/* Rewarded Stats Card */}
             <div className="my-4 p-3 bg-[#f9fafb] rounded-sm border border-slate-200 space-y-1.5">
               {winningSector.coins > 0 && (
                 <div className="flex items-center justify-between text-xs font-bold text-amber-700">
@@ -699,21 +614,17 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
               )}
               {winningSector.xp > 0 && (
                 <div className="flex items-center justify-between text-xs font-bold text-[#2874f0]">
-                  <span>⚡ एक्सपी / लेवल बूस्ट:</span>
+                  <span>⚡ EXP बूस्ट:</span>
                   <span className="text-sm font-black">+{winningSector.xp} XP</span>
                 </div>
               )}
-            </div>
-
-            <div className="text-[11px] text-[#878787] mb-4">
-              यह पुरस्कार आपके ESP वॉलेट व गेमिंग प्रोफाइल में तुरंत जोड़ दिया गया है। अगला स्पिन अब 24 घंटे बाद उपलब्ध होगा।
             </div>
 
             <button
               onClick={() => setShowWinModal(false)}
               className="w-full py-3 rounded-sm bg-[#388e3c] hover:bg-[#2e7d32] text-white font-black text-xs shadow-sm transition cursor-pointer"
             >
-              पुरस्कार क्लेम करें व जारी रखें ➔
+              जारी रखें ➔
             </button>
           </div>
         </div>
@@ -723,7 +634,7 @@ export const DailyLuckySpin: React.FC<DailyLuckySpinProps> = ({
 
   if (isModal) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+      <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
         {content}
       </div>
     );

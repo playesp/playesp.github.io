@@ -26,14 +26,11 @@ import {
 import type { PlatformSettings, ServiceItem, UserProfile, HomeSliderPhoto } from '../types/index.ts';
 import { ServicesPopUpModal } from '../components/ServicesPopUpModal.tsx';
 import { HelplineModal } from '../components/HelplineModal.tsx';
-import { DailyLoginRewardsModal } from '../components/DailyLoginRewardsModal.tsx';
 import { HomeSliderPopupModal } from '../components/HomeSliderPopupModal.tsx';
 import { AboutUsModal } from '../components/AboutUsModal.tsx';
 import { ContactUsModal } from '../components/ContactUsModal.tsx';
 import { FaqModal } from '../components/FaqModal.tsx';
 import { PrivacyTermsModal } from '../components/PrivacyTermsModal.tsx';
-import { DailyLoginRewards } from '../services/DailyLoginRewardsService.ts';
-import { showToast } from '../services/toast.ts';
 import { api } from '../services/api.ts';
 
 interface HomeViewProps {
@@ -98,19 +95,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const interval = setInterval(fetchRealCount, 30000);
     return () => clearInterval(interval);
   }, [currentUser?.userId, isLoginModalOpen]);
-
-  const [weeklyRewardsOpen, setWeeklyRewardsOpen] = useState<boolean>(() => {
-    if (!currentUser || isLoginModalOpen) return false;
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      if (localStorage.getItem('esp_weekly_reward_claimed_date') === today) return false;
-      if (localStorage.getItem(`esp_claimed_date_${currentUser.userId}`) === today) return false;
-      const status = DailyLoginRewards.checkStatus(currentUser);
-      return status.canClaimToday;
-    } catch {
-      return false;
-    }
-  });
 
   const estimatedDirectReward = calcTier * 0.5 * calcReferrals;
   const estimatedTaskMonthly = calcTier * 1.5 * 30;
@@ -218,7 +202,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     className="px-5 py-3 rounded-xs bg-white hover:bg-blue-50 text-[#2874f0] font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm cursor-pointer transition"
                   >
                     <Gamepad2 className="w-4 h-4" />
-                    <span>Free Gamer Pass (500 Coins)</span>
+                    <span>Free Gamer Pass (0 Coins Start)</span>
                   </button>
                   {onOpenLogin && (
                     <button
@@ -773,40 +757,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
         settings={settings}
       />
 
-      {/* Stationary Flipkart-Styled Weekly Rewards Trigger */}
+      {/* Stationary Flipkart-Styled Verified Tasks Trigger */}
       <button
         type="button"
-        onClick={() => setWeeklyRewardsOpen(true)}
+        onClick={() => onSelectTab(currentUser ? 'dashboard' : 'register')}
         className="fixed bottom-20 lg:bottom-6 right-4 z-30 bg-[#fb641b] hover:bg-[#e8550f] text-white px-4 py-2.5 rounded-sm shadow-lg flex items-center gap-2 cursor-pointer text-xs font-bold transition"
-        title="Weekly Rewards (दैनिक रिवॉर्ड)"
+        title="Verified Daily Tasks (+5 Coins & EXP)"
       >
         <Gift className="w-4 h-4" />
-        <span className="hidden sm:inline">Weekly Rewards</span>
+        <span className="hidden sm:inline">Tasks (+5 Coins)</span>
       </button>
-
-      <DailyLoginRewardsModal
-        isOpen={weeklyRewardsOpen}
-        user={currentUser}
-        onClose={() => setWeeklyRewardsOpen(false)}
-        onClaim={(updatedUser, reward) => {
-          const today = new Date().toISOString().slice(0, 10);
-          try {
-            localStorage.setItem('esp_weekly_reward_claimed_date', today);
-            localStorage.setItem(`esp_claimed_date_${updatedUser.userId}`, today);
-          } catch {}
-          setWeeklyRewardsOpen(false);
-          showToast(`दैनिक बोनस प्राप्त! +${reward.coins} कॉइन्स जुड़े।`, 'reward');
-          if (onUpdateUser) onUpdateUser(updatedUser);
-        }}
-        onOpenRegister={() => {
-          showToast('दैनिक लॉगिन बोनस: 100 कॉइन्स! कृपया रजिस्ट्रेशन पूरा करें।', 'reward');
-          onSelectTab('register');
-        }}
-        onOpenLogin={() => {
-          if (onOpenLogin) onOpenLogin();
-          else onSelectTab('home');
-        }}
-      />
 
       <HomeSliderPopupModal
         photos={sliderPhotos}

@@ -24,6 +24,7 @@ interface SnakeRushGameProps {
   user: UserProfile;
   onCoinsUpdated?: (newCoins: number) => void;
   onGameComplete?: (result: 'win' | 'loss', coinsWon: number, bet: number) => void;
+  onOpenBuyCoins?: () => void;
 }
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
@@ -32,11 +33,10 @@ interface Point {
   y: number;
 }
 
-export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdated, onGameComplete }) => {
-  const [bet, setBet] = useState(50);
+export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdated, onGameComplete, onOpenBuyCoins }) => {
+  const [bet, setBet] = useState((user.coins || 0) >= 20 ? 20 : 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [score, setScore] = useState(0);
-  const [highScore, setHighScore] = useState(140);
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -72,19 +72,26 @@ export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdat
   };
 
   const startGame = async () => {
-    if ((user.coins || 0) < bet) {
-      showToast(`सिक्के कम हैं! खेल शुरू करने के लिए ${bet} कॉइन्स की आवश्यकता है।`, 'warning');
+    if (bet > 0 && (user.coins || 0) < bet) {
+      showToast(`सिक्के कम हैं! खेल शुरू करने के लिए ${bet} कॉइन्स चाहिए या "🆓 Free" मोड चुनें।`, 'warning');
       return;
     }
 
-    try {
-      const uId = user.userId || (user as any).id;
-      const res = await api.playCoinsGame(uId, 'snake', bet);
-      if (onCoinsUpdated && res.currentCoins !== undefined) {
-        onCoinsUpdated(res.currentCoins);
+    if (bet > 0) {
+      try {
+        const uId = user.userId || (user as any).id;
+        const res = await api.playCoinsGame(uId, 'snake', bet);
+        if (!res.success) {
+          showToast(res.error || res.message || 'पर्याप्त कॉइन्स नहीं हैं', 'error');
+          return;
+        }
+        if (onCoinsUpdated && res.currentCoins !== undefined) {
+          onCoinsUpdated(res.currentCoins);
+        }
+      } catch (e: any) {
+        showToast(e?.message || 'सर्वर से संपर्क करने में त्रुटि', 'error');
+        return;
       }
-    } catch (e) {
-      console.warn('Game start notice', e);
     }
 
     const initSnake = [
@@ -200,10 +207,22 @@ export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdat
     return () => clearInterval(gameLoopRef.current);
   }, [isPlaying, food, goldenCoin, gameWon]);
 
-  const handleCrash = () => {
+  const handleCrash = async () => {
     clearInterval(gameLoopRef.current);
     setIsPlaying(false);
     setGameOver(true);
+    const uId = user.userId || (user as any).id;
+    if (uId) {
+      if (bet === 0) {
+        try {
+          const res = await api.playFreeSkillMatch(uId, 'snake', 'loss', score);
+          if (onCoinsUpdated && res.currentCoins !== undefined) onCoinsUpdated(res.currentCoins);
+          if (res.coinsEarned > 0) showToast(`+${res.coinsEarned} Participation Coins & +${res.xpEarned} EXP!`, 'success');
+        } catch {}
+      } else {
+        api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
+      }
+    }
     if (onGameComplete) onGameComplete('loss', 0, bet);
   };
 
@@ -211,14 +230,23 @@ export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdat
     clearInterval(gameLoopRef.current);
     setIsPlaying(false);
     setGameWon(true);
-    const winAmount = Math.round(bet * 2.5);
+    const winAmount = bet === 0 ? 10 : Math.round(bet * 2.5);
     confetti({ particleCount: 120, spread: 80 });
 
     try {
       const uId = user.userId || (user as any).id;
-      const res = await api.claimGameWin(uId, 'snake', winAmount);
-      if (onCoinsUpdated && res.currentCoins !== undefined) {
-        onCoinsUpdated(res.currentCoins);
+      if (bet === 0) {
+        const res = await api.playFreeSkillMatch(uId, 'snake', 'win', score);
+        if (onCoinsUpdated && res.currentCoins !== undefined) {
+          onCoinsUpdated(res.currentCoins);
+        }
+        showToast(res.message || '🎉 Snake Rush जीत! कॉइन्स आपके खाते में जुड़े!', 'success');
+      } else {
+        const res = await api.claimGameWin(uId, 'snake', winAmount);
+        if (onCoinsUpdated && res.currentCoins !== undefined) {
+          onCoinsUpdated(res.currentCoins);
+        }
+        if (uId) api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
       }
     } catch (e) {
       console.warn('Game win notice', e);
@@ -280,12 +308,12 @@ export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdat
             <div className="text-lg font-black text-[#388e3c] font-mono">{score} / {TARGET_WIN_SCORE}</div>
           </div>
           <div className="bg-[#f9fafb] p-2 rounded-sm border border-slate-200">
-            <div className="text-[9px] text-[#878787] font-bold">Staked Coins</div>
-            <div className="text-lg font-black text-amber-600 font-mono">🪙 {bet}</div>
+            <div className="text-[9px] text-[#878787] font-bold">Entry Mode</div>
+            <div className="text-lg font-black text-amber-600 font-mono">{bet === 0 ? '🆓 FREE' : `🪙 ${bet}`}</div>
           </div>
           <div className="bg-[#f9fafb] p-2 rounded-sm border border-slate-200">
             <div className="text-[9px] text-[#878787] font-bold">Win Prize</div>
-            <div className="text-lg font-black text-[#2874f0] font-mono">🪙 {Math.round(bet * 2.5)}</div>
+            <div className="text-lg font-black text-[#2874f0] font-mono">🪙 {bet === 0 ? '10+' : Math.round(bet * 2.5)}</div>
           </div>
         </div>
 
@@ -370,27 +398,55 @@ export const SnakeRushGame: React.FC<SnakeRushGameProps> = ({ user, onCoinsUpdat
               )}
 
               {/* Bet Picker before playing */}
-              <div className="flex items-center space-x-2 my-3">
-                {[20, 50, 100, 200].map(amt => (
+              <div className="flex flex-wrap items-center justify-center gap-1.5 my-3">
+                {[0, 20, 50, 100, 200].map(amt => (
                   <button
                     key={amt}
                     onClick={() => setBet(amt)}
                     className={`px-2.5 py-1 rounded-sm text-xs font-bold border transition cursor-pointer ${
-                      bet === amt ? 'bg-[#ffe500] text-[#212121] border-amber-400 font-black' : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-100'
+                      bet === amt
+                        ? amt === 0
+                          ? 'bg-[#388e3c] text-white border-emerald-600 font-black'
+                          : 'bg-[#ffe500] text-[#212121] border-amber-400 font-black'
+                        : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    🪙 {amt}
+                    {amt === 0 ? '🆓 Free Earn' : `🪙 ${amt}`}
                   </button>
                 ))}
               </div>
 
-              <button
-                onClick={startGame}
-                className="bg-[#fb641b] hover:bg-[#e8550f] px-6 py-2.5 rounded-sm font-black text-xs text-white flex items-center space-x-2 shadow-sm cursor-pointer transition"
-              >
-                <Play className="w-4 h-4 fill-white" />
-                <span>{gameOver || gameWon ? 'PLAY AGAIN' : `START FOR ${bet} COINS`}</span>
-              </button>
+              {bet > 0 && (user.coins || 0) < bet ? (
+                <div className="space-y-2 w-full max-w-[230px]">
+                  <p className="text-[11px] font-bold text-rose-600">
+                    कम से कम {bet} Coins चाहिए — या ऊपर "🆓 Free Earn" चुनें!
+                  </p>
+                  {onOpenBuyCoins && (
+                    <button
+                      onClick={onOpenBuyCoins}
+                      className="w-full bg-[#2874f0] hover:bg-[#1c62d6] px-4 py-2 rounded-sm font-black text-xs text-white shadow-sm cursor-pointer transition"
+                    >
+                      🪙 Buy Coins (कॉइन्स खरीदें)
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={startGame}
+                  className={`${
+                    bet === 0 ? 'bg-[#388e3c] hover:bg-emerald-700' : 'bg-[#fb641b] hover:bg-[#e8550f]'
+                  } px-6 py-2.5 rounded-sm font-black text-xs text-white flex items-center space-x-2 shadow-sm cursor-pointer transition`}
+                >
+                  <Play className="w-4 h-4 fill-white" />
+                  <span>
+                    {gameOver || gameWon
+                      ? 'PLAY AGAIN'
+                      : bet === 0
+                      ? 'PLAY FREE & WIN +10 COINS'
+                      : `START FOR ${bet} COINS`}
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </div>

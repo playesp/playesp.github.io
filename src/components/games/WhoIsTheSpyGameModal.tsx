@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { UserProfile } from '../../types/index.ts';
 import { AvatarFrame, type FrameVariant } from '../AvatarFrame.tsx';
+import { api } from '../../services/api.ts';
 
 export interface SpyWordPair {
   id: string;
@@ -111,7 +112,7 @@ export interface SpyPlayer {
 interface WhoIsTheSpyGameModalProps {
   user: UserProfile;
   onClose: () => void;
-  onUpdateUserCoins: (newCoins: number, newCharms: number) => void;
+  onUpdateUserCoins?: (newCoins: number, newCharms: number) => void;
 }
 
 export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
@@ -143,19 +144,22 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
   const [timerSeconds, setTimerSeconds] = useState(25);
   const [isSpeakingVoice, setIsSpeakingVoice] = useState(true);
 
-  // 6 Players lineup matching WePlay bots + Real user
+  // 6 Players lineup from real registered community members + current user
   const [players, setPlayers] = useState<SpyPlayer[]>([]);
+  const [realMembers, setRealMembers] = useState<any[]>([]);
 
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize players and assign random roles
-  const initializeNewGame = () => {
+  const initializeNewGame = (membersPool: any[] = realMembers) => {
     // Pick random word pair
     const pair = SPY_WORD_PAIRS[Math.floor(Math.random() * SPY_WORD_PAIRS.length)];
     setCurrentWordPair(pair);
 
     // Pick 1 random spy index among the 6 players
     const spyIndex = Math.floor(Math.random() * 6);
+    const pool = Array.isArray(membersPool) ? membersPool : realMembers;
+    const others = (pool || []).filter((m: any) => m.userId !== user.userId).slice(0, 5);
 
     const initialPlayersList: SpyPlayer[] = [
       {
@@ -167,69 +171,26 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
         word: spyIndex === 0 ? pair.spyWord : pair.civilianWord,
         isAlive: true,
         votesReceived: 0,
-        level: user.gameLevel || 5,
+        level: user.gameLevel || 1,
         frameType: (user.frameType as FrameVariant) || 'standard',
       },
-      {
-        id: 'SHARMA-JI-VIP',
-        name: '👑 शर्मा जी (Grand Emperor)',
-        isBot: true,
-        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiEmperor99',
-        role: spyIndex === 1 ? 'spy' : 'civilian',
-        word: spyIndex === 1 ? pair.spyWord : pair.civilianWord,
-        isAlive: true,
-        votesReceived: 0,
-        level: 99,
-        frameType: 'royal-dragon-crown',
-      },
-      {
-        id: 'BOT-JUDGE',
-        name: '⚖️ न्यायाधीश (Judge Nyayadhish)',
-        isBot: true,
-        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=JudgeNyayadhish99',
-        role: spyIndex === 2 ? 'spy' : 'civilian',
-        word: spyIndex === 2 ? pair.spyWord : pair.civilianWord,
-        isAlive: true,
-        votesReceived: 0,
-        level: 45,
-        frameType: 'judge-justice',
-      },
-      {
-        id: 'BOT-BHAI',
-        name: '🤝 We Bhai (वी भाई)',
-        isBot: true,
-        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
-        role: spyIndex === 3 ? 'spy' : 'civilian',
-        word: spyIndex === 3 ? pair.spyWord : pair.civilianWord,
-        isAlive: true,
-        votesReceived: 0,
-        level: 30,
-        frameType: 'vip-gold',
-      },
-      {
-        id: 'BOT-CHAT',
-        name: '💬 We Chat AI (वी चैट)',
-        isBot: true,
-        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
-        role: spyIndex === 4 ? 'spy' : 'civilian',
-        word: spyIndex === 4 ? pair.spyWord : pair.civilianWord,
-        isAlive: true,
-        votesReceived: 0,
-        level: 38,
-        frameType: 'cosmic-neon',
-      },
-      {
-        id: 'BOT-SIMRAN',
-        name: '🌸 Simran (सिमरन)',
-        isBot: true,
-        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SimranPlayer',
-        role: spyIndex === 5 ? 'spy' : 'civilian',
-        word: spyIndex === 5 ? pair.spyWord : pair.civilianWord,
-        isAlive: true,
-        votesReceived: 0,
-        level: 25,
-        frameType: 'wolf-night',
-      },
+      ...[0, 1, 2, 3, 4].map((slotIdx) => {
+        const seatIndex = slotIdx + 1;
+        const member = others[slotIdx];
+        const isSpy = spyIndex === seatIndex;
+        return {
+          id: member ? member.userId : `SEAT-${seatIndex + 1}`,
+          name: member ? member.fullName : `Member Seat #${seatIndex + 1}`,
+          isBot: true,
+          avatar: member?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${member?.userId || `MemberSeat${seatIndex + 1}`}`,
+          role: (isSpy ? 'spy' : 'civilian') as 'spy' | 'civilian',
+          word: isSpy ? pair.spyWord : pair.civilianWord,
+          isAlive: true,
+          votesReceived: 0,
+          level: member?.gameLevel || 1,
+          frameType: (member?.frameType as FrameVariant) || 'standard',
+        };
+      }),
     ];
 
     setPlayers(initialPlayersList);
@@ -254,7 +215,15 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
   };
 
   useEffect(() => {
-    initializeNewGame();
+    api.getRealCommunityPlayers()
+      .then((list) => {
+        const members = Array.isArray(list) ? list : [];
+        setRealMembers(members);
+        initializeNewGame(members);
+      })
+      .catch(() => {
+        initializeNewGame([]);
+      });
   }, []);
 
   useEffect(() => {
@@ -502,6 +471,7 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
           setPhase('game_over');
           setNarratorMessage(`🕵️ जासूस की महा-जीत! जासूस (${spyAlive.name}) ने सभी नागरिकों को चकमा देकर जीत हासिल की!`);
           speakText(`जासूस की शानदार जीत!`);
+          if (user.userId) api.recordTaskAction(user.userId, 'game_played', 1).catch(() => {});
         }, 3000);
       }
     }
@@ -532,17 +502,14 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
       setWinningTeam('spy');
       setPhase('game_over');
       confetti({ particleCount: 100, spread: 70 });
+      if (user.userId) api.recordTaskAction(user.userId, 'game_played', 1).catch(() => {});
     } else {
       playSound('win');
       setSpyGuessFeedback(`❌ गलत अनुमान! नागरिकों का सही शब्द "${currentWordPair.civilianWord}" था!`);
       setWinningTeam('civilians');
       setPhase('game_over');
       confetti({ particleCount: 120, spread: 80 });
-
-      // Award coins to user if user was civilian or alive
-      const rewardCoins = 150;
-      const rewardCharms = 25;
-      onUpdateUserCoins((user.coins || 0) + rewardCoins, (user.charms || 150) + rewardCharms);
+      if (user.userId) api.recordTaskAction(user.userId, 'game_played', 1).catch(() => {});
     }
   };
 
@@ -750,7 +717,6 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
                             size="md"
                             frameType={p.frameType}
                             level={p.level}
-                            showCrown={p.id === 'SHARMA-JI-VIP'}
                             isSpeaking={isTurn}
                           />
                           {!isAlive && (
@@ -966,15 +932,13 @@ export const WhoIsTheSpyGameModal: React.FC<WhoIsTheSpyGameModalProps> = ({
                   </div>
                 </div>
 
-                {winningTeam === 'civilians' && (
-                  <div className="p-3 bg-emerald-50 text-[#388e3c] border border-emerald-200 rounded-sm text-xs font-bold inline-block">
-                    ✨ जीत का पुरस्कार: +150 Coins, +50 XP, +25 Charms वॉलेट में जोड़े गए!
-                  </div>
-                )}
+                <div className="p-3 bg-emerald-50 text-[#388e3c] border border-emerald-200 rounded-sm text-xs font-bold inline-block">
+                  🎮 राउंड पूरा हुआ! आपका "Play 2 Games" टास्क प्रोग्रेस अपडेट हो गया — Daily Tasks से +5 Coins & EXP क्लेम करें!
+                </div>
 
                 <div className="flex justify-center gap-3 pt-2">
                   <button
-                    onClick={initializeNewGame}
+                    onClick={() => initializeNewGame()}
                     className="bg-[#fb641b] hover:bg-[#e8550f] px-6 py-2.5 rounded-sm font-black text-xs text-white flex items-center space-x-1.5 cursor-pointer transition"
                   >
                     <RotateCcw className="w-4 h-4" />

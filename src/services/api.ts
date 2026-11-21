@@ -19,9 +19,13 @@ import type {
   HomeSliderPhoto,
   ContactMessage,
   GiftCardVoucher,
+  GiftCardRedemption,
   NwiTreeRecord,
   PlanUpgradeRequest,
+  RealTaskStatus,
+  DailyGameHubData,
 } from '../types/index.ts';
+import type { TaskEventType, VipTierId } from '../config/economy.ts';
 import { handleStaticApiRequest } from './staticFallback.ts';
 
 const API_BASE_URL =
@@ -67,8 +71,94 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 
 const SESSION_USER_KEY = 'esp_session_user';
 const SESSION_TOKEN_KEY = 'esp_session_token';
+const USERS_BACKUP_KEY = 'esp_users_backup_v1';
 const SESSION_ADMIN_KEY = 'esp_admin_logged';
 const ADMIN_PASS_KEY = 'esp_admin_pass';
+
+function normalizePhoneTail(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+function matchesBackupIdentifier(u: any, rawIdentifier: string): boolean {
+  if (!u) return false;
+  const clean = String(rawIdentifier || '').trim().toLowerCase();
+  if (!clean) return false;
+  const cleanNoSpaces = clean.replace(/\s+/g, '');
+  const inputDigits = normalizePhoneTail(clean);
+  const uid = String(u.userId || '').trim().toLowerCase();
+  const gid = String(u.gamingId || '').trim().toLowerCase();
+  const email = String(u.email || '').trim().toLowerCase();
+  const phone = String(u.phone || '').trim().toLowerCase();
+  const phoneDigits = normalizePhoneTail(phone);
+
+  return (
+    uid === clean ||
+    (cleanNoSpaces.length >= 3 && uid.replace(/\s+/g, '') === cleanNoSpaces) ||
+    (gid !== '' && (gid === clean || (cleanNoSpaces.length >= 3 && gid.replace(/\s+/g, '') === cleanNoSpaces))) ||
+    (email !== '' && email === clean) ||
+    (phone !== '' && phone === clean) ||
+    (inputDigits.length === 10 && phoneDigits.length === 10 && phoneDigits === inputDigits)
+  );
+}
+
+function readAllLocalBackupUsers(): UserProfile[] {
+  if (typeof window === 'undefined') return [];
+  const results: UserProfile[] = [];
+  const seen = new Set<string>();
+  const addIfUnique = (u: any) => {
+    if (!u || !u.userId) return;
+    const key = String(u.userId).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push(u as UserProfile);
+  };
+  try {
+    const rawBackup = localStorage.getItem(USERS_BACKUP_KEY);
+    if (rawBackup) {
+      const arr = JSON.parse(rawBackup);
+      if (Array.isArray(arr)) arr.forEach(addIfUnique);
+    }
+  } catch {}
+  try {
+    for (const dbKey of ['esp_static_db_v2', 'esp_static_db']) {
+      const rawDb = localStorage.getItem(dbKey);
+      if (!rawDb) continue;
+      const parsed = JSON.parse(rawDb);
+      if (Array.isArray(parsed?.users)) parsed.users.forEach(addIfUnique);
+    }
+  } catch {}
+  try {
+    const cur = localStorage.getItem(SESSION_USER_KEY);
+    if (cur) addIfUnique(JSON.parse(cur));
+  } catch {}
+  return results;
+}
+
+function saveUserToLocalBackup(user: UserProfile, overridePassword?: string) {
+  if (typeof window === 'undefined' || !user?.userId) return;
+  try {
+    const raw = localStorage.getItem(USERS_BACKUP_KEY);
+    const list: UserProfile[] = raw ? JSON.parse(raw) : [];
+    const safeList = Array.isArray(list) ? list : [];
+    const idx = safeList.findIndex(
+      u => (u.userId || '').toLowerCase() === user.userId.toLowerCase()
+    );
+    const existingPass = idx >= 0 ? safeList[idx]?.password : undefined;
+    const merged: UserProfile = {
+      ...user,
+      password: overridePassword || user.password || existingPass,
+    };
+    if (idx >= 0) {
+      safeList[idx] = merged;
+    } else {
+      safeList.unshift(merged);
+    }
+    localStorage.setItem(USERS_BACKUP_KEY, JSON.stringify(safeList.slice(0, 20)));
+  } catch {
+    // ignore storage quota
+  }
+}
 
 export function detectClientDevice(): {
   deviceType: 'mobile' | 'desktop' | 'tablet' | 'unknown';
@@ -126,6 +216,7 @@ export const api = {
   setStoredUser(user: UserProfile | null, sessionToken?: string) {
     if (user) {
       localStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+      saveUserToLocalBackup(user);
       if (sessionToken) {
         localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
       }
@@ -237,6 +328,7 @@ export const api = {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Registration failed');
     if (data.user) {
+      saveUserToLocalBackup(data.user, formData.password);
       this.setStoredUser(data.user, data.sessionToken);
     }
     return data;
@@ -250,9 +342,46 @@ export const api = {
       body: JSON.stringify({ identifier, password, deviceInfo }),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Login failed');
-    this.setStoredUser(data.user, data.sessionToken);
-    return data.user;
+    if (data.success && data.user) {
+      saveUserToLocalBackup(data.user, password);
+      this.setStoredUser(data.user, data.sessionToken);
+      return data.user;
+    }
+
+    // Fallback recovery if backend DB restarted and account only exists in browser backup / static DB
+    if (data.code === 'ACCOUNT_NOT_FOUND' || res.status === 404) {
+      const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
+      if (backups.length > 0) {
+        const matchedBackup = backups.find(
+          u => !u.password || u.password === password || u.password.trim() === password.trim()
+        );
+        if (!matchedBackup) {
+          throw new Error(
+            'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या नीचे "Forget Password?" का उपयोग करें।'
+          );
+        }
+        try {
+          const restoreRes = await apiFetch('/api/auth/restore-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: matchedBackup, password, deviceInfo }),
+          });
+          const restoreData = await restoreRes.json();
+          if (restoreData.success && restoreData.user) {
+            saveUserToLocalBackup(restoreData.user, password);
+            this.setStoredUser(restoreData.user, restoreData.sessionToken);
+            return restoreData.user;
+          }
+        } catch {
+          // fallback to local backup directly if network unavailable
+          saveUserToLocalBackup(matchedBackup, password);
+          this.setStoredUser(matchedBackup, `esp_local_${Date.now()}`);
+          return matchedBackup;
+        }
+      }
+    }
+
+    throw new Error(data.message || 'Login failed');
   },
 
   async forgetId(phoneOrEmail: string): Promise<{
@@ -262,6 +391,13 @@ export const api = {
     fullName: string;
     accountType: string;
     chosenServiceCode: string;
+    accounts?: Array<{
+      userId: string;
+      gamingId: string;
+      fullName: string;
+      accountType: string;
+      chosenServiceCode: string;
+    }>;
   }> {
     const res = await apiFetch('/api/auth/forget-id', {
       method: 'POST',
@@ -269,8 +405,30 @@ export const api = {
       body: JSON.stringify({ phoneOrEmail }),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'आईडी खोजने में त्रुटि');
-    return data;
+    if (data.success) return data;
+
+    // Fallback check in local backup registry
+    const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, phoneOrEmail));
+    if (backups.length > 0) {
+      const primary = backups[0];
+      return {
+        success: true,
+        userId: primary.userId,
+        gamingId: primary.gamingId || `ESPGT${(primary.phone || '0001').slice(-4)}`,
+        fullName: primary.fullName,
+        accountType: primary.accountType || 'business',
+        chosenServiceCode: primary.chosenServiceCode || 'EMO',
+        accounts: backups.map(u => ({
+          userId: u.userId,
+          gamingId: u.gamingId || `ESPGT${(u.phone || '0001').slice(-4)}`,
+          fullName: u.fullName,
+          accountType: u.accountType || 'business',
+          chosenServiceCode: u.chosenServiceCode || 'EMO',
+        })),
+      };
+    }
+
+    throw new Error(data.message || 'आईडी खोजने में त्रुटि');
   },
 
   async forgetPassword(identifier: string, verifyPhone: string, newPassword: string): Promise<{
@@ -285,11 +443,56 @@ export const api = {
       body: JSON.stringify({ identifier, verifyPhone, newPassword }),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'पासवर्ड रीसेट असफल');
-    return data;
+    if (data.success) {
+      const backups = readAllLocalBackupUsers().filter(u => u.userId.toLowerCase() === data.userId.toLowerCase());
+      if (backups[0]) {
+        saveUserToLocalBackup({ ...backups[0], password: newPassword.trim() }, newPassword.trim());
+      }
+      return data;
+    }
+
+    // Fallback reset if account only existed in local backup
+    if (res.status === 404) {
+      const cleanVerify = verifyPhone.trim().toLowerCase();
+      const verifyDigits = normalizePhoneTail(cleanVerify);
+      const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
+      const matched = backups.find(u => {
+        const uDigits = normalizePhoneTail(u.phone || '');
+        return (
+          (verifyDigits.length === 10 && uDigits === verifyDigits) ||
+          (u.phone || '').trim().toLowerCase() === cleanVerify ||
+          (u.email || '').trim().toLowerCase() === cleanVerify
+        );
+      });
+      if (matched) {
+        const updated = { ...matched, password: newPassword.trim() };
+        saveUserToLocalBackup(updated, newPassword.trim());
+        try {
+          await apiFetch('/api/auth/restore-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: updated, password: newPassword.trim() }),
+          });
+        } catch {}
+        return {
+          success: true,
+          userId: updated.userId,
+          fullName: updated.fullName,
+          message: 'पासवर्ड सफलतापूर्वक अपडेट हो गया! अब आप नए पासवर्ड से लॉगिन कर सकते हैं।',
+        };
+      }
+    }
+
+    throw new Error(data.message || 'पासवर्ड रीसेट असफल');
   },
 
-  async verifySession(userId?: string): Promise<{ valid: boolean; user?: UserProfile; sessionTerminated?: boolean; message?: string }> {
+  async verifySession(userId?: string): Promise<{
+    valid: boolean;
+    user?: UserProfile;
+    sessionTerminated?: boolean;
+    accountMissing?: boolean;
+    message?: string;
+  }> {
     const sessionToken = this.getStoredSessionToken();
     const query = new URLSearchParams();
     if (sessionToken) query.set('token', sessionToken);
@@ -300,8 +503,39 @@ export const api = {
     });
     const data = await res.json();
     if (data.valid && data.user) {
-      this.setStoredUser(data.user, sessionToken);
+      this.setStoredUser(data.user, data.sessionToken || sessionToken);
+      return data;
     }
+
+    // If account was missing on a freshly restarted server, restore cleanly from stored user without logging user out
+    if (data.accountMissing && !data.sessionTerminated) {
+      const stored = this.getStoredUser();
+      if (stored && (!userId || stored.userId.toLowerCase() === userId.toLowerCase())) {
+        try {
+          const restoreRes = await apiFetch('/api/auth/restore-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user: stored,
+              preferredToken: sessionToken || undefined,
+              deviceInfo: detectClientDevice(),
+            }),
+          });
+          const restoreData = await restoreRes.json();
+          if (restoreData.success && restoreData.user) {
+            this.setStoredUser(restoreData.user, restoreData.sessionToken || sessionToken);
+            return { valid: true, user: restoreData.user };
+          }
+          if (restoreData.sessionTerminated) {
+            return restoreData;
+          }
+        } catch {
+          // keep local session active offline
+        }
+        return { valid: true, user: stored };
+      }
+    }
+
     return data;
   },
 
@@ -416,6 +650,17 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to approve payout');
+    return data;
+  },
+
+  async rejectPayout(payoutId: string, reason: string, adminPassword: string) {
+    const res = await apiFetch(`/api/admin/payouts/${payoutId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason, adminPassword }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to reject payout');
     return data;
   },
 
@@ -576,11 +821,11 @@ export const api = {
     return data;
   },
 
-  async dailyLuckySpin(userId: string, targetSectorIndex?: number) {
+  async dailyLuckySpin(userId: string) {
     const res = await apiFetch('/api/game/daily-lucky-spin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, targetSectorIndex }),
+      body: JSON.stringify({ userId }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Daily lucky spin failed');
@@ -588,11 +833,75 @@ export const api = {
     return data;
   },
 
-  async rechargeCoins(userId: string, coins: number, amount: number, paymentUtr?: string, bonusCoins = 0, packId = 'pack') {
+  async getDailyGameHub(userId: string): Promise<DailyGameHubData> {
+    const res = await apiFetch(`/api/game/daily-hub/${encodeURIComponent(userId)}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to load daily game hub');
+    if (data.user) this.setStoredUser(data.user);
+    return data.hub as DailyGameHubData;
+  },
+
+  async claimDailyCheckIn(userId: string, useShield = true) {
+    const res = await apiFetch('/api/game/daily-checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, useShield }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Check-in failed');
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async answerDailyQuiz(userId: string, selectedIndex: number) {
+    const res = await apiFetch('/api/game/daily-quiz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, selectedIndex }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Quiz submission failed');
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async playFreeSkillMatch(userId: string, gameName: string, outcome: 'win' | 'loss', score?: number) {
+    const res = await apiFetch('/api/game/skill-play', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, gameName, outcome, score }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Skill play reward failed');
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async buyCoinBooster(userId: string, boosterId: 'booster_2x_24h' | 'streak_shield') {
+    const res = await apiFetch('/api/game/buy-booster', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, boosterId }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Booster purchase failed');
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async rechargeCoins(
+    userId: string,
+    coins: number,
+    amount: number,
+    paymentUtr?: string,
+    bonusCoins = 0,
+    packId = 'pack',
+    paymentScreenshot = ''
+  ) {
     const res = await apiFetch('/api/game/recharge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, coins, amount, paymentUtr, bonusCoins, packId }),
+      body: JSON.stringify({ userId, coins, amount, paymentUtr, bonusCoins, packId, paymentScreenshot }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || data.error || 'Recharge failed');
@@ -600,35 +909,23 @@ export const api = {
     return data;
   },
 
-  async convertCoins(userId: string, coinsAmount: number) {
-    const res = await apiFetch('/api/game/convert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, coinsAmount }),
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Conversion failed');
-    if (data.user) this.setStoredUser(data.user);
-    return data;
-  },
+  // Note: Coins cannot be converted into real INR cash; users buy/earn coins strictly for in-app items, VIP, frames & games.
 
-  async claimLoginReward(userId: string, day: number) {
-    const res = await apiFetch('/api/game/claim-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, day }),
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Claim failed');
-    if (data.user) this.setStoredUser(data.user);
-    return data;
-  },
-
-  async sendRoomGift(senderId: string, targetName: string, giftId: string, giftName: string, coinCost: number, charmValue: number) {
+  async sendRoomGift(
+    senderId: string,
+    targetName: string,
+    giftId: string,
+    giftName: string,
+    coinCost: number,
+    charmValue: number,
+    giftIcon?: string,
+    targetUserId?: string,
+    quantity = 1
+  ) {
     const res = await apiFetch('/api/game/send-gift', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senderId, targetName, giftId, giftName, coinCost, charmValue }),
+      body: JSON.stringify({ senderId, targetName, targetUserId, giftId, giftName, giftIcon, coinCost, charmValue, quantity }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gift send failed');
@@ -675,13 +972,32 @@ export const api = {
     return data.recharges || [];
   },
 
-  async getVoiceRooms() {
-    const res = await apiFetch('/api/game/voice-rooms');
+  async getVoiceRooms(viewerId?: string, q?: string) {
+    const params = new URLSearchParams();
+    if (viewerId) params.set('viewerId', viewerId);
+    if (q) params.set('q', q);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiFetch(`/api/game/voice-rooms${qs}`);
     return await res.json();
   },
 
-  async getVoiceRoomState(roomId?: string) {
-    const url = roomId ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}` : '/api/game/voice-room';
+  async getMyPersonalVoiceRoom(userId: string, viewerId?: string) {
+    const qs = viewerId ? `?viewerId=${encodeURIComponent(viewerId)}` : '';
+    const res = await apiFetch(`/api/game/voice-rooms/my-room/${encodeURIComponent(userId)}${qs}`);
+    return await res.json();
+  },
+
+  async lookupVoiceRoom(query: string, viewerId?: string) {
+    const qs = viewerId ? `?viewerId=${encodeURIComponent(viewerId)}` : '';
+    const res = await apiFetch(`/api/game/voice-rooms/lookup/${encodeURIComponent(query)}${qs}`);
+    return await res.json();
+  },
+
+  async getVoiceRoomState(roomId?: string, viewerId?: string) {
+    const qs = viewerId ? `?viewerId=${encodeURIComponent(viewerId)}` : '';
+    const url = roomId
+      ? `/api/game/voice-rooms/${encodeURIComponent(roomId)}${qs}`
+      : `/api/game/voice-room${qs}`;
     const res = await apiFetch(url);
     return await res.json();
   },
@@ -697,6 +1013,10 @@ export const api = {
     hostAvatar?: string;
     hostLevel?: number;
     hostCharms?: number;
+    wallpaperId?: string;
+    customWallpaperUrl?: string;
+    stageLayout?: 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
+    youtubeVideoUrl?: string;
   }) {
     try {
       const res = await apiFetch('/api/game/voice-rooms/create', {
@@ -709,6 +1029,66 @@ export const api = {
     } catch (e: any) {
       return { success: false, message: e?.message || 'नेटवर्क समस्या के कारण कमरा नहीं बन सका' };
     }
+  },
+
+  async joinVoiceRoom(roomId: string, userId: string, passcode?: string) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, passcode }),
+    });
+    return await res.json();
+  },
+
+  async leaveVoiceRoom(roomId: string, userId: string) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    return await res.json();
+  },
+
+  async toggleFollowVoiceRoom(roomId: string, userId: string) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/follow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    return await res.json();
+  },
+
+  async updateVoiceRoomDesign(
+    roomId: string,
+    payload: {
+      userId: string;
+      title?: string;
+      topic?: string;
+      category?: string;
+      wallpaperId?: string;
+      customWallpaperUrl?: string;
+      stageLayout?: 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
+      youtubeVideoUrl?: string;
+      youtubeVideoTitle?: string;
+      isPrivate?: boolean;
+      passcode?: string;
+    }
+  ) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/update-design`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  },
+
+  async inviteToVoiceRoom(roomId: string, senderUserId: string, targetUserIds: string[]) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senderUserId, targetUserIds }),
+    });
+    return await res.json();
   },
 
   async takeVoiceSeat(userId: string, seatIndex: number, roomId?: string) {
@@ -742,9 +1122,9 @@ export const api = {
   },
 
   async sendVoiceAudioClip(
-    userId: string, 
-    audioDataUrl: string, 
-    durationSec: number, 
+    userId: string,
+    audioDataUrl: string,
+    durationSec: number,
     roomId?: string,
     voiceEffect?: { id: string; name: string; icon: string }
   ) {
@@ -760,9 +1140,11 @@ export const api = {
   async manageVoiceSeatHostAction(payload: {
     roomId: string;
     hostUserId: string;
-    action: 'mute' | 'unmute' | 'kick' | 'update_topic';
+    action: 'mute' | 'unmute' | 'kick' | 'update_topic' | 'lock_seat' | 'unlock_seat' | 'set_youtube';
     seatIndex?: number;
     newTopic?: string;
+    youtubeVideoUrl?: string;
+    youtubeVideoTitle?: string;
   }) {
     const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(payload.roomId)}/host-action`, {
       method: 'POST',
@@ -778,9 +1160,45 @@ export const api = {
     return data.players || [];
   },
 
-  async getPlayerProfile(userId: string) {
-    const res = await apiFetch(`/api/community/player-profile/${userId}`);
+  async getPlayerProfile(userIdOrUsername: string, viewerId?: string) {
+    const qs = viewerId ? `?viewerId=${encodeURIComponent(viewerId)}` : '';
+    const res = await apiFetch(`/api/community/player-profile/${encodeURIComponent(userIdOrUsername)}${qs}`);
     return await res.json();
+  },
+
+  async checkUsernameAvailability(username: string, currentUserId?: string): Promise<{
+    success: boolean;
+    valid: boolean;
+    available: boolean;
+    normalized: string;
+    message: string;
+  }> {
+    const qs = new URLSearchParams({
+      username: username || '',
+      ...(currentUserId ? { currentUserId } : {}),
+    });
+    const res = await apiFetch(`/api/users/check-username?${qs.toString()}`);
+    return await res.json();
+  },
+
+  async searchUsersByUsername(q: string, currentUserId?: string) {
+    const qs = new URLSearchParams({
+      q: q || '',
+      ...(currentUserId ? { currentUserId } : {}),
+    });
+    const res = await apiFetch(`/api/users/search?${qs.toString()}`);
+    return await res.json();
+  },
+
+  async toggleFriend(userId: string, targetUserId: string) {
+    const res = await apiFetch('/api/friends/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetUserId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
   },
 
   async getBots() {
@@ -1056,16 +1474,7 @@ export const api = {
     return await res.json();
   },
 
-  // ---------------- Demo User & User Profile Editor in Admin Panel ----------------
-  async createDemoUser(adminPassword: string, userData: any): Promise<{ success: boolean; message: string; user: UserProfile }> {
-    const res = await apiFetch('/api/admin/demo-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminPassword, ...userData }),
-    });
-    return await res.json();
-  },
-
+  // ---------------- Admin User Profile Editor ----------------
   async editUserDetails(userId: string, adminPassword: string, updates: any): Promise<{ success: boolean; message: string; user: UserProfile }> {
     const res = await apiFetch(`/api/admin/user/${encodeURIComponent(userId)}/edit-details`, {
       method: 'PUT',
@@ -1122,31 +1531,166 @@ export const api = {
       const res = await apiFetch('/api/community/real-online-count');
       return await res.json();
     } catch {
-      return { success: true, realCount: 1, onlinePlayers: [] };
+      return { success: true, realCount: 0, onlinePlayers: [] };
     }
   },
 
-  // ---------------- Real-Time Voice Stage Seating Rewards ----------------
-  async claimSeatReward(userId: string, minutesActive: number, roomId?: string): Promise<{
+  // ---------------- Real Verified Task System (+5 Coins + EXP ONLY after completion) ----------------
+  async getTasksStatus(userId: string): Promise<{
     success: boolean;
-    message: string;
-    coinsEarned: number;
-    newBalance: number;
-    user: UserProfile;
+    tasks: RealTaskStatus[];
+    tasksCompletedCount: number;
+    claimedChestMilestones: string[];
+    user?: UserProfile;
   }> {
-    const res = await apiFetch('/api/game/voice-room/seat-reward', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, minutesActive, roomId }),
-    });
+    const res = await apiFetch(`/api/tasks/${encodeURIComponent(userId)}`);
     const data = await res.json();
-    if (data.user) {
-      this.setStoredUser(data.user);
-    }
+    if (data.user) this.setStoredUser(data.user);
     return data;
   },
 
-  // ---------------- Gift Cards & Digital Vouchers ----------------
+  async recordTaskAction(userId: string, eventType: TaskEventType, incrementBy = 1) {
+    const res = await apiFetch('/api/tasks/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, eventType, incrementBy }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimVerifiedTask(userId: string, taskId: string): Promise<{
+    success: boolean;
+    message: string;
+    coinsAwarded?: number;
+    xpAwarded?: number;
+    user?: UserProfile;
+    tasks?: RealTaskStatus[];
+  }> {
+    const res = await apiFetch('/api/tasks/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, taskId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimTaskMilestoneChest(userId: string, chestId: string): Promise<{
+    success: boolean;
+    message: string;
+    coinsAwarded?: number;
+    xpAwarded?: number;
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/tasks/claim-chest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, chestId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  // ---------------- Real Coins Store: Quality-Tiered Frames, VIP & Rooms ----------------
+  async buyAvatarFrame(userId: string, frameVariant: string): Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    requiredCoins?: number;
+    currentCoins?: number;
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/store/buy-frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, frameVariant }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async equipAvatarFrame(userId: string, frameVariant: string): Promise<{
+    success: boolean;
+    message: string;
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/store/equip-frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, frameVariant }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async buyVipTier(userId: string, vipTier: Exclude<VipTierId, 'none'>): Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    requiredCoins?: number;
+    currentCoins?: number;
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/store/buy-vip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, vipTier }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async buyRoomTheme(userId: string, themeId: string): Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    requiredCoins?: number;
+    currentCoins?: number;
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/store/buy-room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, themeId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  // ---------------- Real Community Leaderboard & Clans ----------------
+  async getRealLeaderboard(): Promise<{
+    success: boolean;
+    topEarners: Array<{ userId: string; fullName: string; avatar?: string; frameType?: string; vipTier?: string; gameLevel: number; charms: number; coins: number; chosenServiceCode: string }>;
+  }> {
+    try {
+      const res = await apiFetch('/api/community/leaderboard');
+      return await res.json();
+    } catch {
+      return { success: false, topEarners: [] };
+    }
+  },
+
+  async getRealClans(): Promise<{
+    success: boolean;
+    clans: Array<{ name: string; membersCount: number; totalLevel: number; totalCharms: number; leaderName: string }>;
+  }> {
+    try {
+      const res = await apiFetch('/api/community/clans');
+      return await res.json();
+    } catch {
+      return { success: false, clans: [] };
+    }
+  },
+
+  // ---------------- Gift Cards & Digital Vouchers (Real Admin Fulfillment) ----------------
   async getGiftCards(): Promise<GiftCardVoucher[]> {
     try {
       const res = await apiFetch('/api/gift-cards');
@@ -1157,23 +1701,51 @@ export const api = {
     }
   },
 
-  async redeemGiftCard(userId: string, voucherId: string): Promise<{
+  async getGiftCardRedemptions(userId?: string, adminPassword?: string): Promise<GiftCardRedemption[]> {
+    try {
+      const query = new URLSearchParams();
+      if (userId) query.set('userId', userId);
+      if (adminPassword) query.set('adminPassword', adminPassword);
+      const res = await apiFetch(`/api/gift-cards/redemptions?${query.toString()}`);
+      const data = await res.json();
+      return data.redemptions || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async redeemGiftCard(userId: string, catalogId: string): Promise<{
     success: boolean;
+    code?: string;
     message: string;
-    voucher?: GiftCardVoucher;
+    redemption?: GiftCardRedemption;
     newBalance?: number;
     user?: UserProfile;
   }> {
     const res = await apiFetch('/api/gift-cards/redeem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, voucherId }),
+      body: JSON.stringify({ userId, voucherId: catalogId, catalogId }),
     });
     const data = await res.json();
     if (data.user) {
       this.setStoredUser(data.user);
     }
     return data;
+  },
+
+  async fulfillGiftCardRedemption(
+    redemptionId: string,
+    voucherCode: string,
+    adminPassword: string,
+    voucherPin = ''
+  ): Promise<{ success: boolean; message: string; redemption?: GiftCardRedemption }> {
+    const res = await apiFetch(`/api/admin/gift-cards/${encodeURIComponent(redemptionId)}/fulfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voucherCode, voucherPin, adminPassword }),
+    });
+    return await res.json();
   },
 
   // ---------------- NWI 3-Level Auto Tree & Non-Working Income ----------------
@@ -1271,6 +1843,65 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminPassword }),
+    });
+    return await res.json();
+  },
+
+  // ---------------- Admin VIP Numeric Room ID Management ----------------
+  async checkVipRoomAvailability(
+    adminPassword: string,
+    roomNumber: string,
+    excludeUserId?: string
+  ): Promise<{
+    success: boolean;
+    valid: boolean;
+    available: boolean;
+    normalized: string;
+    isFancyVip: boolean;
+    conflictOwner?: string | null;
+    message: string;
+  }> {
+    const res = await apiFetch('/api/admin/vip-rooms/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPassword, roomNumber, excludeUserId }),
+    });
+    return await res.json();
+  },
+
+  async assignVipRoomNumber(
+    adminPassword: string,
+    targetUserId: string,
+    roomNumber: string,
+    isVipRoom = true,
+    vipRoomLabel = ''
+  ): Promise<{
+    success: boolean;
+    message: string;
+    user?: UserProfile;
+    room?: any;
+  }> {
+    const res = await apiFetch('/api/admin/vip-rooms/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPassword, targetUserId, roomNumber, isVipRoom, vipRoomLabel }),
+    });
+    return await res.json();
+  },
+
+  async resetVipRoomNumber(
+    adminPassword: string,
+    targetUserId: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    user?: UserProfile;
+    room?: any;
+  }> {
+    const res = await apiFetch('/api/admin/vip-rooms/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPassword, targetUserId }),
     });
     return await res.json();
   },

@@ -21,6 +21,7 @@ import {
   Gift
 } from 'lucide-react';
 import type { UserProfile } from '../../types/index.ts';
+import { api } from '../../services/api.ts';
 import { sound8D } from '../../services/sound8d.ts';
 
 export type GameKey = 
@@ -55,7 +56,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#00b4d8] to-[#0077b6]',
     icon: '🕵️‍♂️',
     minBet: 20,
-    winCoins: 150,
+    winCoins: 50,
     maxPlayers: 6
   },
   trickster: {
@@ -66,7 +67,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#7f2626] to-[#451010]',
     icon: '🐊',
     minBet: 25,
-    winCoins: 180,
+    winCoins: 60,
     maxPlayers: 5
   },
   hide_seek: {
@@ -77,7 +78,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#0ea5e9] to-[#0284c7]',
     icon: '👀',
     minBet: 15,
-    winCoins: 120,
+    winCoins: 40,
     maxPlayers: 6
   },
   werewolf: {
@@ -88,7 +89,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#6b21a8] to-[#3b0764]',
     icon: '🐺',
     minBet: 30,
-    winCoins: 220,
+    winCoins: 75,
     maxPlayers: 8
   },
   cards: {
@@ -99,7 +100,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#84cc16] to-[#4d7c0f]',
     icon: '🃏',
     minBet: 20,
-    winCoins: 160,
+    winCoins: 50,
     maxPlayers: 4
   },
   ludo: {
@@ -110,7 +111,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#7c3aed] to-[#4c1d95]',
     icon: '🎲',
     minBet: 20,
-    winCoins: 150,
+    winCoins: 50,
     maxPlayers: 4
   },
   drawing: {
@@ -121,7 +122,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#22c55e] to-[#15803d]',
     icon: '✏️',
     minBet: 10,
-    winCoins: 80,
+    winCoins: 25,
     maxPlayers: 6
   },
   bingo: {
@@ -132,7 +133,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#6366f1] to-[#3730a3]',
     icon: '🎱',
     minBet: 25,
-    winCoins: 200,
+    winCoins: 60,
     maxPlayers: 8
   },
   mic_grab: {
@@ -143,7 +144,7 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     gradient: 'from-[#e11d48] to-[#9f1239]',
     icon: '🎙️',
     minBet: 10,
-    winCoins: 100,
+    winCoins: 25,
     maxPlayers: 8
   }
 };
@@ -154,6 +155,7 @@ interface InteractiveGameArenaModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdateCoins: (newCoins: number) => void;
+  onOpenBuyCoins?: () => void;
 }
 
 export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps> = ({
@@ -162,23 +164,53 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
   isOpen,
   onClose,
   onUpdateCoins,
+  onOpenBuyCoins,
 }) => {
   const game = GAMES_METADATA[gameKey];
   const [isAudio8D, setIsAudio8D] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [turn, setTurn] = useState<number>(1);
   const [diceNumber, setDiceNumber] = useState<number>(6);
-  const [gameResult, setGameResult] = useState<string | null>(null);
   const [winnerNotice, setWinnerNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [rollingDice, setRollingDice] = useState(false);
 
-  // Simulated animated members in room
-  const [players, setPlayers] = useState([
-    { name: currentUser.fullName, avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=Me', isMe: true, score: 0, isSpeaking: false },
-    { name: 'Sharma Ji 👑', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SharmaJiVIP', isMe: false, score: 0, isSpeaking: true },
-    { name: 'Anita Sharma', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=AnitaSharma01', isMe: false, score: 0, isSpeaking: false },
-    { name: 'Vikas Kumar', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=VikasKumarAdmin', isMe: false, score: 0, isSpeaking: false }
-  ]);
+  const [communityMembers, setCommunityMembers] = useState<Array<{ userId: string; fullName: string; avatar?: string }>>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    api.getRealCommunityPlayers()
+      .then((list) => {
+        if (Array.isArray(list)) {
+          const others = list.filter((p: any) => p.userId !== currentUser.userId);
+          setCommunityMembers(others.slice(0, 3));
+        }
+      })
+      .catch(() => {});
+  }, [isOpen, currentUser.userId]);
+
+  const players = [
+    {
+      name: currentUser.fullName,
+      avatar: currentUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${currentUser.userId}`,
+      isMe: true,
+      isSpeaking: false,
+    },
+    ...[0, 1, 2].map((slotIdx) => {
+      const real = communityMembers[slotIdx];
+      return real
+        ? {
+            name: real.fullName,
+            avatar: real.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${real.userId}`,
+            isMe: false,
+            isSpeaking: false,
+          }
+        : {
+            name: `Seat #${slotIdx + 2} (Open)`,
+            avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=OpenSeat${slotIdx + 2}`,
+            isMe: false,
+            isSpeaking: false,
+          };
+    }),
+  ];
 
   useEffect(() => {
     if (isOpen) {
@@ -193,26 +225,94 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
 
   if (!isOpen) return null;
 
-  // Ludo & Turn Roll Action
-  const handleAction = () => {
+  const userCoins = currentUser.coins || 0;
+  const canAfford = userCoins >= game.minBet;
+
+  // Free Skill Match (0 Coins Entry -> Win +10 to +20 Coins + EXP)
+  const handleFreeSkillPlay = async () => {
+    setErrorNotice(null);
+    setWinnerNotice(null);
+    setRollingDice(true);
+    sound8D.play8DChime(360, 'roll');
+
+    const uId = currentUser.userId || (currentUser as any).id;
+    setTimeout(async () => {
+      const rolled = Math.floor(Math.random() * 6) + 1;
+      setDiceNumber(rolled);
+      const outcome: 'win' | 'loss' = rolled >= 3 ? 'win' : 'loss';
+      try {
+        const res = await api.playFreeSkillMatch(uId, gameKey, outcome, rolled * 15);
+        setRollingDice(false);
+        if (res.currentCoins !== undefined) {
+          onUpdateCoins(res.currentCoins);
+        }
+        if (outcome === 'win') {
+          sound8D.play8DChime(580, 'win');
+          confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+        } else {
+          sound8D.play8DChime(440, 'click');
+        }
+        setWinnerNotice(res.message || `रोल: ${rolled}! +${res.coinsEarned || 0} कॉइन्स और +${res.xpEarned || 0} EXP मिले!`);
+      } catch (err: any) {
+        setRollingDice(false);
+        setErrorNotice(err?.message || 'फ्री मैच सेव करने में त्रुटि');
+      }
+    }, 650);
+  };
+
+  // Real server-verified wager & win action
+  const handleAction = async () => {
+    setErrorNotice(null);
+    setWinnerNotice(null);
+
+    if (!canAfford) {
+      setErrorNotice(`प्रो टेबल के लिए ${game.minBet} Coins चाहिए। नीचे "Free Skill Match" खेलकर मुफ्त कॉइन्स जीतें!`);
+      return;
+    }
+
     setRollingDice(true);
     sound8D.play8DChime(320, 'roll');
 
-    setTimeout(() => {
+    const uId = currentUser.userId || (currentUser as any).id;
+    try {
+      const wagerRes = await api.playCoinsGame(uId, gameKey, game.minBet);
+      if (!wagerRes.success) {
+        setRollingDice(false);
+        setErrorNotice(wagerRes.error || wagerRes.message || 'पर्याप्त कॉइन्स नहीं हैं');
+        return;
+      }
+      if (wagerRes.currentCoins !== undefined) {
+        onUpdateCoins(wagerRes.currentCoins);
+      }
+    } catch (err: any) {
+      setRollingDice(false);
+      setErrorNotice(err?.message || 'गेम शुरू करने में सर्वर त्रुटि');
+      return;
+    }
+
+    setTimeout(async () => {
       const rolled = Math.floor(Math.random() * 6) + 1;
       setDiceNumber(rolled);
       setRollingDice(false);
 
-      // Random winner on 6 or high roll
+      // Record real task progress for playing a game
+      api.recordTaskAction(uId, 'game_played', 1).catch(() => {});
+
       if (rolled >= 5) {
-        sound8D.play8DChime(580, 'win');
-        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-        const prize = game.winCoins;
-        setWinnerNotice(`🎉 शानदार जीत! आपको +${prize} कॉइन्स मिले!`);
-        onUpdateCoins((currentUser.coins || 0) + prize);
+        try {
+          const winRes = await api.claimGameWin(uId, gameKey, game.winCoins);
+          if (winRes.success && winRes.currentCoins !== undefined) {
+            onUpdateCoins(winRes.currentCoins);
+          }
+          sound8D.play8DChime(580, 'win');
+          confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+          setWinnerNotice(`🎉 शानदार जीत (रोल: ${rolled})! +${game.winCoins} कॉइन्स आपके वॉलेट में क्रेडिट हो गए!`);
+        } catch {
+          setWinnerNotice(`डाइस: ${rolled}! जीत सत्यापित करने में समस्या आई।`);
+        }
       } else {
         sound8D.play8DChime(440, 'click');
-        setWinnerNotice(`डाइस: ${rolled}! अगला राउंड खेलें।`);
+        setWinnerNotice(`डाइस: ${rolled}! इस राउंड में जीत नहीं हुई (-${game.minBet} Coins)। टास्क प्रोग्रेस +1 दर्ज हो गया!`);
       }
     }, 700);
   };
@@ -266,7 +366,7 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
           </div>
         </div>
 
-        {/* Players Seats Ring (Real Animated Members) */}
+        {/* Players Seats Ring */}
         <div className="p-4 bg-[#f5f8ff] border-b border-blue-100">
           <div className="flex items-center justify-around">
             {players.map((p, idx) => (
@@ -295,7 +395,7 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
         </div>
 
         {/* Interactive Play Arena */}
-        <div className="p-5 flex-1 flex flex-col items-center justify-center text-center space-y-4 bg-white">
+        <div className="p-5 flex-1 flex flex-col items-center justify-center text-center space-y-4 bg-white overflow-y-auto">
           
           {/* Main 3D Interactive Element */}
           <div className="relative w-36 h-36 rounded-md bg-[#f5f8ff] border-2 border-[#2874f0]/40 shadow-md flex flex-col items-center justify-center p-3 group">
@@ -305,29 +405,67 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
               <div className="text-center space-y-1">
                 <span className="text-5xl">{game.icon}</span>
                 <p className="text-xs font-black text-[#2874f0]">
-                  {gameKey === 'ludo' ? `डाइस: ${diceNumber}` : `राउंड एक्टिव`}
+                  {gameKey === 'ludo' ? `डाइस: ${diceNumber}` : `प्रो टेबल: ${game.minBet} Coins`}
                 </p>
               </div>
             )}
           </div>
 
           {winnerNotice && (
-            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-sm text-xs font-black text-[#388e3c] animate-bounce">
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-sm text-xs font-black text-[#388e3c]">
               {winnerNotice}
             </div>
           )}
 
-          {/* Action Trigger */}
-          <div className="w-full max-w-xs space-y-2">
+          {errorNotice && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-sm text-xs font-bold text-rose-700">
+              {errorNotice}
+            </div>
+          )}
+
+          {/* Action Triggers: Free Skill Match + Pro Coin Table */}
+          <div className="w-full max-w-sm space-y-2.5">
             <button
-              onClick={handleAction}
+              type="button"
+              onClick={handleFreeSkillPlay}
               disabled={rollingDice}
-              className="w-full py-3 px-6 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-sm shadow-sm transition transform hover:scale-[1.01] active:scale-95 cursor-pointer disabled:opacity-50"
+              className="w-full py-3 px-5 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white font-black text-sm shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50"
             >
-              {rollingDice ? 'रोल हो रहा है...' : `🎲 खेलें & जीतें +${game.winCoins} कॉइन्स`}
+              {rollingDice
+                ? 'राउंड चल रहा है...'
+                : '🆓 Free Skill Match (0 Coins · जीतें +10 से +20 Coins!)'}
             </button>
+
+            {canAfford ? (
+              <button
+                type="button"
+                onClick={handleAction}
+                disabled={rollingDice}
+                className="w-full py-2.5 px-5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-xs sm:text-sm shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                {rollingDice
+                  ? 'प्रो टेबल चल रही है...'
+                  : `🎲 Pro Table: ${game.minBet} कॉइन्स लगाएं & जीतें +${game.winCoins}`}
+              </button>
+            ) : (
+              <div className="flex items-center justify-between gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-sm text-[11px] font-bold text-amber-900">
+                <span>प्रो टेबल ({game.minBet}c) के लिए ऊपर Free Match खेलें या Buy करें</span>
+                {onOpenBuyCoins && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenBuyCoins();
+                    }}
+                    className="px-2.5 py-1 rounded-xs bg-[#2874f0] hover:bg-[#1c62d6] text-white font-bold shrink-0 cursor-pointer"
+                  >
+                    + Buy Coins
+                  </button>
+                )}
+              </div>
+            )}
             <p className="text-[10px] text-[#878787]">
-              8D सराउंड साउंड और रियल-टाइम सदस्यों के साथ लाइव गेमिंग
+              हर रियल राउंड (Free या Pro) पर Coins + EXP मिलते हैं और Daily Task +1 अपडेट होता है!
             </p>
           </div>
 
@@ -337,11 +475,11 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
         <div className="p-3 bg-[#f9fafb] border-t border-slate-200 flex items-center justify-between text-xs text-[#878787]">
           <span className="flex items-center gap-1.5 text-[#fb641b] font-bold">
             <Coins className="w-4 h-4" />
-            <span>आपके कॉइन्स: {(currentUser.coins || 0).toLocaleString()}</span>
+            <span>आपके कॉइन्स: {userCoins.toLocaleString()}</span>
           </span>
           <span className="flex items-center gap-1 text-[#2874f0] font-bold">
             <Users className="w-4 h-4" />
-            <span>लाइव रूम: 4/6</span>
+            <span>लाइव रूम: 4/{game.maxPlayers}</span>
           </span>
         </div>
 

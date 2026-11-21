@@ -306,7 +306,7 @@ export const PromotionalPoster: React.FC<PromotionalPosterProps> = ({ user }) =>
     }
   };
 
-  const handleShareWhatsApp = () => {
+  const getWhatsAppShareUrl = () => {
     let caption = '';
     if (selectedType === 'business') {
       caption = `📢 *${customBusinessName || user.fullName}*\n${customOfferOrGreeting}\n\n`;
@@ -334,7 +334,7 @@ export const PromotionalPoster: React.FC<PromotionalPosterProps> = ({ user }) =>
       `🆔 *Sponsor Roll No:* ${user.userId}\n` +
       `📞 *Contact:* +91 ${customContact || user.phone}`;
 
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(caption)}`, '_blank');
+    return `https://api.whatsapp.com/send?text=${encodeURIComponent(caption)}`;
   };
 
   return (
@@ -624,13 +624,15 @@ export const PromotionalPoster: React.FC<PromotionalPosterProps> = ({ user }) =>
           <span>{downloading ? 'Generating HD Poster...' : `Download ${selectedType.toUpperCase()} Poster (PNG)`}</span>
         </button>
 
-        <button
-          onClick={handleShareWhatsApp}
-          className="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-[#388e3c] hover:bg-[#2e7d32] text-white font-bold py-2.5 px-4 rounded-sm text-xs transition shadow-2xs cursor-pointer"
+        <a
+          href={getWhatsAppShareUrl()}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-[#388e3c] hover:bg-[#2e7d32] text-white font-bold py-2.5 px-4 rounded-sm text-xs transition shadow-2xs"
         >
           <Share2 className="w-4 h-4" />
           <span>Share to WhatsApp / Status</span>
-        </button>
+        </a>
       </div>
     </div>
   );

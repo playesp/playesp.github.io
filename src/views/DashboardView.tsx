@@ -46,7 +46,10 @@ import {
   User as UserIcon,
   MessageSquare,
   FileText,
-  BadgeAlert
+  BadgeAlert,
+  Briefcase,
+  Gamepad2,
+  Crop
 } from 'lucide-react';
 import type { 
   UserProfile, 
@@ -64,13 +67,15 @@ import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { MultiCardShowcase } from '../components/MultiCardShowcase.tsx';
 import { PromotionalPoster } from '../components/PromotionalPoster.tsx';
-import { DailyLoginRewardsModal } from '../components/DailyLoginRewardsModal.tsx';
 import { DailyTasks } from '../components/DailyTasks.tsx';
-import { DailyLoginRewards, LOGIN_REWARDS_TIERS } from '../services/DailyLoginRewardsService.ts';
 import { ReferralGrowthChart } from '../components/ReferralGrowthChart.tsx';
 import { DailyTopEarners } from '../components/DailyTopEarners.tsx';
 import { TransactionHistory } from '../components/TransactionHistory.tsx';
+import { FRAME_CATALOG, VIP_TIERS } from '../config/economy.ts';
 import { showToast } from '../services/toast.ts';
+import { auth, signInWithGoogle, syncUserToFirestore } from '../services/firebase.ts';
+import { UserProfileSheetModal, type RichProfileData } from '../components/UserProfileSheetModal.tsx';
+import { FacebookPhotoCropModal } from '../components/FacebookPhotoCropModal.tsx';
 
 
 interface DashboardViewProps {
@@ -78,6 +83,7 @@ interface DashboardViewProps {
   settings: PlatformSettings;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onNavigateToTab?: (tab: string) => void;
+  onOpenBuyCoins?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -85,6 +91,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   settings,
   onUpdateUser,
   onNavigateToTab,
+  onOpenBuyCoins,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'idcard' | 'poster' | 'referrals' | 'nwi_tree' | 'wallet' | 'transactions' | 'coins_ledger' | 'complaints' | 'profile' | 'devices'>('overview');
   const [idCardViewMode, setIdCardViewMode] = useState<'primary' | 'multicard'>('primary');
@@ -123,8 +130,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [submittingComplaint, setSubmittingComplaint] = useState(false);
   const [complaintNotice, setComplaintNotice] = useState<{ text: string; error: boolean } | null>(null);
 
-  // Direct avatar upload state
+  // Direct avatar & cover photo crop/upload state
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [photoCropState, setPhotoCropState] = useState<{
+    open: boolean;
+    kind: 'avatar' | 'cover';
+    src: string;
+  }>({ open: false, kind: 'avatar', src: '' });
   
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -143,6 +155,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Telegram-style Profile Form state with all editable fields
   const [profileForm, setProfileForm] = useState({
     fullName: user.fullName || '',
+    username: user.username || '',
+    location: user.location || '',
     phone: user.phone || '',
     email: user.email || '',
     avatar: user.avatar || '',
@@ -151,6 +165,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     fullAddress: user.fullAddress || '',
     paymentAddress: user.paymentAddress || '',
     payoutUpiId: user.payoutUpiId || user.paymentAddress || '',
+    accountType: (user.accountType === 'gamer' ? 'gamer' : 'business') as 'business' | 'gamer',
     password: '',
     privacySettings: {
       showPhone: Boolean(user.privacySettings?.showPhone),
@@ -160,39 +175,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
-
-  // Daily Login Rewards & Task modal state
-  const [showLoginRewardsModal, setShowLoginRewardsModal] = useState(false);
-  const [loginRewardStatus, setLoginRewardStatus] = useState(() => DailyLoginRewards.checkStatus(user));
-
-  useEffect(() => {
-    const status = DailyLoginRewards.checkStatus(user);
-    setLoginRewardStatus(status);
-    // Auto-prompt modal if user has an unclaimed reward today and haven't dismissed it this browser session
-    const sessionPromptKey = `esp_login_reward_prompted_${user.userId}_${new Date().toISOString().slice(0, 10)}`;
-    if (status.canClaimToday && !sessionStorage.getItem(sessionPromptKey)) {
-      setShowLoginRewardsModal(true);
-      sessionStorage.setItem(sessionPromptKey, 'true');
-    }
-  }, [user]);
-
-  // 24-Hour Daily Rewards state (clickable once every 24 hours for random coins or small cash credit)
-  const [last24hClaim, setLast24hClaim] = useState<number>(() => {
-    const stored = localStorage.getItem(`esp_24h_daily_claim_${user.userId}`);
-    return stored ? Number(stored) : 0;
-  });
-  const [countdown24h, setCountdown24h] = useState<{ hours: number; minutes: number; seconds: number; canClaim: boolean }>({
-    hours: 0,
-    minutes: 0,
-    seconds: 0,
-    canClaim: true,
-  });
-  const [dailyRewardClaiming, setDailyRewardClaiming] = useState(false);
-  const [claimedRewardResult, setClaimedRewardResult] = useState<{
-    type: 'coins' | 'cash';
-    amount: number;
+  const [usernameCheck, setUsernameCheck] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
     message: string;
-  } | null>(null);
+  }>({ status: 'idle', message: '' });
+  const [profileSheetOpen, setProfileSheetOpen] = useState<{
+    open: boolean;
+    mode: 'view' | 'edit' | 'search';
+  }>({ open: false, mode: 'view' });
 
   // Level-Up Confetti & Celebratory Animation state
   const prevLevelRef = useRef<number>(user.gameLevel || 1);
@@ -208,28 +198,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [copiedTxnId, setCopiedTxnId] = useState<string | null>(null);
   const [selectedPayoutReceipt, setSelectedPayoutReceipt] = useState<PayoutRequest | null>(null);
   const [receiptCopied, setReceiptCopied] = useState(false);
-
-  // 24-Hour countdown updater
-  useEffect(() => {
-    const calculateCooldown = () => {
-      const now = Date.now();
-      const elapsed = now - last24hClaim;
-      const cooldownMs = 24 * 60 * 60 * 1000;
-      if (elapsed >= cooldownMs || last24hClaim === 0) {
-        setCountdown24h({ hours: 0, minutes: 0, seconds: 0, canClaim: true });
-      } else {
-        const remainingMs = cooldownMs - elapsed;
-        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-        const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
-        setCountdown24h({ hours, minutes, seconds, canClaim: false });
-      }
-    };
-
-    calculateCooldown();
-    const timer = setInterval(calculateCooldown, 1000);
-    return () => clearInterval(timer);
-  }, [last24hClaim]);
 
   // Level-Up celebration watcher: triggers confetti animation when reaching a new game level
   useEffect(() => {
@@ -262,71 +230,70 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     prevLevelRef.current = currentLvl;
   }, [user.gameLevel]);
 
-  // Handler for 24-hour Daily Reward claim
-  const handleClaim24hDailyReward = () => {
-    if (!countdown24h.canClaim || dailyRewardClaiming) return;
-    setDailyRewardClaiming(true);
+  useEffect(() => {
+    setProfileForm(prev => ({
+      ...prev,
+      fullName: user.fullName || prev.fullName,
+      username: user.username || '',
+      location: user.location || '',
+      phone: user.phone || prev.phone,
+      email: user.email || prev.email,
+      avatar: user.avatar || '',
+      bio: user.bio || '',
+      gender: user.gender || 'male',
+      fullAddress: user.fullAddress || '',
+      paymentAddress: user.paymentAddress || '',
+      payoutUpiId: user.payoutUpiId || user.paymentAddress || '',
+      accountType: (user.accountType === 'gamer' ? 'gamer' : 'business') as 'business' | 'gamer',
+    }));
+  }, [user.userId, user.accountType, user.fullName, user.username, user.location, user.avatar, user.bio, user.payoutUpiId]);
 
-    setTimeout(() => {
-      // 70% chance of coins (50 - 200 coins), 30% chance of direct cash credit (₹5 - ₹25)
-      const isCash = Math.random() < 0.30;
-      const now = Date.now();
-      localStorage.setItem(`esp_24h_daily_claim_${user.userId}`, now.toString());
-      setLast24hClaim(now);
-
-      confetti({
-        particleCount: 150,
-        spread: 85,
-        origin: { y: 0.6 },
-        colors: ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#f43f5e'],
+  // Debounced live uniqueness check for @username in Dashboard Profile form
+  useEffect(() => {
+    const cleaned = profileForm.username.trim().replace(/^@+/, '').toLowerCase();
+    if (!cleaned) {
+      setUsernameCheck({ status: 'idle', message: '' });
+      return;
+    }
+    if (!/^[a-z0-9]{3,24}$/.test(cleaned)) {
+      setUsernameCheck({
+        status: 'invalid',
+        message: 'कोई Symbol (_ - . @) उपयोग न करें — केवल 3-24 अक्षर (a-z और 0-9) लिखें।',
       });
-
-      if (isCash) {
-        const cashOptions = [5, 10, 15, 20, 25];
-        const cashWon = cashOptions[Math.floor(Math.random() * cashOptions.length)];
-        const updatedUser: UserProfile = {
-          ...user,
-          balance: (user.balance || 0) + cashWon,
-          totalEarnings: (user.totalEarnings || 0) + cashWon,
-        };
-        onUpdateUser(updatedUser);
-        setClaimedRewardResult({
-          type: 'cash',
-          amount: cashWon,
-          message: `बधाई हो! आपको ₹${cashWon} का सीधा नकद क्रेडिट (Direct Cash Credit) प्राप्त हुआ है! यह आपके उपलब्ध वॉलेट बैलेंस में जोड़ दिया गया है।`,
-        });
-      } else {
-        const coinOptions = [50, 75, 100, 150, 200];
-        const coinsWon = coinOptions[Math.floor(Math.random() * coinOptions.length)];
-        const updatedUser: UserProfile = {
-          ...user,
-          coins: (user.coins || 0) + coinsWon,
-        };
-        onUpdateUser(updatedUser);
-        setClaimedRewardResult({
-          type: 'coins',
-          amount: coinsWon,
-          message: `बधाई हो! आपको ${coinsWon} गेमिंग बोनस कॉइन्स (Bonus Coins) प्राप्त हुए हैं! आप इन्हें गिफ्टिंग या गेम्स में उपयोग कर सकते हैं।`,
-        });
+      return;
+    }
+    if (cleaned === (user.username || '').toLowerCase()) {
+      setUsernameCheck({ status: 'available', message: `@${cleaned} आपका सक्रिय यूनिक यूज़रनेम है।` });
+      return;
+    }
+    let cancelled = false;
+    setUsernameCheck({ status: 'checking', message: 'उपलब्धता जांची जा रही है...' });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.checkUsernameAvailability(cleaned, user.userId);
+        if (cancelled) return;
+        if (res.available) {
+          setUsernameCheck({ status: 'available', message: `@${res.normalized || cleaned} उपलब्ध है!` });
+        } else {
+          setUsernameCheck({
+            status: 'taken',
+            message: res.message || `@${cleaned} पहले से दूसरे यूज़र के पास है!`,
+          });
+        }
+      } catch {
+        if (!cancelled) setUsernameCheck({ status: 'idle', message: '' });
       }
-      setDailyRewardClaiming(false);
-    }, 500);
-  };
-
-  // Test level up simulation for demonstration
-  const handleSimulateLevelUp = () => {
-    const nextLvl = (user.gameLevel || 1) + 1;
-    const updatedUser: UserProfile = {
-      ...user,
-      gameLevel: nextLvl,
-      gameXp: (user.gameXp || 0) + 250,
-      coins: (user.coins || 0) + 300,
+    }, 320);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
     };
-    onUpdateUser(updatedUser);
-  };
+  }, [profileForm.username, user.username, user.userId]);
 
-  // Dual ID Architecture (ESP Earning ID vs ESP Gaming Time ID)
-  const gamingId = user.gamingId || `GAME-${user.userId.replace(/[^A-Za-z0-9]/g, '').slice(-6) || '887749'}`;
+
+
+  // Dual ID Architecture (ESP Earning ID vs ESP Gaming Time ID - No Symbols)
+  const gamingId = user.gamingId || `ESPGT${user.userId.replace(/[^A-Za-z0-9]/g, '').slice(-4) || '01'}`;
   const [copiedEspId, setCopiedEspId] = useState(false);
   const [copiedGamingId, setCopiedGamingId] = useState(false);
   const [dashboardHubMode, setDashboardHubMode] = useState<'earning' | 'gaming'>('earning');
@@ -357,12 +324,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           : referralFilter === 'active'
           ? ref.status === 'credited'
           : ref.status === 'pending';
-      const q = referralSearch.toLowerCase().trim();
+      const q = (referralSearch || '').toLowerCase().trim();
       const matchesSearch =
         !q ||
-        ref.downlineName.toLowerCase().includes(q) ||
-        ref.downlineUserId.toLowerCase().includes(q) ||
-        ref.serviceCode.toLowerCase().includes(q);
+        (ref.downlineName || '').toLowerCase().includes(q) ||
+        (ref.downlineUserId || '').toLowerCase().includes(q) ||
+        (ref.serviceCode || '').toLowerCase().includes(q);
       return matchesFilter && matchesSearch;
     });
   }, [displayReferrals, referralFilter, referralSearch]);
@@ -376,13 +343,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const filteredPayouts = useMemo(() => {
     return displayPayouts.filter(po => {
       const matchesFilter = payoutFilter === 'all' ? true : po.status === payoutFilter;
-      const q = payoutSearch.toLowerCase().trim();
+      const q = (payoutSearch || '').toLowerCase().trim();
       const matchesSearch =
         !q ||
-        po.payoutAddress.toLowerCase().includes(q) ||
-        (po.transactionRef && po.transactionRef.toLowerCase().includes(q)) ||
-        po.id.toLowerCase().includes(q) ||
-        String(po.amount).includes(q);
+        (po.payoutAddress || '').toLowerCase().includes(q) ||
+        (po.transactionRef || '').toLowerCase().includes(q) ||
+        (po.id || '').toLowerCase().includes(q) ||
+        String(po.amount || '').includes(q);
       return matchesFilter && matchesSearch;
     });
   }, [displayPayouts, payoutFilter, payoutSearch]);
@@ -541,28 +508,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
-  const handleDirectAvatarUpload = (file: File) => {
+  const handleDirectAvatarUpload = (file: File, kind: 'avatar' | 'cover' = 'avatar') => {
     if (!file) return;
-    setUploadingAvatar(true);
     const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64 = reader.result as string;
-        const res = await api.uploadUserAvatar(user.userId, base64);
-        if (res.success) {
-          showToast('प्रोफाइल फोटो सफलतापूर्वक अपडेट हो गई!', 'success');
-          onUpdateUser(res.user || { ...user, avatar: base64 });
-          setProfileForm(prev => ({ ...prev, avatar: base64 }));
-        } else {
-          showToast(res.message || 'फोटो अपलोड करने में विफल', 'error');
-        }
-      } catch (err: any) {
-        showToast(err?.message || 'फोटो अपलोड में त्रुटि आई', 'error');
-      } finally {
-        setUploadingAvatar(false);
+    reader.onerror = () => showToast('फोटो पढ़ने में समस्या आई।', 'error');
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string' && reader.result) {
+        setPhotoCropState({
+          open: true,
+          kind,
+          src: reader.result,
+        });
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleConfirmDashboardPhotoCrop = async (croppedDataUrl: string) => {
+    const { kind } = photoCropState;
+    setPhotoCropState(prev => ({ ...prev, open: false }));
+    setUploadingAvatar(true);
+    try {
+      if (kind === 'cover') {
+        const updated = await api.updateUserProfile(user.userId, { coverPhoto: croppedDataUrl });
+        onUpdateUser(updated);
+        syncUserToFirestore(updated, true).catch(() => {});
+        showToast('🖼️ कवर फोटो एडजस्ट व सेव हो गई!', 'success');
+      } else {
+        const res = await api.uploadUserAvatar(user.userId, croppedDataUrl);
+        if (res.success) {
+          const updated = res.user || { ...user, avatar: croppedDataUrl };
+          showToast('प्रोफाइल फोटो क्रॉप व अपडेट हो गई!', 'success');
+          onUpdateUser(updated);
+          syncUserToFirestore(updated, true).catch(() => {});
+          setProfileForm(prev => ({ ...prev, avatar: croppedDataUrl }));
+        } else {
+          showToast(res.message || 'फोटो अपलोड करने में विफल', 'error');
+        }
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'फोटो अपलोड में त्रुटि आई', 'error');
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   useEffect(() => {
@@ -638,57 +626,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           console.warn('Native share error:', err);
         }
       }
-    } else {
-      // Fallback for desktop without native share
-      handleShareWhatsApp();
     }
   };
 
-  const handleClaimDailyCheckIn = () => {
-    try {
-      const status = DailyLoginRewards.checkStatus(user);
-      if (!status.canClaimToday) {
-        showToast('आज का बोनस पहले ही क्लेम किया जा चुका है! अगला बोनस कल मिलेगा।', 'info', 'दैनिक चेक-इन');
-        return;
-      }
-      const { updatedUser, reward } = DailyLoginRewards.claimReward(user);
-      try {
-        const today = new Date().toISOString().slice(0, 10);
-        localStorage.setItem('esp_weekly_reward_claimed_date', today);
-        localStorage.setItem(`esp_claimed_date_${user.userId}`, today);
-      } catch {}
-      onUpdateUser(updatedUser);
-      setLoginRewardStatus(DailyLoginRewards.checkStatus(updatedUser));
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 }
-      });
-      showToast(
-        `Bonus claimed successfully! +${reward.coins} Coins and +${reward.xp} XP added!`,
-        'reward',
-        `Day ${reward.day} Daily Bonus`
-      );
-    } catch (e: any) {
-      showToast(e.message || 'Claim failed', 'error');
-    }
-  };
+  const whatsappInviteUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
+    `🔥 *EARNING SYSTEM PLATFORM (ESP) - WORK FROM HOME JOB* 🔥\n\n` +
+    `नमस्ते! मैंने EARNING SYSTEM PLATFORM (ESP) जॉइन किया है जहाँ सोशल मीडिया और डिजिटल सर्विसेज की मदद से घर बैठे प्रतिदिन कमाए जा सकते हैं।\n\n` +
+    `✅ शुरुआत सिर्फ ₹10 से\n` +
+    `✅ EMO, MMO, MOM & नॉन-वर्किंग ऑटो पूल इनकम\n` +
+    `✅ तुरंत UPI में पेमेंट (Google Pay / PhonePe)\n` +
+    `✅ वेरिफाइड मेंबर डिजिटल ID कार्ड\n\n` +
+    `👉 *मेरे स्पॉन्सर लिंक से अभी जॉइन करें:*\n` +
+    `${referralUrl}\n\n` +
+    `👤 *Sponsor Name:* ${user.fullName}\n` +
+    `🆔 *Sponsor Roll No:* ${user.userId}`
+  )}`;
 
-  const handleShareWhatsApp = () => {
-    const text = encodeURIComponent(
-      `🔥 *EARNING SYSTEM PLATFORM (ESP) - WORK FROM HOME JOB* 🔥\n\n` +
-      `नमस्ते! मैंने EARNING SYSTEM PLATFORM (ESP) जॉइन किया है जहाँ सोशल मीडिया और AI की मदद से घर बैठे ₹500 - ₹2000 प्रतिदिन कमाए जा सकते हैं।\n\n` +
-      `✅ शुरुआत सिर्फ ₹10 से\n` +
-      `✅ EMO, MMO, MOM & नॉन-वर्किंग ऑटो पूल इनकम\n` +
-      `✅ तुरंत UPI में पेमेंट (Google Pay / PhonePe)\n` +
-      `✅ वेरिफाइड मेंबर डिजिटल ID कार्ड\n\n` +
-      `👉 *मेरे स्पॉन्सर लिंक से अभी जॉइन करें:*\n` +
-      `${referralUrl}\n\n` +
-      `👤 *Sponsor Name:* ${user.fullName}\n` +
-      `🆔 *Sponsor Roll No:* ${user.userId}`
-    );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
-  };
+  const activeFrameInfo = FRAME_CATALOG.find(f => f.variant === (user.frameType || 'standard')) || FRAME_CATALOG[0];
+  const activeVipInfo = VIP_TIERS.find(v => v.id === user.vipTier);
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -725,16 +680,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (profileForm.username.trim() && (usernameCheck.status === 'taken' || usernameCheck.status === 'invalid')) {
+      setProfileMessage(usernameCheck.message || 'कृपया एक यूनिक और मान्य @username चुनें।');
+      return;
+    }
     setProfileSaving(true);
     setProfileMessage(null);
     try {
-      const updated = await api.updateUserProfile(user.userId, profileForm);
+      const cleanHandle = profileForm.username.trim().replace(/^@+/, '').toLowerCase();
+      const updated = await api.updateUserProfile(user.userId, {
+        ...profileForm,
+        username: cleanHandle || undefined,
+      });
       onUpdateUser(updated);
-      setProfileMessage('प्रोफाइल और प्राइवेसी सेटिंग्स सफलतापूर्वक अपडेट हो गई हैं!');
+      setProfileMessage('प्रोफाइल, यूनिक @username और प्राइवेसी सेटिंग्स सफलतापूर्वक अपडेट हो गई हैं!');
     } catch (err: any) {
       setProfileMessage(err.message || 'Update failed');
     } finally {
       setProfileSaving(false);
+    }
+  };
+
+  const handleCloudSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      if (!auth.currentUser) {
+        await signInWithGoogle();
+      }
+      await syncUserToFirestore(user, false);
+      showToast('☁️ प्रोफाइल व वॉलेट रिकॉर्ड सफलतापूर्वक Firestore Cloud पर सिंक हो गया!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Cloud Sync के लिए Google सत्यापन पूरा करें।', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -793,7 +772,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   disabled={uploadingAvatar}
                   onChange={e => {
                     const file = e.target.files?.[0];
-                    if (file) handleDirectAvatarUpload(file);
+                    if (file) handleDirectAvatarUpload(file, 'avatar');
+                    e.target.value = '';
                   }}
                 />
               </label>
@@ -801,9 +781,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="space-y-1 text-center md:text-left">
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                 <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">{user.fullName}</h1>
+                {user.username && (
+                  <span className="bg-cyan-400/20 text-[#ffe500] border border-cyan-300/40 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded">
+                    @{user.username}
+                  </span>
+                )}
                 <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2.5 py-0.5 rounded flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> VERIFIED MEMBER
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('profile')}
+                  className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2.5 py-0.5 rounded border border-white/30 flex items-center gap-1 cursor-pointer transition"
+                  title="प्रोफाइल टाइप बदलें या विवरण अपडेट करें"
+                >
+                  {user.accountType === 'gamer' ? (
+                    <>
+                      <Gamepad2 className="w-3 h-3 text-[#ffe500]" />
+                      <span>🎮 Gaming Profile</span>
+                    </>
+                  ) : (
+                    <>
+                      <Briefcase className="w-3 h-3 text-[#ffe500]" />
+                      <span>💼 Business Profile</span>
+                    </>
+                  )}
+                  <span className="underline ml-1 text-[#ffe500]">Edit</span>
+                </button>
               </div>
               <p className="text-xs text-blue-100">
                 Plan: <strong className="text-[#ffe500]">{user.chosenServiceName} (₹{user.joiningFee})</strong> | Joined: {user.joiningDate}
@@ -815,24 +819,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center justify-center md:justify-end gap-2">
+            {user.accountType === 'gamer' && onNavigateToTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateToTab('gaming-room')}
+                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span>Back to Game Setup</span>
+              </button>
+            )}
             <button
-              onClick={handleClaimDailyCheckIn}
-              className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer relative shadow-xs"
-              title="Claim Daily Login Check-in Reward"
+              onClick={() => onOpenBuyCoins?.()}
+              className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs"
+              title="रियल UPI से कॉइन्स खरीदें"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Daily Check-In (Day {loginRewardStatus.streak || 1})</span>
-              {loginRewardStatus.canClaimToday && (
-                <span className="w-2 h-2 rounded-full bg-rose-600 absolute -top-0.5 -right-0.5" />
-              )}
-            </button>
-
-            <button
-              onClick={() => setShowLoginRewardsModal(true)}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
-            >
-              <Gift className="w-3.5 h-3.5 text-[#ffe500]" />
-              <span>7-Day Rewards</span>
+              <span>🪙 {(user.coins || 0).toLocaleString()} Coins • Buy Coins</span>
             </button>
 
             <button
@@ -841,6 +843,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>Share Link</span>
+            </button>
+
+            <button
+              onClick={() => setProfileSheetOpen({ open: true, mode: 'view' })}
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+              title="कवर फोटो, यूनिक @Username और सोशल प्रोफाइल खोलें"
+            >
+              <UserIcon className="w-3.5 h-3.5 text-[#ffe500]" />
+              <span>WePlay Profile</span>
             </button>
 
             <button
@@ -858,12 +869,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>My ID Card</span>
             </button>
 
-            <button
-              onClick={handleShareWhatsApp}
+            <a
+              href={whatsappInviteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="bg-[#388e3c] hover:bg-emerald-700 text-white px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>WhatsApp</span>
+            </a>
+
+            <button
+              onClick={handleCloudSync}
+              disabled={isSyncing}
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
+              title="Google से Firestore Cloud पर डेटा सिंक करें"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#ffe500] ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Syncing...' : 'Cloud Sync'}</span>
             </button>
           </div>
         </div>
@@ -1001,15 +1024,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Referral Link Quick Action Bar */}
+      {/* Referral Link Quick Action Bar (Works with BOTH User ID & Unique @Username) */}
       <div className="bg-white border border-slate-200 rounded-md p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
-        <div className="space-y-0.5 text-center sm:text-left min-w-0 w-full sm:w-auto">
+        <div className="space-y-1 text-center sm:text-left min-w-0 w-full sm:w-auto">
           <p className="text-[11px] font-bold text-[#2874f0] uppercase tracking-wider">
-            YOUR SPONSOR REFERRAL LINK
+            YOUR SPONSOR REFERRAL LINKS (ID &amp; USERNAME दोनों से काम करता है)
           </p>
           <p className="font-mono text-xs text-[#212121] truncate select-all break-all max-w-full sm:max-w-md">
             {referralUrl}
           </p>
+          {user.username && (
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px]">
+              <span className="font-mono text-emerald-700 font-bold select-all break-all">
+                {typeof window !== 'undefined' ? `${window.location.origin}/?ref=${user.username}` : `https://esp.platform/?ref=${user.username}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const uUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${user.username}` : `https://esp.platform/?ref=${user.username}`;
+                  navigator.clipboard.writeText(uUrl);
+                  showToast(`✅ Username Referral Link (@${user.username}) कॉपी हो गया!`, 'success');
+                }}
+                className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold cursor-pointer"
+              >
+                Copy @Link
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2 shrink-0">
@@ -1086,61 +1127,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
 
-            {/* 24-Hour Daily Mystery Rewards Card */}
+            {/* Real Coins, VIP Pass & Quality Frame Status Card */}
             <div className="bg-white rounded-md p-4 sm:p-5 border border-slate-200 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-8 h-8 rounded bg-[#ffe500] text-[#212121] flex items-center justify-center font-black">
-                    <Gift className="w-4 h-4" />
+                    <Coins className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-xs sm:text-sm font-extrabold text-[#212121]">24h Daily Reward</h3>
-                    <p className="text-[11px] text-slate-500">Bonus Coins or Cash Credit</p>
+                    <h3 className="text-xs sm:text-sm font-extrabold text-[#212121]">Coins, VIP &amp; Frame Status</h3>
+                    <p className="text-[11px] text-slate-500">100% Real Server Wallet</p>
                   </div>
                 </div>
-
-                {countdown24h.canClaim ? (
-                  <span className="bg-emerald-50 text-[#388e3c] text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200">
-                    READY
-                  </span>
-                ) : (
-                  <span className="bg-slate-100 text-slate-600 text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-slate-200 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#2874f0]" />
-                    {countdown24h.hours}h {countdown24h.minutes}m {countdown24h.seconds}s
-                  </span>
-                )}
+                <span className="font-mono font-black text-sm text-[#fb641b]">
+                  🪙 {(user.coins || 0).toLocaleString()}
+                </span>
               </div>
 
-              <p className="text-xs text-slate-600 leading-relaxed">
-                प्रति 24 घंटे में एक बार क्लिक करें और पाएँ <strong className="text-[#2874f0]">50-200 बोनस कॉइन्स</strong> या <strong className="text-[#388e3c]">₹5 - ₹25 सीधा नकद क्रेडिट</strong>!
-              </p>
+              <div className="bg-[#f9fafb] border border-slate-200 rounded p-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">VIP Membership:</span>
+                  <span className="font-bold text-[#2874f0]">
+                    {activeVipInfo ? `${activeVipInfo.icon} ${activeVipInfo.name}` : 'No VIP (Free Tier)'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Equipped Frame:</span>
+                  <span className="font-bold text-[#212121]">
+                    {activeFrameInfo.icon} {activeFrameInfo.name} ({activeFrameInfo.quality})
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 leading-relaxed">
+                  नए खिलाड़ी हमेशा <strong>0 कॉइन्स</strong> से शुरू करते हैं। प्रत्येक रियल टास्क पूरा करने पर <strong>+5 कॉइन्स व EXP</strong> मिलते हैं। VIP और प्रीमियम फ्रेम्स कॉइन्स से अनलॉक होते हैं।
+                </p>
+              </div>
 
-              <button
-                onClick={handleClaim24hDailyReward}
-                disabled={!countdown24h.canClaim || dailyRewardClaiming}
-                className={`w-full py-2.5 px-3 rounded-sm text-xs font-bold transition flex items-center justify-center space-x-2 cursor-pointer ${
-                  countdown24h.canClaim
-                    ? 'bg-[#fb641b] hover:bg-[#e5530d] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed'
-                }`}
-              >
-                {dailyRewardClaiming ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Unlocking Mystery Gift...</span>
-                  </>
-                ) : countdown24h.canClaim ? (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>CLAIM 24H REWARD NOW</span>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Next Claim in {countdown24h.hours}h {countdown24h.minutes}m {countdown24h.seconds}s</span>
-                  </>
-                )}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onOpenBuyCoins?.()}
+                  className="py-2 px-2.5 rounded-sm text-xs font-bold text-white bg-[#fb641b] hover:bg-[#e5530d] transition shadow-xs cursor-pointer text-center"
+                >
+                  🪙 Buy Coins
+                </button>
+                <button
+                  onClick={() => onNavigateToTab?.('gaming-room')}
+                  className="py-2 px-2.5 rounded-sm text-xs font-bold text-[#2874f0] bg-[#f5f8ff] hover:bg-blue-50 border border-blue-200 transition cursor-pointer text-center"
+                >
+                  💎 VIP &amp; Frames
+                </button>
+              </div>
             </div>
 
             {/* Game Level & XP Card */}
@@ -1169,7 +1204,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div
                     className="bg-[#2874f0] h-full rounded-full transition-all duration-500"
                     style={{
-                      width: `${Math.min(100, Math.max(15, (((user.gameXp || 0) % 200) / 200) * 100))}%`,
+                      width: `${Math.min(100, Math.max(4, (((user.gameXp || 0) % 200) / 200) * 100))}%`,
                     }}
                   />
                 </div>
@@ -1177,121 +1212,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <div className="pt-1 flex items-center justify-between gap-2">
                 <p className="text-[11px] text-slate-500">
-                  गेम्स खेलने और गिफ्ट भेजने पर XP बढ़ता है
+                  केवल वेरिफाइड रियल टास्क (+5 Coins व EXP) पूर्ण करने पर EXP और लेवल बढ़ता है
                 </p>
                 <button
-                  onClick={handleSimulateLevelUp}
-                  className="px-2.5 py-1 text-[11px] font-bold text-[#2874f0] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition shrink-0 cursor-pointer flex items-center gap-1"
+                  onClick={() => setActiveTab('coins_ledger')}
+                  className="px-2.5 py-1 text-[11px] font-bold text-[#2874f0] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition shrink-0 cursor-pointer"
                 >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Test Level Up</span>
+                  Coins Ledger
                 </button>
               </div>
             </div>
           </div>
 
           <div className="lg:col-span-2 space-y-5">
-            {/* Daily Check-In & 7-Day Streak Card */}
-            <div className="bg-white border border-slate-200 rounded-md p-4 sm:p-5 space-y-3.5 shadow-2xs">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center space-x-2.5 min-w-0">
-                  <div className="w-10 h-10 rounded bg-[#ffe500] text-[#212121] flex items-center justify-center font-black shrink-0">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center space-x-2 flex-wrap">
-                      <h3 className="text-xs sm:text-sm font-extrabold text-[#212121] truncate">
-                        Daily Check-In &amp; Streak Rewards
-                      </h3>
-                      <span className="bg-blue-50 text-[#2874f0] border border-blue-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-                        STREAK DAY {loginRewardStatus.streak || 1}/7
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-600">
-                      हर रोज लॉगिन और चेक-इन करें और बढ़ते हुए कॉइन्स व एक्सक्लूसिव रिवॉर्ड्स पाएं!
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowLoginRewardsModal(true)}
-                  className="px-3 py-1.5 rounded text-xs font-bold text-[#2874f0] bg-[#f5f8ff] hover:bg-blue-50 border border-blue-200 transition flex items-center space-x-1 cursor-pointer shrink-0"
-                >
-                  <Gift className="w-3.5 h-3.5" />
-                  <span>View 7-Day Calendar</span>
-                </button>
-              </div>
-
-              {/* 7-Day Milestone Chips */}
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 sm:gap-2">
-                {loginRewardStatus.allTiers.map((tier) => {
-                  const isCurrentDay = tier.day === loginRewardStatus.todayReward.day;
-                  const isClaimed = loginRewardStatus.claimedDays.includes(tier.day);
-                  const isUpcoming = tier.day > (loginRewardStatus.streak || 1);
-
-                  return (
-                    <div
-                      key={tier.day}
-                      className={`p-2 rounded border text-center transition flex flex-col justify-between min-w-0 ${
-                        isCurrentDay && loginRewardStatus.canClaimToday
-                          ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-400'
-                          : isClaimed
-                          ? 'bg-emerald-50 border-emerald-200 text-[#388e3c]'
-                          : isUpcoming
-                          ? 'bg-[#f9fafb] border-slate-200 text-slate-400'
-                          : 'bg-white border-slate-200 text-[#212121]'
-                      }`}
-                    >
-                      <span className="text-[9px] font-bold uppercase text-slate-500 block truncate">
-                        Day {tier.day}
-                      </span>
-                      <div className="text-lg my-0.5">
-                        {tier.exclusiveItemIcon || (isClaimed ? '✅' : '🪙')}
-                      </div>
-                      <div className="text-[11px] font-black text-[#212121] font-mono leading-tight">
-                        +{tier.coins}
-                      </div>
-                      <div className="text-[9px] text-[#2874f0] font-semibold leading-tight truncate">
-                        {isClaimed ? 'Done' : tier.exclusiveItem ? tier.exclusiveItem : `+${tier.charms}`}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="pt-1 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                <div className="text-xs text-slate-700 flex items-center gap-1.5">
-                  <span className="text-[#2874f0] font-bold">Today&apos;s Pool:</span>
-                  <span className="font-mono font-black text-[#212121]">+{loginRewardStatus.todayReward.coins} Coins</span>
-                  <span className="text-slate-500 font-mono">+{loginRewardStatus.todayReward.charms} Charms</span>
-                </div>
-
-                {loginRewardStatus.canClaimToday ? (
-                  <button
-                    onClick={handleClaimDailyCheckIn}
-                    className="bg-[#fb641b] hover:bg-[#e5530d] px-4 py-2 rounded-sm text-xs font-bold text-white flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs shrink-0"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Claim Day {loginRewardStatus.todayReward.day} Bonus (+{loginRewardStatus.todayReward.coins})</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowLoginRewardsModal(true)}
-                    className="px-3.5 py-2 rounded-sm text-xs font-bold bg-emerald-50 text-[#388e3c] border border-emerald-200 flex items-center justify-center space-x-1.5 cursor-pointer shrink-0"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Today&apos;s Check-in Claimed!</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Daily Tasks & Challenges */}
+            {/* Real Server-Verified Tasks & Challenges (+5 Coins & EXP on completion) */}
             <DailyTasks
               user={user}
               onUpdateUser={onUpdateUser}
               onNavigateToGames={() => onNavigateToTab?.('gaming-room')}
               onNavigateToVoiceRoom={() => onNavigateToTab?.('gaming-room')}
+              onNavigateTab={(actionTab) => {
+                if (actionTab === 'profile') setActiveTab('profile');
+                else if (actionTab === 'moments') onNavigateToTab?.('moments');
+                else if (actionTab === 'chat-club') onNavigateToTab?.('chat-club');
+                else onNavigateToTab?.('gaming-room');
+              }}
+              onOpenBuyCoins={onOpenBuyCoins}
             />
 
             {/* Daily Top Earners Leaderboard */}
@@ -1588,13 +1534,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={handleShareWhatsApp}
+                <a
+                  href={whatsappInviteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-3.5 py-2 rounded-sm text-xs font-bold text-white bg-[#388e3c] hover:bg-emerald-700 transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   <span>Invite via WhatsApp</span>
-                </button>
+                </a>
               </div>
             </div>
 
@@ -1780,18 +1728,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </td>
 
                           <td className="py-3 px-3.5 text-center">
-                            <button
-                              onClick={() => {
-                                const msg = encodeURIComponent(
-                                  `नमस्ते ${ref.downlineName}! मैं आपका ESP स्पॉन्सर (${user.fullName}) हूँ। किसी भी सहायता के लिए संपर्क करें!`
-                                );
-                                window.open(`https://api.whatsapp.com/send?phone=91${ref.downlinePhone || ''}&text=${msg}`, '_blank');
-                              }}
-                              className="px-2.5 py-1 rounded-sm text-[10px] font-bold text-[#388e3c] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition cursor-pointer"
+                            <a
+                              href={`https://api.whatsapp.com/send?phone=91${ref.downlinePhone || ''}&text=${encodeURIComponent(
+                                `नमस्ते ${ref.downlineName}! मैं आपका ESP स्पॉन्सर (${user.fullName}) हूँ। किसी भी सहायता के लिए संपर्क करें!`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block px-2.5 py-1 rounded-sm text-[10px] font-bold text-[#388e3c] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition cursor-pointer"
                               title="Chat on WhatsApp"
                             >
                               Message
-                            </button>
+                            </a>
                           </td>
                         </tr>
                       );
@@ -2097,6 +2044,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <p className="text-[10px] text-slate-600 uppercase font-bold">Available for Withdrawal</p>
               <p className="text-2xl font-black text-[#388e3c]">₹{user.balance}</p>
               <p className="text-[10px] text-slate-600">न्यूनतम निकासी सीमा: ₹{settings.minWithdrawal}</p>
+              <p className="text-[10px] text-slate-500 pt-0.5 leading-snug">
+                निकासी अनुरोध सबमिट करते ही राशि वॉलेट से एस्क्रो में लॉक हो जाती है; एडमिन द्वारा अस्वीकृत करने पर राशि स्वतः वॉलेट में वापस जोड़ दी जाएगी।
+              </p>
             </div>
 
             {withdrawMessage && (
@@ -2248,9 +2198,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </div>
               <div className="col-span-2 sm:col-span-1 bg-emerald-50/70 border border-emerald-200 p-3 rounded-md flex flex-col justify-center">
-                <span className="text-[10px] text-[#388e3c] font-bold uppercase tracking-wider block">माइक सीट रिवॉर्ड दर</span>
+                <span className="text-[10px] text-[#388e3c] font-bold uppercase tracking-wider block">वेरिफाइड टास्क रिवॉर्ड दर</span>
                 <span className="text-xs sm:text-sm font-black text-[#212121]">
-                  +5 कॉइन्स / मिनट ऑन-माइक
+                  +5 कॉइन्स + EXP प्रति पूर्ण टास्क
                 </span>
               </div>
             </div>
@@ -2287,7 +2237,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="text-center py-12 text-slate-600 text-xs bg-white rounded-md border border-slate-200 space-y-2">
                 <Coins className="w-8 h-8 text-amber-500 mx-auto" />
                 <p className="font-bold text-[#212121]">अभी तक कोई कॉइन ट्रांजेक्शन दर्ज नहीं हुआ है।</p>
-                <p className="text-[11px] text-slate-500">डेली लॉगिन रिवॉर्ड, गेम्स या वॉइस रूम में बैठें और कॉइन्स कमाएं!</p>
+                <p className="text-[11px] text-slate-500">रियल टास्क पूरे करें (+5 कॉइन्स व EXP पाएं), या UPI से कॉइन्स खरीदें!</p>
               </div>
             ) : (
               coinTransactions
@@ -2596,8 +2546,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     onChange={e => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        handleDirectAvatarUpload(file);
+                        handleDirectAvatarUpload(file, 'avatar');
                       }
+                      e.target.value = '';
                     }}
                   />
                 </label>
@@ -2611,10 +2562,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600">
-                  फोटो बदलने के लिए कैमरे के आइकन पर क्लिक करें या नीचे दिए गए एवतार में से चुनें:
+                  फोटो बदलने या एडजस्ट/क्रॉप करने के लिए कैमरे के आइकन या नीचे दिए गए बटन्स का उपयोग करें:
                 </p>
 
-                {/* Quick Avatar Presets */}
+                {/* Quick Avatar Presets + Crop & Cover Actions */}
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
                   {[
                     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
@@ -2632,6 +2583,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <img src={presetUrl} alt="Preset" className="w-full h-full object-cover" />
                     </button>
                   ))}
+                  {profileForm.avatar && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPhotoCropState({
+                          open: true,
+                          kind: 'avatar',
+                          src: profileForm.avatar,
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-sm bg-[#e7f3ff] hover:bg-blue-100 text-[#1877f2] border border-blue-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Crop className="w-3 h-3" />
+                      <span>Crop Profile Pic</span>
+                    </button>
+                  )}
+                  <label className="px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer">
+                    <Camera className="w-3 h-3 text-[#1877f2]" />
+                    <span>{user.coverPhoto ? 'Change / Crop Cover' : 'Add Cover Photo'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleDirectAvatarUpload(file, 'cover');
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {user.coverPhoto && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPhotoCropState({
+                          open: true,
+                          kind: 'cover',
+                          src: user.coverPhoto!,
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Crop className="w-3 h-3" />
+                      <span>Adjust Cover</span>
+                    </button>
+                  )}
                   {profileForm.avatar && (
                     <button
                       type="button"
@@ -2694,12 +2691,130 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
+            {/* Profile Type Mode Selection (Business vs Gaming Profile) */}
+            <div className="bg-[#f9fafb] p-4 rounded-md border border-slate-200 space-y-2.5">
+              <div>
+                <h4 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+                  आप किस प्रकार की प्रोफाइल रखना चाहते हैं? (Profile Type Preference)
+                </h4>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  अपनी पसंद के अनुसार Business &amp; Earning या Gaming &amp; Voice Club प्रोफाइल मोड चुनें और नीचे सेव करें:
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setProfileForm(prev => ({ ...prev, accountType: 'business' }))}
+                  className={`p-3 rounded-md border-2 text-left transition cursor-pointer ${
+                    profileForm.accountType === 'business'
+                      ? 'border-[#2874f0] bg-[#f5f8ff] shadow-2xs'
+                      : 'border-slate-200 bg-white hover:border-blue-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-[#212121] flex items-center gap-1.5">
+                      <Briefcase className="w-4 h-4 text-[#2874f0]" />
+                      <span>💼 Business &amp; Earning Profile</span>
+                    </span>
+                    {profileForm.accountType === 'business' && (
+                      <CheckCircle2 className="w-4 h-4 text-[#2874f0]" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    10 अर्निंग प्लान, रेफरल इनकम, NWI टीम व डायरेक्ट UPI निकासी डैशबोर्ड।
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProfileForm(prev => ({ ...prev, accountType: 'gamer' }))}
+                  className={`p-3 rounded-md border-2 text-left transition cursor-pointer ${
+                    profileForm.accountType === 'gamer'
+                      ? 'border-[#fb641b] bg-orange-50/70 shadow-2xs'
+                      : 'border-slate-200 bg-white hover:border-orange-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-[#212121] flex items-center gap-1.5">
+                      <Gamepad2 className="w-4 h-4 text-[#fb641b]" />
+                      <span>🎮 Gaming &amp; Voice Club Profile</span>
+                    </span>
+                    {profileForm.accountType === 'gamer' && (
+                      <CheckCircle2 className="w-4 h-4 text-[#fb641b]" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    लाइव वॉइस स्टेज, मल्टीप्लेयर गेम्स, VIP व फ्रेम्स स्टोर और असली टास्क।
+                  </p>
+                </button>
+              </div>
+            </div>
+
             {/* Editable Details Fields */}
             <div className="space-y-4">
+              {/* Unique @Username + WePlay Cover Profile Bar */}
+              <div className="bg-cyan-50/60 border border-cyan-200 rounded-md p-3.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-cyan-950 block">
+                      यूनिक यूज़रनेम (Unique @Username — एक ही नाम से 2 यूज़र नहीं हो सकते)
+                    </label>
+                    <p className="text-[11px] text-cyan-800">
+                      दूसरे लोग आपको इस @username से सर्च करके Add Friend कर सकते हैं।
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setProfileSheetOpen({ open: true, mode: 'search' })}
+                      className="px-2.5 py-1.5 rounded bg-white border border-cyan-300 text-cyan-900 text-[11px] font-bold hover:bg-cyan-100 transition cursor-pointer"
+                    >
+                      🔍 Search Friends (@)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileSheetOpen({ open: true, mode: 'edit' })}
+                      className="px-2.5 py-1.5 rounded bg-[#2874f0] text-white text-[11px] font-bold hover:bg-blue-700 transition cursor-pointer"
+                    >
+                      🖼️ Cover &amp; WePlay Sheet
+                    </button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-bold text-cyan-700">@</span>
+                  <input
+                    type="text"
+                    value={profileForm.username}
+                    onChange={e =>
+                      setProfileForm({
+                        ...profileForm,
+                        username: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(),
+                      })
+                    }
+                    placeholder="उदा. rahul01 (बिना किसी symbol के)"
+                    maxLength={24}
+                    className="w-full bg-white border border-cyan-300 focus:border-[#2874f0] rounded pl-7 pr-3.5 py-2 text-xs text-[#212121] font-mono outline-none"
+                  />
+                </div>
+                {usernameCheck.message && (
+                  <p
+                    className={`text-[11px] font-bold ${
+                      usernameCheck.status === 'available'
+                        ? 'text-emerald-700'
+                        : usernameCheck.status === 'checking'
+                        ? 'text-slate-600'
+                        : 'text-rose-600'
+                    }`}
+                  >
+                    {usernameCheck.message}
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="text-xs font-semibold text-slate-700 block mb-1">
-                    पूरा नाम (Full Name) *
+                    पूरा नाम (Display Name) *
                   </label>
                   <input
                     type="text"
@@ -2708,6 +2823,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] rounded px-3.5 py-2 text-xs text-[#212121] outline-none"
                     required
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    नाम एक जैसा हो सकता है, पर आपका @Username और User ID हमेशा यूनिक रहेगा।
+                  </p>
                 </div>
 
                 <div>
@@ -2767,16 +2885,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  पूरा पता (Full Address with Pin Code)
-                </label>
-                <input
-                  type="text"
-                  value={profileForm.fullAddress}
-                  onChange={e => setProfileForm({ ...profileForm, fullAddress: e.target.value })}
-                  className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] rounded px-3.5 py-2 text-xs text-[#212121] outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    शहर / देश (Location Badge)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Delhi, India"
+                    value={profileForm.location}
+                    onChange={e => setProfileForm({ ...profileForm, location: e.target.value })}
+                    className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] rounded px-3.5 py-2 text-xs text-[#212121] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    पूरा पता (Full Address with Pin Code)
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.fullAddress}
+                    onChange={e => setProfileForm({ ...profileForm, fullAddress: e.target.value })}
+                    className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] rounded px-3.5 py-2 text-xs text-[#212121] outline-none"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -3113,26 +3246,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
-      {/* Daily Consecutive Login Tiered Rewards Modal */}
-      {showLoginRewardsModal && (
-        <DailyLoginRewardsModal
-          user={user}
-          status={loginRewardStatus}
-          onClose={() => setShowLoginRewardsModal(false)}
-          onClaim={(updatedUser, reward) => {
-            onUpdateUser(updatedUser);
-            setLoginRewardStatus(DailyLoginRewards.checkStatus(updatedUser));
-          }}
-        />
-      )}
-
       {/* Level-Up Celebratory Animation Modal */}
       {levelUpModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-md p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            {/* Pulsing crown badge */}
             <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
-              <div className="w-20 h-20 rounded-md bg-[#ffe500] text-[#212121] flex items-center justify-center font-black text-3xl shadow-md transform hover:scale-105 transition">
+              <div className="w-20 h-20 rounded-md bg-[#ffe500] text-[#212121] flex items-center justify-center font-black text-3xl shadow-md">
                 👑
               </div>
               <span className="absolute -bottom-1 -right-1 bg-[#388e3c] text-white text-[10px] font-bold px-2 py-0.5 rounded-sm border border-white shadow">
@@ -3148,92 +3267,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Level {levelUpModal.newLevel} Achieved!
               </h2>
               <p className="text-xs text-slate-600">
-                शानदार प्रगति! आप Level <strong className="text-slate-700">{levelUpModal.oldLevel}</strong> से पदोन्नत होकर{' '}
+                शानदार प्रगति! रियल टास्क EXP से आप Level <strong className="text-slate-700">{levelUpModal.oldLevel}</strong> से{' '}
                 <strong className="text-[#fb641b]">Level {levelUpModal.newLevel}</strong> पर पहुँच गए हैं।
               </p>
             </div>
 
-            {/* Unlocked Perks List */}
-            <div className="bg-[#f9fafb] rounded-md p-4 border border-slate-200 space-y-2.5 text-left">
-              <p className="text-[10px] uppercase font-bold text-slate-500">Unlocked Gaming Perks:</p>
-              
-              <div className="flex items-center space-x-2.5 text-xs text-[#212121]">
-                <div className="w-6 h-6 rounded-sm bg-emerald-50 text-[#388e3c] border border-emerald-200 flex items-center justify-center font-bold">
-                  ⚡
-                </div>
-                <span><strong>+10% Gift Multiplier:</strong> लाइव रूम गिफ्टिंग में अधिक चार्म्स</span>
-              </div>
-
-              <div className="flex items-center space-x-2.5 text-xs text-[#212121]">
-                <div className="w-6 h-6 rounded-sm bg-[#ffe500]/40 text-amber-800 border border-amber-300 flex items-center justify-center font-bold">
-                  👑
-                </div>
-                <span><strong>VIP Hall of Fame:</strong> टॉप अर्नर्स लीडरबोर्ड में उच्च प्राथमिकता</span>
-              </div>
-
-              <div className="flex items-center space-x-2.5 text-xs text-[#212121]">
-                <div className="w-6 h-6 rounded-sm bg-[#f5f8ff] text-[#2874f0] border border-blue-200 flex items-center justify-center font-bold">
-                  🎁
-                </div>
-                <span><strong>+250 Level-Up Bonus Coins:</strong> तुरंत गेमिंग कॉइन्स क्रेडिट</span>
-              </div>
-            </div>
-
-            {/* Claim Reward Button */}
             <button
-              onClick={() => {
-                confetti({
-                  particleCount: 100,
-                  spread: 70,
-                  origin: { y: 0.6 },
-                });
-                const updated: UserProfile = {
-                  ...user,
-                  coins: (user.coins || 0) + 250,
-                };
-                onUpdateUser(updated);
-                setLevelUpModal(null);
-              }}
+              onClick={() => setLevelUpModal(null)}
               className="w-full py-3 rounded-sm text-xs font-bold text-white bg-[#fb641b] hover:bg-[#e5530d] transition shadow-xs cursor-pointer flex items-center justify-center space-x-2"
             >
               <Sparkles className="w-4 h-4" />
-              <span>CLAIM LEVEL BONUS (+250 COINS) & CONTINUE</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 24-Hour Daily Mystery Reward Claimed Modal */}
-      {claimedRewardResult && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-md p-6 sm:p-8 max-w-sm w-full shadow-2xl relative text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-20 h-20 rounded-md bg-[#2874f0] text-white flex items-center justify-center text-3xl font-black mx-auto shadow-sm">
-              🎁
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-[#2874f0] uppercase tracking-widest bg-[#f5f8ff] px-3 py-0.5 rounded-sm border border-blue-200">
-                24H DAILY REWARD
-              </span>
-              <h3 className="text-xl font-bold text-[#212121] pt-1">
-                {claimedRewardResult.type === 'cash' ? 'नकद क्रेडिट अनलॉक!' : 'बोनस कॉइन्स अनलॉक!'}
-              </h3>
-            </div>
-
-            <div className="p-4 rounded-md bg-[#f9fafb] border border-slate-200 space-y-1">
-              <p className="text-3xl font-black text-[#388e3c] font-mono">
-                {claimedRewardResult.type === 'cash' ? `+₹${claimedRewardResult.amount}.00` : `+${claimedRewardResult.amount} COINS`}
-              </p>
-              <p className="text-xs text-slate-600 leading-relaxed pt-1">
-                {claimedRewardResult.message}
-              </p>
-            </div>
-
-            <button
-              onClick={() => setClaimedRewardResult(null)}
-              className="w-full py-2.5 rounded-sm text-xs font-bold text-white bg-[#2874f0] hover:bg-blue-700 transition shadow-xs cursor-pointer"
-            >
-              शानदार! (Continue)
+              <span>शानदार! जारी रखें (Continue)</span>
             </button>
           </div>
         </div>
@@ -3343,6 +3387,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      <UserProfileSheetModal
+        isOpen={profileSheetOpen.open}
+        onClose={() => setProfileSheetOpen(prev => ({ ...prev, open: false }))}
+        currentUser={user}
+        targetUserId={user.userId}
+        initialProfile={user as Partial<RichProfileData>}
+        initialMode={profileSheetOpen.mode}
+        onUpdateUser={onUpdateUser}
+        onOpenMoments={() => onNavigateToTab?.('gaming-room')}
+      />
+
+      <FacebookPhotoCropModal
+        isOpen={photoCropState.open}
+        imageSrc={photoCropState.src}
+        kind={photoCropState.kind}
+        onCancel={() => setPhotoCropState(prev => ({ ...prev, open: false }))}
+        onConfirm={handleConfirmDashboardPhotoCrop}
+        onChangeFile={(newFile) => handleDirectAvatarUpload(newFile, photoCropState.kind)}
+      />
     </div>
   );
 };

@@ -1,21 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Gift, 
-  X, 
-  Copy, 
-  Check, 
-  Sparkles, 
-  Coins, 
-  AlertCircle, 
-  CheckCircle2, 
-  ExternalLink,
-  ShoppingBag,
-  CreditCard,
-  Zap,
-  ArrowRight
+import {
+  Gift, X, Copy, Check, Sparkles, Coins, AlertCircle, CheckCircle2, Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import type { GiftCardVoucher, UserProfile } from '../types/index.ts';
+import type { GiftCardVoucher, GiftCardRedemption, UserProfile } from '../types/index.ts';
 import { api } from '../services/api.ts';
 
 interface DigitalGiftCardsModalProps {
@@ -23,6 +11,7 @@ interface DigitalGiftCardsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdateUser: (updatedUser: UserProfile) => void;
+  onOpenBuyCoins?: () => void;
 }
 
 export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
@@ -30,28 +19,33 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
   isOpen,
   onClose,
   onUpdateUser,
+  onOpenBuyCoins,
 }) => {
   const [vouchers, setVouchers] = useState<GiftCardVoucher[]>([]);
+  const [myRedemptions, setMyRedemptions] = useState<GiftCardRedemption[]>([]);
   const [loading, setLoading] = useState(false);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
-  const [selectedVoucher, setSelectedVoucher] = useState<GiftCardVoucher | null>(null);
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedPin, setCopiedPin] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [filterBrand, setFilterBrand] = useState<string>('all');
 
   useEffect(() => {
     if (isOpen) {
-      loadVouchers();
+      loadData();
     }
-  }, [isOpen]);
+  }, [isOpen, user.userId]);
 
-  const loadVouchers = async () => {
+  const loadData = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await api.getGiftCards();
-      setVouchers(Array.isArray(res) ? res : (res as any)?.vouchers || []);
+      const [cards, redemptions] = await Promise.all([
+        api.getGiftCards(),
+        api.getGiftCardRedemptions(user.userId),
+      ]);
+      setVouchers(Array.isArray(cards) ? cards : []);
+      setMyRedemptions(Array.isArray(redemptions) ? redemptions : []);
     } catch (err: any) {
       setErrorMsg(err?.message || 'गिफ्ट कार्ड लोड करने में समस्या आई');
     } finally {
@@ -61,6 +55,7 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
 
   const handleRedeem = async (voucher: GiftCardVoucher) => {
     setErrorMsg(null);
+    setSuccessMsg(null);
     if ((user.coins || 0) < voucher.coinsRequired) {
       setErrorMsg(`अपर्याप्त कॉइन्स! इस ${voucher.title} के लिए ${voucher.coinsRequired.toLocaleString()} कॉइन्स चाहिए। आपके पास ${user.coins || 0} कॉइन्स हैं।`);
       return;
@@ -69,22 +64,13 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
     setRedeemingId(voucher.id);
     try {
       const res = await api.redeemGiftCard(user.userId, voucher.id);
-      if (res.success && res.voucher) {
-        confetti({
-          particleCount: 120,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
-        setSelectedVoucher(res.voucher);
+      if (res.success) {
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         if (res.user) {
           onUpdateUser(res.user);
-        } else {
-          onUpdateUser({
-            ...user,
-            coins: (user.coins || 0) - voucher.coinsRequired
-          });
         }
-        await loadVouchers();
+        setSuccessMsg(res.message || 'गिफ्ट कार्ड अनुरोध सबमिट हुआ! एडमिन सत्यापन के बाद असली वाउचर कोड यहाँ दिखेगा।');
+        await loadData();
       } else {
         setErrorMsg(res.message || 'रिडीम असफल रहा');
       }
@@ -95,22 +81,17 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
     }
   };
 
-  const copyToClipboard = (text: string, type: 'code' | 'pin') => {
+  const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
-    if (type === 'code') {
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
-    } else {
-      setCopiedPin(true);
-      setTimeout(() => setCopiedPin(false), 2000);
-    }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   if (!isOpen) return null;
 
-  const filteredVouchers = vouchers.filter(v => {
+  const filteredVouchers = vouchers.filter((v) => {
     if (filterBrand === 'all') return true;
-    return v.brand.toLowerCase() === filterBrand.toLowerCase();
+    return (v.brand || '').toLowerCase().includes((filterBrand || '').toLowerCase());
   });
 
   return (
@@ -123,14 +104,11 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
               <Gift className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2 flex-wrap">
-                डिजिटल गिफ्ट कार्ड स्टोर
-                <span className="text-[10px] bg-[#ffe500] text-[#212121] px-2 py-0.5 rounded-xs font-black">
-                  असली वाउचर कोड व पिन
-                </span>
+              <h3 className="text-base sm:text-lg font-black text-white">
+                डिजिटल गिफ्ट कार्ड स्टोर (Admin Fulfilled)
               </h3>
               <p className="text-xs text-blue-100">
-                वर्चुअल गिफ्ट नहीं, असली शॉपिंग व कैश गिफ्ट कार्ड (Amazon, Flipkart, Google Play, UPI)
+                अर्जित कॉइन्स से वाउचर अनुरोध करें — एडमिन वेरिफिकेशन के बाद असली वाउचर कोड मिलेगा
               </p>
             </div>
           </div>
@@ -149,12 +127,21 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
               <Coins className="w-5 h-5 text-amber-500" />
               <span className="text-xs text-slate-600 font-semibold">उपलब्ध कॉइन्स:</span>
               <span className="text-sm font-black text-[#2874f0] font-mono">
-                {(user.coins || 0).toLocaleString()} ESP Coins
+                {(user.coins || 0).toLocaleString()} Coins
               </span>
             </div>
-            <span className="text-[11px] text-[#2874f0] bg-[#f5f8ff] border border-blue-200 px-2.5 py-1 rounded-sm font-semibold">
-              माइक पर बैठने से हर मिनट +5 कॉइन्स मिलते हैं
-            </span>
+            {onOpenBuyCoins && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBuyCoins();
+                }}
+                className="text-xs font-black px-3 py-1 rounded-sm bg-[#fb641b] hover:bg-[#e5530d] text-white cursor-pointer"
+              >
+                🪙 Buy Coins (कॉइन्स खरीदें)
+              </button>
+            )}
           </div>
 
           {/* Filter Brand Tabs */}
@@ -163,9 +150,9 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
               { id: 'all', label: 'सभी कार्ड्स' },
               { id: 'amazon', label: 'Amazon' },
               { id: 'flipkart', label: 'Flipkart' },
-              { id: 'google_play', label: 'Google Play' },
-              { id: 'upi_cash', label: 'UPI Cash' },
-            ].map(tab => (
+              { id: 'google', label: 'Google Play' },
+              { id: 'upi', label: 'UPI Cash' },
+            ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setFilterBrand(tab.id)}
@@ -181,85 +168,46 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
           </div>
 
           {errorMsg && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-md flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Modal content: Selected Redeemed Voucher Result */}
-          {selectedVoucher && (
-            <div className="bg-emerald-50 border-2 border-[#388e3c] p-4 rounded-md space-y-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#388e3c] font-bold text-sm">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>गिफ्ट कार्ड सफलतापूर्वक प्राप्त हुआ!</span>
-                </div>
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-md flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{errorMsg}</span>
+              </div>
+              {onOpenBuyCoins && (
                 <button
-                  onClick={() => setSelectedVoucher(null)}
-                  className="text-xs text-[#2874f0] hover:underline font-bold cursor-pointer"
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenBuyCoins();
+                  }}
+                  className="px-2.5 py-1 rounded-sm bg-[#fb641b] text-white font-black text-[11px] shrink-0 cursor-pointer"
                 >
-                  दूसरा देखें
+                  Buy Coins
                 </button>
-              </div>
-              <div className="p-3 bg-white rounded-sm border border-emerald-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 font-medium">वाउचर:</span>
-                  <span className="text-xs font-black text-[#212121]">{selectedVoucher.title} (₹{selectedVoucher.denomination || selectedVoucher.valueInRupees})</span>
-                </div>
-                <div className="flex items-center justify-between bg-[#f9fafb] p-2 rounded-sm border border-slate-200">
-                  <span className="text-xs text-slate-600">वाउचर कोड:</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-black text-[#388e3c] tracking-wider">
-                      {selectedVoucher.voucherCode}
-                    </span>
-                    <button
-                      onClick={() => copyToClipboard(selectedVoucher.voucherCode || '', 'code')}
-                      className="p-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-xs text-[#212121] cursor-pointer"
-                      title="कॉपी करें"
-                    >
-                      {copiedCode ? <Check className="w-3.5 h-3.5 text-[#388e3c]" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-                {selectedVoucher.voucherPin && (
-                  <div className="flex items-center justify-between bg-[#f9fafb] p-2 rounded-sm border border-slate-200">
-                    <span className="text-xs text-slate-600">सिक्योरिटी पिन (PIN):</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-black text-[#2874f0] tracking-wider">
-                        {selectedVoucher.voucherPin}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(selectedVoucher.voucherPin || '', 'pin')}
-                        className="p-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-xs text-[#212121] cursor-pointer"
-                        title="पिन कॉपी करें"
-                      >
-                        {copiedPin ? <Check className="w-3.5 h-3.5 text-[#388e3c]" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <p className="text-[11px] text-slate-600 pt-1">
-                  निर्देश: {selectedVoucher.instructions || 'इस कोड को संबंधित ऐप/वेबसाइट पर "Add Gift Card" में दर्ज करें।'}
-                </p>
-              </div>
+              )}
             </div>
           )}
 
-          {/* Vouchers List */}
+          {successMsg && (
+            <div className="bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs p-3 rounded-md flex items-center gap-2 font-bold">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* Vouchers Catalog */}
           <div className="space-y-3">
             {loading ? (
               <div className="text-center py-10 text-slate-500 text-xs bg-white rounded-md border border-slate-200">
-                गिफ्ट कार्ड वाउचर लोड हो रहे हैं...
+                गिफ्ट कार्ड कैटलॉग लोड हो रहा है...
               </div>
             ) : filteredVouchers.length === 0 ? (
               <div className="text-center py-10 text-slate-500 text-xs bg-white rounded-md border border-slate-200">
-                कोई वाउचर उपलब्ध नहीं है।
+                कोई गिफ्ट कार्ड उपलब्ध नहीं है।
               </div>
             ) : (
-              filteredVouchers.map(card => {
+              filteredVouchers.map((card) => {
                 const canAfford = (user.coins || 0) >= card.coinsRequired;
-                const isClaimed = card.status === 'claimed' && card.redeemedBy === user.userId;
 
                 return (
                   <div
@@ -268,15 +216,19 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-md bg-[#f5f8ff] border border-blue-200 flex items-center justify-center text-2xl shrink-0">
-                        {card.brand.toLowerCase().includes('amazon') ? '🛒' :
-                         card.brand.toLowerCase().includes('flipkart') ? '🛍️' :
-                         card.brand.toLowerCase().includes('google') ? '🎮' : '💸'}
+                        {(card.brand || '').toLowerCase().includes('amazon')
+                          ? '🛒'
+                          : (card.brand || '').toLowerCase().includes('flipkart')
+                          ? '🛍️'
+                          : (card.brand || '').toLowerCase().includes('google')
+                          ? '🎮'
+                          : '💸'}
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-sm font-black text-[#212121]">{card.title}</h4>
                           <span className="text-[10px] font-black bg-emerald-50 text-[#388e3c] border border-emerald-200 px-2 py-0.5 rounded-xs font-mono">
-                            ₹{card.denomination || card.valueInRupees} Value
+                            ₹{card.denomination || card.valueInRupees}
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 line-clamp-1">{card.description}</p>
@@ -289,36 +241,37 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="w-full sm:w-auto flex items-center justify-end">
-                      {isClaimed ? (
-                        <button
-                          onClick={() => setSelectedVoucher(card)}
-                          className="w-full sm:w-auto px-4 py-2 bg-[#2874f0] hover:bg-[#1e60d5] text-white rounded-sm text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          कोड देखें
-                        </button>
-                      ) : (
+                    <div className="w-full sm:w-auto flex items-center justify-end gap-2">
+                      {canAfford ? (
                         <button
                           onClick={() => handleRedeem(card)}
-                          disabled={!canAfford || redeemingId === card.id}
-                          className={`w-full sm:w-auto px-4 py-2 rounded-sm text-xs font-black transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer ${
-                            canAfford
-                              ? 'bg-[#fb641b] hover:bg-[#e5530d] text-white active:scale-95'
-                              : 'bg-[#f1f3f6] text-slate-400 cursor-not-allowed border border-slate-200'
-                          }`}
+                          disabled={redeemingId === card.id}
+                          className="w-full sm:w-auto px-4 py-2 rounded-sm text-xs font-black bg-[#fb641b] hover:bg-[#e5530d] text-white transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                         >
-                          {redeemingId === card.id ? (
-                            'रिडीम हो रहा है...'
-                          ) : canAfford ? (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5" />
-                              रिडीम करें (₹{card.denomination || card.valueInRupees})
-                            </>
-                          ) : (
-                            `${card.coinsRequired - (user.coins || 0)} और कॉइन्स चाहिए`
-                          )}
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>
+                            {redeemingId === card.id
+                              ? 'प्रक्रिया में...'
+                              : `रिडीम अनुरोध (${card.coinsRequired}c)`}
+                          </span>
                         </button>
+                      ) : (
+                        onOpenBuyCoins ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenBuyCoins();
+                            }}
+                            className="w-full sm:w-auto px-3.5 py-2 rounded-sm text-xs font-black bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer"
+                          >
+                            🪙 Buy {card.coinsRequired - (user.coins || 0)} Coins
+                          </button>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-400">
+                            {card.coinsRequired - (user.coins || 0)} और कॉइन्स चाहिए
+                          </span>
+                        )
                       )}
                     </div>
                   </div>
@@ -326,11 +279,62 @@ export const DigitalGiftCardsModal: React.FC<DigitalGiftCardsModalProps> = ({
               })
             )}
           </div>
+
+          {/* My Redemption History */}
+          {myRedemptions.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <h4 className="text-xs font-black text-[#2874f0] uppercase">
+                मेरे गिफ्ट कार्ड अनुरोध ({myRedemptions.length})
+              </h4>
+              {myRedemptions.map((r) => (
+                <div key={r.id} className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-black text-[#212121]">
+                        {r.title} (₹{r.denomination})
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        🪙 {r.coinsSpent} Coins • {new Date(r.requestedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-xs border ${
+                        r.status === 'fulfilled'
+                          ? 'bg-emerald-50 text-[#388e3c] border-emerald-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}
+                    >
+                      {r.status === 'fulfilled' ? '✅ Fulfilled' : '⏳ Pending Admin'}
+                    </span>
+                  </div>
+                  {r.status === 'fulfilled' && r.voucherCode ? (
+                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-sm p-2 text-xs">
+                      <span className="font-mono font-black text-[#388e3c]">
+                        Code: {r.voucherCode} {r.voucherPin ? `| PIN: ${r.voucherPin}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(r.voucherCode || '', r.id)}
+                        className="px-2 py-1 rounded-xs bg-white border border-emerald-300 text-[#388e3c] font-bold text-[10px] cursor-pointer flex items-center gap-1"
+                      >
+                        {copiedId === r.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedId === r.id ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-sm border border-amber-200">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span>एडमिन द्वारा असली वाउचर कोड जारी होने की प्रतीक्षा है।</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Footer info */}
         <div className="text-center py-3 px-4 bg-white border-t border-slate-200 text-[11px] text-slate-600 shrink-0">
-          🔒 सभी गिफ्ट कार्ड्स 100% वेरिफाइड एवं तुरंत डिजिटल कोड व पिन के साथ मिलते हैं।
+          🔒 कोई फर्जी या पहले से हार्डकोड कोड नहीं — एडमिन सत्यापन के बाद असली वाउचर जारी होता है।
         </div>
       </div>
     </div>

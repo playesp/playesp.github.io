@@ -52,6 +52,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
   const [formData, setFormData] = useState({
     fullName: '',
+    username: '',
     phone: '',
     email: '',
     fullAddress: '',
@@ -95,15 +96,71 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   // Dual Registration Architecture: Business Income Plan vs Free Gamer Account
   const [registrationType, setRegistrationType] = useState<'business' | 'gamer'>(initialRegistrationType);
   const [gamerName, setGamerName] = useState('');
+  const [gamerUsername, setGamerUsername] = useState('');
+  const [gamerSponsorId, setGamerSponsorId] = useState(initialSponsorId || settings.ownerSponsorId || 'EMO-MOM-MMO');
   const [gamerPhone, setGamerPhone] = useState('');
   const [gamerPassword, setGamerPassword] = useState('');
   const [gamerLoading, setGamerLoading] = useState(false);
+  const [regUsernameCheck, setRegUsernameCheck] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
+    message: string;
+  }>({ status: 'idle', message: '' });
+
+  const activeRegUsername =
+    registrationType === 'gamer' ? gamerUsername : formData.username;
+
+  useEffect(() => {
+    const cleaned = activeRegUsername.trim().replace(/^@+/, '').toLowerCase();
+    if (!cleaned) {
+      setRegUsernameCheck({ status: 'idle', message: '' });
+      return;
+    }
+    if (!/^[a-z0-9]{3,24}$/.test(cleaned)) {
+      setRegUsernameCheck({
+        status: 'invalid',
+        message: 'कोई Symbol (_ - . @) उपयोग न करें — केवल 3-24 अक्षर (a-z और 0-9) लिखें',
+      });
+      return;
+    }
+    let cancelled = false;
+    setRegUsernameCheck({ status: 'checking', message: 'यूनिक @username जांचा जा रहा है...' });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.checkUsernameAvailability(cleaned);
+        if (cancelled) return;
+        if (res.available) {
+          setRegUsernameCheck({
+            status: 'available',
+            message: `✓ @${res.normalized || cleaned} उपलब्ध है!`,
+          });
+        } else {
+          setRegUsernameCheck({
+            status: 'taken',
+            message: res.message || `@${cleaned} पहले से लिया जा चुका है!`,
+          });
+        }
+      } catch {
+        if (!cancelled) setRegUsernameCheck({ status: 'idle', message: '' });
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeRegUsername]);
 
   useEffect(() => {
     setRegistrationType(initialRegistrationType);
     setErrorMsg(null);
     setStep(1);
   }, [initialRegistrationType]);
+
+  useEffect(() => {
+    if (initialSponsorId) {
+      setFormData(prev => ({ ...prev, sponsorId: initialSponsorId }));
+      setGamerSponsorId(initialSponsorId);
+    }
+  }, [initialSponsorId]);
 
   const [securityCode, setSecurityCode] = useState(() => Math.floor(100000 + Math.random() * 900000).toString());
   const [inputSecurityCode, setInputSecurityCode] = useState('');
@@ -127,6 +184,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       setErrorMsg('सुरक्षा के लिए पासवर्ड कम से कम 6 अक्षरों का होना चाहिए');
       return;
     }
+    if (gamerUsername.trim() && (regUsernameCheck.status === 'taken' || regUsernameCheck.status === 'invalid')) {
+      setErrorMsg(regUsernameCheck.message || 'कृपया एक मान्य और उपलब्ध @username चुनें');
+      return;
+    }
     if (inputSecurityCode.trim() !== securityCode) {
       setErrorMsg('अमान्य सुरक्षा कोड (Security Code Mismatch)');
       return;
@@ -136,6 +197,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     try {
       const res = await api.register({
         fullName: gamerName.trim(),
+        username: gamerUsername.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || undefined,
+        sponsorId: gamerSponsorId.trim() || formData.sponsorId || settings.ownerSponsorId,
         phone: cleanPhone,
         password: gamerPassword,
         accountType: 'gamer',
@@ -277,6 +340,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       setErrorMsg('कृपया अपना पूरा नाम (Full Name) दर्ज करें');
       return false;
     }
+    if (formData.username.trim() && (regUsernameCheck.status === 'taken' || regUsernameCheck.status === 'invalid')) {
+      setErrorMsg(regUsernameCheck.message || 'कृपया एक मान्य और उपलब्ध @username चुनें');
+      return false;
+    }
     const cleanPhone = formData.phone.trim();
     if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
       setErrorMsg('कृपया एक मान्य 10 अंकों का भारतीय मोबाइल नंबर दर्ज करें (शुरुआत 6, 7, 8 या 9 से होनी चाहिए)');
@@ -333,7 +400,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
     setLoading(true);
     try {
-      const res = await api.register(formData);
+      const cleanHandle = formData.username.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const res = await api.register({
+        ...formData,
+        username: cleanHandle || undefined,
+      });
       if (res.success && res.user) {
         setRegisteredUser(res.user);
         confetti({
@@ -431,7 +502,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 <span className="text-[10px] text-[#2874f0] font-bold">ESP PLAY Voice Stage</span>
               </div>
               <p className="font-mono text-2xl font-black text-[#2874f0] tracking-wider my-1">
-                {registeredUser.gamingId || `GAME-${registeredUser.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '887749'}`}
+                {registeredUser.gamingId || `ESPGT${(registeredUser.userId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '01'}`}
               </p>
               <p className="text-[11px] text-slate-600">
                 8-Seat Mic Stage, Mini-Games, Luxury Gifts, Charms & Clan battles.
@@ -518,37 +589,37 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           }`}
         >
           <span className="text-xl shrink-0">🎮</span>
-          <div>
-            <span className="block leading-tight font-extrabold">2. गेमर व वॉइस क्लब प्लेयर (FREE)</span>
-            <span className={`text-[11px] font-medium block ${registrationType === 'gamer' ? 'text-orange-100' : 'text-slate-500'}`}>
-              100% मुफ्त • 500 वेलकम कॉइन्स • तुरंत एक्टिव
-            </span>
-          </div>
-        </button>
-      </div>
+            <div>
+              <span className="block leading-tight font-extrabold">2. गेमर व वॉइस क्लब प्लेयर (FREE)</span>
+              <span className={`text-[11px] font-medium block ${registrationType === 'gamer' ? 'text-orange-100' : 'text-slate-500'}`}>
+                100% मुफ्त • 0 Coins स्टार्ट • रियल टास्क से +5 कॉइन्स व EXP
+              </span>
+            </div>
+          </button>
+        </div>
 
-      {/* ===================== FREE GAMER ACCOUNT FORM ===================== */}
-      {registrationType === 'gamer' && (
-        <div className="bg-white rounded-md p-5 sm:p-7 border border-slate-200 shadow-xs text-[#212121] mb-6 space-y-5">
-          <div className="bg-[#f5f8ff] p-4 rounded-md border border-blue-200 flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <div className="w-11 h-11 rounded bg-[#2874f0] text-white flex items-center justify-center font-black text-xl shadow-xs shrink-0">
-                🎮
+        {/* ===================== FREE GAMER ACCOUNT FORM ===================== */}
+        {registrationType === 'gamer' && (
+          <div className="bg-white rounded-md p-5 sm:p-7 border border-slate-200 shadow-xs text-[#212121] mb-6 space-y-5">
+            <div className="bg-[#f5f8ff] p-4 rounded-md border border-blue-200 flex items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-11 h-11 rounded bg-[#2874f0] text-white flex items-center justify-center font-black text-xl shadow-xs shrink-0">
+                  🎮
+                </div>
+                <div>
+                  <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">
+                    FREE GAMER PASS • 0 COINS START
+                  </span>
+                  <h3 className="text-base sm:text-lg font-extrabold text-[#212121] mt-0.5">
+                    ESP GAMING TIME &amp; वॉइस क्लब पंजीकरण
+                  </h3>
+                </div>
               </div>
-              <div>
-                <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-                  FREE GAMER PASS • तुरंत गेम खेलें
-                </span>
-                <h3 className="text-base sm:text-lg font-extrabold text-[#212121] mt-0.5">
-                  ESP GAMING TIME &amp; वॉइस क्लब पंजीकरण
-                </h3>
+              <div className="text-right hidden sm:block shrink-0">
+                <span className="text-[#2874f0] text-xs font-extrabold">Real Task Economy</span>
+                <p className="text-[11px] text-slate-500">+5 Coins &amp; EXP / Task</p>
               </div>
             </div>
-            <div className="text-right hidden sm:block shrink-0">
-              <span className="text-[#388e3c] text-xs font-extrabold">+500 Bonus</span>
-              <p className="text-[11px] text-slate-500">Welcome Coins</p>
-            </div>
-          </div>
 
           {errorMsg && (
             <div className="bg-rose-50 border border-rose-200 rounded p-3 flex items-center space-x-2.5 text-rose-800 text-xs font-bold">
@@ -558,17 +629,69 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           )}
 
           <form onSubmit={handleGamerSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#212121] mb-1">
+                  पूरा नाम (Full Name) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={gamerName}
+                  onChange={e => setGamerName(e.target.value)}
+                  placeholder="जैसे: Rahul Kumar"
+                  className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-medium bg-[#f9fafb] focus:bg-white"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  नाम एक जैसा हो सकता है — आपकी User ID हमेशा यूनिक मिलेगी।
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#212121] mb-1">
+                  यूनिक यूजरनेम (Unique @Username, Optional)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-[#2874f0]">@</span>
+                  <input
+                    type="text"
+                    value={gamerUsername}
+                    maxLength={24}
+                    onChange={e => setGamerUsername(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase())}
+                    placeholder="rahulkumar01 (बिना symbol)"
+                    className="w-full pl-7 pr-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-mono font-medium bg-[#f9fafb] focus:bg-white"
+                  />
+                </div>
+                {regUsernameCheck.message ? (
+                  <p
+                    className={`text-[10px] font-bold mt-1 ${
+                      regUsernameCheck.status === 'available'
+                        ? 'text-emerald-600'
+                        : regUsernameCheck.status === 'checking'
+                        ? 'text-slate-500'
+                        : 'text-rose-600'
+                    }`}
+                  >
+                    {regUsernameCheck.message}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    दो लोगों का @Username एक जैसा नहीं हो सकता।
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-[#212121] mb-1">
-                गेमर नाम / निकनेम (Gamer Name / Nickname) *
+                रेफरल स्पॉन्सर ID या @Username (Optional Sponsor)
               </label>
               <input
                 type="text"
-                required
-                value={gamerName}
-                onChange={e => setGamerName(e.target.value)}
-                placeholder="e.g. ProPlayer_Ajay"
-                className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-medium bg-[#f9fafb] focus:bg-white"
+                value={gamerSponsorId}
+                onChange={e => setGamerSponsorId(e.target.value.replace(/^@+/, ''))}
+                placeholder="ESPGTRK01, EMORKESP01 या rahulkumar01"
+                className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-mono font-medium bg-[#f9fafb] focus:bg-white"
               />
             </div>
 
@@ -635,7 +758,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className="w-full py-3.5 rounded-sm font-bold text-sm text-white bg-[#fb641b] hover:bg-[#e5530d] shadow-xs transition cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60"
             >
               <Sparkles className="w-4 h-4" />
-              <span>{gamerLoading ? 'खाता तैयार हो रहा है...' : 'तुरंत फ्री गेमर खाता बनाएं (+500 Welcome Coins)'}</span>
+              <span>{gamerLoading ? 'खाता तैयार हो रहा है...' : 'तुरंत फ्री गेमर खाता बनाएं (0 Coins Start)'}</span>
             </button>
           </form>
         </div>
@@ -735,6 +858,44 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] focus:bg-white rounded px-3.5 py-2.5 text-xs text-[#212121] outline-none font-medium transition"
                   required
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  नाम एक जैसा हो सकता है, लेकिन आपकी User ID और @Username हमेशा यूनिक रहेंगे।
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-[#212121] block mb-1">
+                  UNIQUE @USERNAME (वैकल्पिक — बिना Symbol)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-[#2874f0]">@</span>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    placeholder="उदा. rahulkumar01 (केवल a-z, 0-9)"
+                    value={formData.username}
+                    onChange={e =>
+                      setFormData({
+                        ...formData,
+                        username: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(),
+                      })
+                    }
+                    className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] focus:bg-white rounded pl-7 pr-3.5 py-2.5 text-xs font-mono text-[#212121] outline-none font-medium transition"
+                  />
+                </div>
+                {regUsernameCheck.message && (
+                  <p
+                    className={`text-[10px] font-bold mt-1 ${
+                      regUsernameCheck.status === 'available'
+                        ? 'text-emerald-600'
+                        : regUsernameCheck.status === 'checking'
+                        ? 'text-slate-500'
+                        : 'text-rose-600'
+                    }`}
+                  >
+                    {regUsernameCheck.message}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1022,13 +1183,13 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="text-xs font-bold text-[#212121] block mb-1">
-                  UPLINE SPONSOR ID <span className="text-rose-600">*</span>
+                  UPLINE SPONSOR ID या @USERNAME <span className="text-rose-600">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="EMO-MOM-MMO"
+                  placeholder="EMORKESP01 / ESPGTRK01 / rahulkumar01"
                   value={formData.sponsorId}
-                  onChange={e => setFormData({ ...formData, sponsorId: e.target.value.toUpperCase() })}
+                  onChange={e => setFormData({ ...formData, sponsorId: e.target.value.replace(/^@+/, '').trim() })}
                   className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] focus:bg-white rounded px-3.5 py-2.5 text-xs text-[#2874f0] font-mono font-bold outline-none"
                   required
                 />

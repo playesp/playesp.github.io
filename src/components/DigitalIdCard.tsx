@@ -124,20 +124,20 @@ export const DigitalIdCard: React.FC<DigitalIdCardProps> = ({
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const handleShareWhatsApp = () => {
+  const getWhatsAppShareUrl = () => {
     const text = encodeURIComponent(
       `💼 *EARNING SYSTEM PLATFORM (ESP) - VERIFIED DIGITAL ID CARD*\n\n` +
       `👤 *Member Name:* ${user.fullName}\n` +
       `🆔 *ESP Referral Code / Roll No:* ${user.userId}\n` +
       `🎯 *Joined Service:* ${user.chosenServiceName || user.chosenServiceCode} (₹${user.joiningFee})\n` +
-      `🎮 *ESP Gaming ID:* ${user.gamingId || 'GAME-887749'}\n` +
+      `🎮 *ESP Gaming ID:* ${user.gamingId || `GAME-${user.userId}`}\n` +
       `✅ *Official Status:* Verified ESP Member\n\n` +
       `👇 मेरे डायरेक्ट रेफरल लिंक से अभी जुड़ें और प्रतिदिन ₹500 - ₹2,000 कमाएं:\n` +
       `${referralUrl}\n\n` +
       `🌐 ऑफिशियल पोर्टल: https://ioisplatform.github.io/\n` +
       `📧 सपोर्ट ईमेल: ${settings?.supportEmail || 'ioisplatform@gmail.com'}`
     );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+    return `https://api.whatsapp.com/send?text=${text}`;
   };
 
   // High-Resolution Client-Side Canvas Export to PNG
@@ -288,7 +288,7 @@ export const DigitalIdCard: React.FC<DigitalIdCardProps> = ({
       ctx.fillText('ESP GAMING ID', 200, 298);
       ctx.fillStyle = '#a78bfa';
       ctx.font = 'bold 16px monospace';
-      ctx.fillText(user.gamingId || `GAME-${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '887749'}`, 200, 320);
+      ctx.fillText(user.gamingId || `ESPGT${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '01'}`, 200, 320);
 
       // Sponsor Box
       ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
@@ -553,7 +553,7 @@ export const DigitalIdCard: React.FC<DigitalIdCardProps> = ({
                   <div className="bg-white/5 p-1.5 rounded-lg border border-white/10">
                     <span className="text-[8px] text-slate-400 block font-bold">ESP GAMING ID</span>
                     <span className="text-purple-300 font-mono font-bold truncate block">
-                      {user.gamingId || `GAME-${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '887749'}`}
+                      {user.gamingId || `ESPGT${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '01'}`}
                     </span>
                     <span className="text-[9px] text-emerald-400 font-bold">
                       ESP PLAY Access
@@ -634,7 +634,7 @@ export const DigitalIdCard: React.FC<DigitalIdCardProps> = ({
                 <li>यह कार्ड Earning System Platform (ESP) के अधिकृत सदस्य का डिजिटल पहचान पत्र है।</li>
                 <li>यह 10 प्रमुख अर्निंग सर्विसेज (EMO, MMO, MOM, OES, MMS, NWI, आदि) पर आजीवन मान्य है।</li>
                 <li>रेफरल कोड <span className="font-mono text-amber-300 font-bold">{user.userId}</span> से टीम बनाकर कमीशन कमाया जा सकता है।</li>
-                <li>ESP Gaming Time में भाग लेने हेतु Gaming ID <span className="font-mono text-purple-300 font-bold">{user.gamingId || 'GAME-887749'}</span> का प्रयोग करें।</li>
+                <li>ESP Gaming Time में भाग लेने हेतु Gaming ID <span className="font-mono text-purple-300 font-bold">{user.gamingId || 'ESPGTSK01'}</span> का प्रयोग करें।</li>
               </ul>
             </div>
 
@@ -706,13 +706,15 @@ export const DigitalIdCard: React.FC<DigitalIdCardProps> = ({
               </button>
 
               {/* Share to WhatsApp */}
-              <button
-                onClick={handleShareWhatsApp}
-                className="inline-flex items-center px-3.5 py-2.5 rounded-sm text-xs font-bold text-white bg-[#388e3c] hover:bg-emerald-700 transition shadow-xs cursor-pointer"
+              <a
+                href={getWhatsAppShareUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center px-3.5 py-2.5 rounded-sm text-xs font-bold text-white bg-[#388e3c] hover:bg-emerald-700 transition shadow-xs"
               >
                 <Share2 className="w-3.5 h-3.5 mr-1.5" />
                 <span>व्हाट्सएप पर शेयर करें</span>
-              </button>
+              </a>
 
               {/* Print / PDF */}
               <button

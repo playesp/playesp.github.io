@@ -25,6 +25,9 @@ import type {
   WePlayBot,
   NwiMemberNode,
   NwiTreeRecord,
+  EspFamily,
+  GiftHistoryRecord,
+  DirectMessageRecord,
 } from '../types/index.ts';
 import {
   VIP_TIERS,
@@ -46,10 +49,18 @@ import {
   getDailyQuizForDate,
   getSpotlightGameForDate,
   getYesterdayDateString,
+  getIstDateString,
+  getLiveIstTimeMeta,
 } from '../config/dailyGameIntel.ts';
+import {
+  RELATIONSHIP_TOKENS,
+  ESP_EVENTS_CATALOG,
+  FAMILY_EMBLEMS,
+  getVoiceRoomTierSpec,
+} from '../config/espSocialCatalog.ts';
 
 const STORAGE_KEY = 'esp_static_db_v2';
-const todayStr = (): string => new Date().toISOString().slice(0, 10);
+const todayStr = (): string => getIstDateString();
 
 interface StaticDb {
   settings: PlatformSettings;
@@ -75,9 +86,12 @@ interface StaticDb {
   giftCardRedemptions: GiftCardRedemption[];
   activeGameWagers: Record<string, { gameName: string; bet: number; createdAt: string }>;
   planUpgrades: PlanUpgradeRequest[];
+  families: EspFamily[];
+  giftHistory: GiftHistoryRecord[];
   voiceRoomSeats: VoiceRoomSeat[];
   voiceRoomChat: Array<{ id: string; senderId: string; sender: string; senderRoll: string; text: string; isGift?: boolean; time: string; audioDataUrl?: string; audioDuration?: number; isVoiceNote?: boolean }>;
   customVoiceRooms: any[];
+  directMessages?: DirectMessageRecord[];
 }
 
 const DEFAULT_SERVICES: ServiceItem[] = [
@@ -309,11 +323,11 @@ const DEFAULT_BOTS: WePlayBot[] = [
   {
     id: 'BOT-BHAI',
     code: 'we_bhai',
-    name: 'We Bhai (वी भाई)',
-    hindiName: '🤝 वी भाई (कम्युनिटी गाइड)',
-    roleTitle: 'Community Guide Assistant',
-    hindiRole: 'कम्युनिटी गाइड व टास्क साथी',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
+    name: 'ESP Bhai (ईएसपी भाई)',
+    hindiName: '🤝 ईएसपी भाई (कम्युनिटी गाइड)',
+    roleTitle: 'ESP PLAY Guide Assistant',
+    hindiRole: 'ESP PLAY गाइड व टास्क साथी',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=EspBhaiBrother',
     frameType: 'vip-gold',
     level: 1,
     charms: 0,
@@ -321,19 +335,19 @@ const DEFAULT_BOTS: WePlayBot[] = [
     badge: '🤝 GUIDE',
     voiceAccent: 'Hindi-Friendly',
     status: 'online',
-    description: 'Helpful guide explaining real tasks, frames, VIP, and ESP services.',
-    hindiDescription: 'टास्क (+5 कॉइन्स व EXP), फ्रेम, VIP और 10 सर्विसेज का सही मार्गदर्शन करता है।',
-    superpowers: ['10 सर्विसेज गाइडेंस', 'असली टास्क गाइड (+5 Coins)', 'गेमिंग रणनीति'],
+    description: 'Helpful ESP PLAY guide explaining real tasks, relationships, frames, VIP, and ESP services.',
+    hindiDescription: 'टास्क (+5 कॉइन्स व EXP), रिलेशनशिप टैग, फ्रेम, VIP और फैमिली का सही मार्गदर्शन करता है।',
+    superpowers: ['ESP PLAY गाइडेंस', 'असली टास्क गाइड (+5 Coins)', 'गेमिंग रणनीति'],
     sampleDialogues: ['🤝 नमस्ते! असली टास्क पूरे करें और हर टास्क पर +5 कॉइन्स व EXP पाएं।'],
   },
   {
     id: 'BOT-CHAT',
     code: 'we_chat',
-    name: 'We Chat (वी चैट AI)',
-    hindiName: '💬 वी चैट (मनोरंजन साथी)',
-    roleTitle: 'Voice & Banter Companion',
+    name: 'ESP Chat (ईएसपी चैट AI)',
+    hindiName: '💬 ईएसपी चैट (मनोरंजन साथी)',
+    roleTitle: 'ESP PLAY Voice Companion',
     hindiRole: 'शायरी व बातचीत साथी',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=EspChatCompanionPoet',
     frameType: 'cosmic-neon',
     level: 1,
     charms: 0,
@@ -341,15 +355,15 @@ const DEFAULT_BOTS: WePlayBot[] = [
     badge: '💬 COMPANION',
     voiceAccent: 'Hindi-Sweet',
     status: 'online',
-    description: 'Shares Hindi shayari and keeps the stage welcoming.',
-    hindiDescription: 'हिंदी शायरी और बातचीत से रूम का माहौल खुशनुमा बनाता है।',
+    description: 'Shares Hindi shayari and keeps the ESP PLAY stage welcoming.',
+    hindiDescription: 'हिंदी शायरी और बातचीत से ESP PLAY रूम का माहौल खुशनुमा बनाता है।',
     superpowers: ['खूबसूरत हिंदी शायरी', 'स्वस्थ मनोरंजन बातचीत'],
-    sampleDialogues: ['💬 महफ़िल में जब आप आए, तो रूम में रौनक आ गई!'],
+    sampleDialogues: ['💬 महफ़िल में जब आप आए, तो ESP PLAY रूम में रौनक आ गई!'],
   },
 ];
 
 function getTodayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return getIstDateString();
 }
 
 function normalizeStaticUsername(raw: unknown): string {
@@ -676,6 +690,11 @@ function buildStaticRoomDetail(db: StaticDb, room: any, viewerId?: string) {
     success: true,
     room: {
       ...room,
+      roomEffect: room.roomEffect || 'none',
+      activePackets: (Array.isArray(room.activePackets) ? room.activePackets : []).filter(
+        (p: any) => p.remainingCoins > 0 && p.claimedBy.length < p.maxClaims
+      ),
+      passcode: viewerId && viewerId === room.hostUserId ? room.passcode || '' : undefined,
       followers,
       followersCount: followers.length,
       isFollowed: Boolean(viewerId && followers.includes(viewerId)),
@@ -734,6 +753,13 @@ function normalizeStaticUser(u: any): UserProfile {
   if (!Array.isArray(u.claimedTaskIds)) u.claimedTaskIds = [];
   if (!Array.isArray(u.claimedChestMilestones)) u.claimedChestMilestones = [];
   if (u.tasksCompletedCount === undefined) u.tasksCompletedCount = 0;
+  if (!Array.isArray(u.ownedRelationshipTokens)) u.ownedRelationshipTokens = [];
+  if (!Array.isArray(u.activeRelationships)) u.activeRelationships = [];
+  if (u.familyId === undefined) u.familyId = '';
+  if (!u.familyRole) u.familyRole = 'Member';
+  if (u.familyCoinsContributed === undefined) u.familyCoinsContributed = 0;
+  if (!Array.isArray(u.unlockedRoomTiers)) u.unlockedRoomTiers = ['normal'];
+  if (!Array.isArray(u.claimedEventIds)) u.claimedEventIds = [];
   return u;
 }
 
@@ -891,6 +917,8 @@ function createInitialStaticDb(): StaticDb {
       },
     ],
     customVoiceRooms: [],
+    families: [],
+    giftHistory: [],
   };
 }
 
@@ -1637,7 +1665,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
     }));
     saveDb(db);
-    return { success: true, tasks, chests, claimedTodayCount: claimedCount, tasksCompletedCount: user.tasksCompletedCount || 0, user };
+    return {
+      success: true,
+      tasks,
+      chests,
+      claimedTodayCount: claimedCount,
+      claimedChestMilestones: user.claimedChestMilestones || [],
+      tasksCompletedCount: user.tasksCompletedCount || 0,
+      timeMeta: getLiveIstTimeMeta(),
+      user,
+    };
   }
   if (path === '/api/tasks/track' && method === 'POST') {
     const user = findUser(db, body.userId);
@@ -1822,12 +1859,23 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   if (path === '/api/game/bots') return { success: true, bots: DEFAULT_BOTS };
   if (path === '/api/community/real-players') return { success: true, players: db.users };
   if (path === '/api/community/leaderboard') {
-    const leaderboard = [...db.users]
-      .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.charms || 0) - (a.charms || 0))
-      .slice(0, 30)
-      .map((u, idx) => ({
-        rank: idx + 1,
+    const rawPeriod = (search.get('period') || 'daily').toLowerCase();
+    const period: 'daily' | 'weekly' | 'monthly' | 'all' =
+      rawPeriod === 'weekly' || rawPeriod === 'monthly' || rawPeriod === 'all' ? rawPeriod : 'daily';
+    const vipW = (t?: string) => (t === 'diamond' ? 200 : t === 'gold' ? 120 : t === 'silver' ? 60 : 0);
+    const enriched = [...db.users].map(u => {
+      const c = u.coins || 0;
+      const ch = u.charms || 0;
+      const xp = u.gameXp || (u.gameLevel || 1) * 150;
+      const periodScore =
+        period === 'daily'
+          ? Math.round(c * 0.25 + ch * 0.5 + xp * 0.2) + vipW(u.vipTier)
+          : period === 'weekly'
+          ? Math.round(c * 0.55 + ch * 0.8 + xp * 0.45) + vipW(u.vipTier) * 2
+          : Math.round(c * 0.85 + ch + xp * 0.75) + vipW(u.vipTier) * 3;
+      return {
         userId: u.userId,
+        username: u.username || '',
         fullName: u.fullName,
         avatar: u.avatar || '',
         gameLevel: u.gameLevel || 1,
@@ -1835,11 +1883,25 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         charms: u.charms || 0,
         coins: u.coins || 0,
         vipTier: u.vipTier || 'none',
+        vipTitle: u.vipTitle || '',
         frameType: u.frameType || 'standard',
+        roomAddress: u.roomAddress || '',
+        isVipRoom: Boolean(u.isVipRoom),
+        isOnline: Boolean(u.isOnline),
         clanName: u.clanName || 'Royal Warriors ESP',
+        chosenServiceCode: u.chosenServiceCode || 'GAME',
         tasksCompletedCount: u.tasksCompletedCount || 0,
-      }));
-    return { success: true, leaderboard };
+        periodScore,
+        periodCoins: c,
+        periodGames: 0,
+        periodCharms: ch,
+      };
+    });
+    const leaderboard = enriched
+      .sort((a, b) => b.periodScore - a.periodScore || b.gameXp - a.gameXp)
+      .slice(0, 50)
+      .map((item, idx) => ({ ...item, rank: idx + 1 }));
+    return { success: true, period, leaderboard, topEarners: leaderboard };
   }
   if (path === '/api/community/clans') {
     const clanMap = new Map<string, { clanName: string; membersCount: number; totalXp: number; totalCharms: number; leaderName: string; leaderId: string }>();
@@ -2105,6 +2167,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     const qty = Math.max(1, Math.round(Number(body.quantity) || 1));
     if ((user.coins || 0) < cost) return { success: false, code: 'INSUFFICIENT_COINS', requiredCoins: cost, currentCoins: user.coins || 0, message: 'पर्याप्त कॉइन्स नहीं हैं!' };
     user.coins = (user.coins || 0) - cost;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + cost;
     const charmsVal = Number(body.charmValue) || 10;
     user.charms = (user.charms || 0) + Math.round(charmsVal * 0.2);
     const cleanTargetName = String(body.targetName || '').trim().replace(/^@+/, '').toLowerCase();
@@ -2125,29 +2188,89 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       g6: { id: 'lux_2', name: 'Emperor Crown', icon: '👑' },
       g7: { id: 'lux_3', name: 'Magic Castle', icon: '🏰' },
     };
+    const rawKey = String(body.giftId || body.giftName || 'pop_2').trim();
+    const mapped = legacyMap[rawKey];
+    const gKey = mapped ? mapped.id : rawKey;
+    const gName = mapped ? mapped.name : String(body.giftName || 'Gift').replace(/^\d+x\s+/i, '');
+    const gIcon = mapped ? mapped.icon : String(body.giftIcon || '🎁');
+    const nowIso = new Date().toISOString();
     if (recipient) {
       if (recipient.userId !== user.userId) {
         recipient.charms = (recipient.charms || 0) + charmsVal;
       }
       if (!recipient.receivedGifts) recipient.receivedGifts = {};
-      const rawKey = String(body.giftId || body.giftName || 'pop_2').trim();
-      const mapped = legacyMap[rawKey];
-      const gKey = mapped ? mapped.id : rawKey;
       const prev = recipient.receivedGifts[gKey];
       recipient.receivedGifts[gKey] = {
         id: gKey,
-        name: mapped ? mapped.name : String(body.giftName || 'Gift').replace(/^\d+x\s+/i, ''),
-        icon: mapped ? mapped.icon : String(body.giftIcon || '🎁'),
+        name: gName,
+        icon: gIcon,
         count: (prev?.count || 0) + qty,
         coinCost: Math.round(cost / qty),
         charmValue: Math.round(charmsVal / qty),
-        lastReceivedAt: new Date().toISOString(),
+        lastReceivedAt: nowIso,
         lastSenderName: user.fullName,
       };
     }
+    if (!Array.isArray(db.giftHistory)) db.giftHistory = [];
+    const giftRecord: GiftHistoryRecord = {
+      id: `GH-${Date.now()}`,
+      senderId: user.userId,
+      senderName: user.fullName,
+      senderAvatar: user.avatar,
+      recipientId: recipient?.userId || String(body.targetUserId || body.targetName || 'STAGE'),
+      recipientName: recipient?.fullName || String(body.targetName || 'Voice Stage'),
+      recipientAvatar: recipient?.avatar,
+      giftId: gKey,
+      giftName: gName,
+      giftIcon: gIcon,
+      quantity: qty,
+      coinCost: cost,
+      charmValue: charmsVal,
+      context: body.context === 'family_chat' || body.familyId ? 'family_chat' : 'voice_room',
+      roomId: body.roomId,
+      familyId: body.familyId,
+      createdAt: nowIso,
+    };
+    db.giftHistory.unshift(giftRecord);
+    if (body.familyId && Array.isArray(db.families)) {
+      const fam = db.families.find(f => f.id === body.familyId);
+      if (fam) {
+        fam.familyCharms = (fam.familyCharms || 0) + charmsVal;
+        fam.chatMessages.push({
+          id: `fgift-${Date.now()}`,
+          familyId: fam.id,
+          senderId: user.userId,
+          senderName: user.fullName,
+          senderAvatar: user.avatar,
+          text: `${gIcon} ${user.fullName} ने ${recipient?.fullName || body.targetName || fam.name} को ${qty}x ${gName} भेजा!`,
+          isGift: true,
+          giftId: gKey,
+          giftName: gName,
+          giftIcon: gIcon,
+          giftQuantity: qty,
+          recipientName: recipient?.fullName || body.targetName || fam.name,
+          coinCost: cost,
+          createdAt: nowIso,
+        });
+      }
+    }
     trackStaticTask(user, 'gift_sent', 1);
     saveDb(db);
-    return { success: true, coins: user.coins, charms: user.charms, user };
+    return { success: true, coins: user.coins, charms: user.charms, giftRecord, user };
+  }
+  if (path.startsWith('/api/game/gift-history/')) {
+    const uid = decodeURIComponent(path.split('/').pop() || '').toLowerCase();
+    const list = db.giftHistory || [];
+    const sent = list.filter(g => g.senderId.toLowerCase() === uid);
+    const received = list.filter(g => (g.recipientId || '').toLowerCase() === uid);
+    return {
+      success: true,
+      sent,
+      received,
+      all: list.filter(g => g.senderId.toLowerCase() === uid || (g.recipientId || '').toLowerCase() === uid),
+      totalSentCoins: sent.reduce((s, x) => s + x.coinCost, 0),
+      totalReceivedCharms: received.reduce((s, x) => s + x.charmValue, 0),
+    };
   }
   if (path === '/api/game/record-play' && method === 'POST') {
     const user = findUser(db, body.userId);
@@ -2192,15 +2315,15 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     const fullQuiz = getDailyQuizForDate(today);
     const spotlightGame = getSpotlightGameForDate(today);
 
+    const timeMeta = getLiveIstTimeMeta();
     const lastCheckIn = u.lastDailyCheckInDate || '';
     const claimedToday = lastCheckIn === today;
     const rawStreak = Number(u.loginStreak || 0);
-    const streakAtRisk = Boolean(lastCheckIn && lastCheckIn !== today && lastCheckIn !== yesterday && rawStreak > 0);
+    const isConsecutiveFromYesterday = Boolean(lastCheckIn && lastCheckIn === yesterday && rawStreak > 0);
+    const streakMissedReset = Boolean(lastCheckIn && !claimedToday && !isConsecutiveFromYesterday && rawStreak > 0);
     const effectiveStreak = claimedToday
       ? rawStreak
-      : lastCheckIn === yesterday
-      ? rawStreak
-      : streakAtRisk
+      : isConsecutiveFromYesterday
       ? rawStreak
       : 0;
     const nextDayNumber = claimedToday
@@ -2212,7 +2335,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         : (effectiveStreak % 7);
       return {
         ...item,
-        claimed: !streakAtRisk && item.day <= completedDaysInCycle,
+        claimed: !streakMissedReset && item.day <= completedDaysInCycle,
         isToday: !claimedToday && item.day === nextDayNumber,
       };
     });
@@ -2233,6 +2356,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       }));
     return {
       today,
+      timeMeta,
       intel,
       quiz: {
         id: fullQuiz.id,
@@ -2248,7 +2372,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         canClaimToday: !claimedToday,
         currentStreak: effectiveStreak,
         nextDayNumber,
-        streakAtRisk,
+        streakAtRisk: streakMissedReset,
+        streakMissedReset,
         streakShields: Number(u.streakShields || 0),
         schedule,
       },
@@ -2263,11 +2388,15 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     };
   };
 
+  if (path === '/api/time/live' && method === 'GET') {
+    return { success: true, timeMeta: getLiveIstTimeMeta() };
+  }
   if (path.startsWith('/api/game/daily-hub/') && method === 'GET') {
     const uid = decodeURIComponent(path.split('/').pop() || '');
     const user = findUser(db, uid);
     if (!user) return { success: false, message: 'User not found' };
-    return { success: true, hub: buildStaticDailyHub(user), user };
+    const hub = buildStaticDailyHub(user);
+    return { success: true, hub, timeMeta: hub.timeMeta, user };
   }
   if (path === '/api/game/daily-checkin' && method === 'POST') {
     const user = findUser(db, body.userId);
@@ -3053,6 +3182,352 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, totalUsers: db.users.length, onlineCount: db.users.filter(u => u.isOnline).length, onlineUsers: db.users.filter(u => u.isOnline), recentSessions: db.activitySessions };
   }
   if (path === '/api/admin/user-audits') return { success: true, userAudits: db.users };
+
+  // Relationships, Families, PK Battles, Events & Admin Coin Grant static fallback
+  if (path === '/api/social/relationships/buy-token' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    const spec = RELATIONSHIP_TOKENS.find(t => t.id === body.tokenId);
+    if (!user || !spec) return { success: false, message: 'Invalid user or token' };
+    if ((user.coins || 0) < spec.coinPrice) return { success: false, code: 'INSUFFICIENT_COINS', message: `${spec.coinPrice} Coins चाहिए!` };
+    user.coins = (user.coins || 0) - spec.coinPrice;
+    if (!Array.isArray(user.ownedRelationshipTokens)) user.ownedRelationshipTokens = [];
+    user.ownedRelationshipTokens.push(spec.id);
+    saveDb(db);
+    return { success: true, message: `${spec.badgeIcon} ${spec.tagName} टोकन खरीदा गया!`, user };
+  }
+  if (path === '/api/social/relationships/request' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    const target = findUser(db, body.targetIdentifier);
+    const spec = RELATIONSHIP_TOKENS.find(t => t.id === body.tokenId);
+    if (!user || !target || !spec) return { success: false, message: 'User or target not found' };
+    if (!Array.isArray(user.ownedRelationshipTokens)) user.ownedRelationshipTokens = [];
+    const idx = user.ownedRelationshipTokens.indexOf(spec.id);
+    if (idx >= 0) user.ownedRelationshipTokens.splice(idx, 1);
+    else {
+      if ((user.coins || 0) < spec.coinPrice) return { success: false, code: 'INSUFFICIENT_COINS', message: `${spec.coinPrice} Coins चाहिए!` };
+      user.coins = (user.coins || 0) - spec.coinPrice;
+    }
+    const bondId = `BOND-${Date.now()}`;
+    if (!Array.isArray(user.activeRelationships)) user.activeRelationships = [];
+    if (!Array.isArray(target.activeRelationships)) target.activeRelationships = [];
+    user.activeRelationships.unshift({ id: bondId, tokenId: spec.id, tagName: spec.tagName, badgeIcon: spec.badgeIcon, partnerUserId: target.userId, partnerName: target.fullName, partnerAvatar: target.avatar, intimacyPoints: spec.coinPrice, status: 'pending_outgoing', createdAt: new Date().toISOString() });
+    target.activeRelationships.unshift({ id: bondId, tokenId: spec.id, tagName: spec.tagName, badgeIcon: spec.badgeIcon, partnerUserId: user.userId, partnerName: user.fullName, partnerAvatar: user.avatar, intimacyPoints: spec.coinPrice, status: 'pending_incoming', createdAt: new Date().toISOString() });
+    saveDb(db);
+    return { success: true, message: 'प्रस्ताव भेजा गया!', user };
+  }
+  if (path === '/api/social/relationships/respond' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    const bond = (user.activeRelationships || []).find(b => b.id === body.bondId);
+    if (bond && body.action === 'accept') {
+      bond.status = 'accepted';
+      const partner = findUser(db, bond.partnerUserId);
+      const pBond = (partner?.activeRelationships || []).find(b => b.id === body.bondId);
+      if (pBond) pBond.status = 'accepted';
+    } else {
+      user.activeRelationships = (user.activeRelationships || []).filter(b => b.id !== body.bondId);
+    }
+    saveDb(db);
+    return { success: true, message: 'अपडेट हो गया!', user };
+  }
+  if (path === '/api/social/relationships/remove' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (user) {
+      user.activeRelationships = (user.activeRelationships || []).filter(b => b.id !== body.bondId);
+      saveDb(db);
+    }
+    return { success: true, message: 'हटा दिया गया।', user };
+  }
+  if (path === '/api/families' && method === 'GET') {
+    return { success: true, families: db.families || [] };
+  }
+  if (path === '/api/families/create' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    if ((user.coins || 0) < 200) return { success: false, code: 'INSUFFICIENT_COINS', message: '200 Coins चाहिए!' };
+    user.coins = (user.coins || 0) - 200;
+    const fam: EspFamily = {
+      id: `FAM-${Date.now()}`,
+      familyCode: String(100000 + (db.families?.length || 0)).slice(0, 6),
+      name: String(body.name || 'ESP Royal').trim(),
+      emblem: FAMILY_EMBLEMS.includes(body.emblem) ? body.emblem : '👑',
+      motto: String(body.motto || 'ESP PLAY Family'),
+      founderUserId: user.userId,
+      founderName: user.fullName,
+      familyCoins: 200,
+      familyCharms: user.charms || 0,
+      familyLevel: 1,
+      level: 1,
+      maxMembers: 50,
+      isOpenJoin: true,
+      members: [{ userId: user.userId, fullName: user.fullName, avatar: user.avatar, role: 'Founder', contributedCoins: 200, joinedAt: new Date().toISOString() }],
+      chatMessages: [],
+      createdAt: new Date().toISOString(),
+    };
+    if (!Array.isArray(db.families)) db.families = [];
+    db.families.unshift(fam);
+    user.familyId = fam.id;
+    user.familyRole = 'Founder';
+    saveDb(db);
+    return { success: true, message: 'ESP Family बन गई!', family: fam, user };
+  }
+  if (path.match(/^\/api\/families\/[^/]+\/join$/) && method === 'POST') {
+    const fid = decodeURIComponent(path.split('/')[3]);
+    const fam = (db.families || []).find(f => f.id === fid || f.familyCode === fid);
+    const user = findUser(db, body.userId);
+    if (!fam || !user) return { success: false, message: 'Not found' };
+    if (!fam.members.some(m => m.userId === user.userId)) {
+      fam.members.push({ userId: user.userId, fullName: user.fullName, avatar: user.avatar, role: 'Member', contributedCoins: 0, joinedAt: new Date().toISOString() });
+    }
+    user.familyId = fam.id;
+    user.familyRole = 'Member';
+    saveDb(db);
+    return { success: true, family: fam, user };
+  }
+  if (path.match(/^\/api\/families\/[^/]+\/donate$/) && method === 'POST') {
+    const fid = decodeURIComponent(path.split('/')[3]);
+    const fam = (db.families || []).find(f => f.id === fid);
+    const user = findUser(db, body.userId);
+    const amt = Math.max(10, Number(body.amount) || 50);
+    if (!fam || !user || (user.coins || 0) < amt) return { success: false, message: 'पर्याप्त कॉइन्स नहीं हैं' };
+    user.coins = (user.coins || 0) - amt;
+    fam.familyCoins += amt;
+    fam.level = Math.max(1, Math.floor(fam.familyCoins / 500) + 1);
+    saveDb(db);
+    return { success: true, family: fam, user };
+  }
+  if (path.match(/^\/api\/families\/[^/]+\/chat$/) && method === 'POST') {
+    const fid = decodeURIComponent(path.split('/')[3]);
+    const fam = (db.families || []).find(f => f.id === fid);
+    const user = findUser(db, body.userId);
+    if (!fam || !user) return { success: false, message: 'Not found' };
+    fam.chatMessages.push({ id: `fc-${Date.now()}`, familyId: fam.id, senderId: user.userId, senderName: user.fullName, senderAvatar: user.avatar, text: body.text, createdAt: new Date().toISOString() });
+    saveDb(db);
+    return { success: true, family: fam, user };
+  }
+  if (path.startsWith('/api/events/') && method === 'GET') {
+    const uid = decodeURIComponent(path.split('/').pop() || '');
+    const user = findUser(db, uid);
+    if (!user) return { success: false, message: 'User not found' };
+    const claimed = new Set(user.claimedEventIds || []);
+    return {
+      success: true,
+      events: ESP_EVENTS_CATALOG.map(ev => ({ ...ev, currentProgress: 0, isCompleted: false, isClaimed: claimed.has(ev.id) })),
+      user,
+    };
+  }
+  if (path === '/api/admin/users/adjust-coins' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const user = findUser(db, body.userIdentifier);
+    if (!user) return { success: false, message: 'User not found' };
+    const amt = Math.max(1, Number(body.amount) || 0);
+    const before = user.coins || 0;
+    user.coins = body.mode === 'debit' ? Math.max(0, before - amt) : before + amt;
+    saveDb(db);
+    return { success: true, message: 'Coins updated!', user, balanceBefore: before, balanceAfter: user.coins };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/upgrade-tier$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = (db.customVoiceRooms || []).find(r => r.id === rid || r.roomAddress === rid);
+    const user = findUser(db, body.userId);
+    const spec = getVoiceRoomTierSpec(body.tierId);
+    if (!room || !user) return { success: false, message: 'Not found' };
+    if (spec.coinPrice > 0 && !(user.unlockedRoomTiers || []).includes(spec.id)) {
+      if ((user.coins || 0) < spec.coinPrice) return { success: false, code: 'INSUFFICIENT_COINS', message: `${spec.coinPrice} Coins चाहिए!` };
+      user.coins = (user.coins || 0) - spec.coinPrice;
+      user.unlockedRoomTiers = [...(user.unlockedRoomTiers || ['normal']), spec.id];
+    }
+    room.roomTier = spec.id;
+    room.isPremiumRoom = spec.id !== 'normal';
+    saveDb(db);
+    return { success: true, roomPayload: buildStaticRoomDetail(db, room, user.userId), user };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/pk\//) && method === 'POST') {
+    const parts = path.split('/');
+    const rid = decodeURIComponent(parts[4]);
+    const action = parts[6];
+    const room = (db.customVoiceRooms || []).find(r => r.id === rid || r.roomAddress === rid);
+    if (!room) return { success: false, message: 'Room not found' };
+    if (action === 'start') {
+      room.pkBattle = { active: true, title: body.title || 'Live PK', redLabel: `${room.hostName} Red`, blueLabel: 'Challenger Blue', redScore: 0, blueScore: 0 };
+    } else if (action === 'vote' && room.pkBattle?.active) {
+      const pts = (Number(body.coinsToSpend) || 5) * 2;
+      if (body.side === 'blue') room.pkBattle.blueScore += pts;
+      else room.pkBattle.redScore += pts;
+    } else if (action === 'end' && room.pkBattle) {
+      room.pkBattle.active = false;
+    }
+    saveDb(db);
+    return { success: true, roomPayload: buildStaticRoomDetail(db, room) };
+  }
+  if (path === '/api/admin/users/create' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const cleanFullName = String(body.fullName || '').trim();
+    const cleanPhone = String(body.phone || '').trim();
+    const cleanPass = String(body.password || '').trim();
+    if (!cleanFullName || !cleanPhone || cleanPass.length < 3) {
+      return { success: false, message: 'नाम, मोबाइल और पासवर्ड आवश्यक है।' };
+    }
+    const uid = `GAME-${Math.floor(100000 + Math.random() * 900000)}`;
+    const uname = normalizeStaticUsername(body.username || cleanFullName) || `player${Math.floor(100 + Math.random() * 900)}`;
+    const lv = Math.max(1, Math.min(99, Number(body.gameLevel) || 1));
+    const vTier = ['silver', 'gold', 'diamond'].includes(body.vipTier) ? body.vipTier : 'none';
+    const roomAddr = body.roomNumber ? String(body.roomNumber).replace(/\D/g, '') : String(10001 + db.users.length + 10);
+    const created: UserProfile = normalizeStaticUser({
+      id: `usr-${Date.now()}`,
+      userId: uid,
+      gamingId: uid,
+      username: uname,
+      fullName: cleanFullName,
+      phone: cleanPhone,
+      email: body.email || `${cleanPhone}@espgaming.club`,
+      fullAddress: 'ESP PLAY Arena',
+      paymentAddress: '',
+      payoutUpiId: '',
+      password: cleanPass,
+      sponsorId: db.settings.ownerSponsorId,
+      sponsorName: db.settings.ownerName,
+      chosenServiceCode: 'GAME',
+      chosenServiceName: 'ESP GAMING & VOICE CLUB',
+      joiningFee: 0,
+      joiningDate: todayStr(),
+      paymentUtr: 'ADMIN_CREATED_PLAYER',
+      status: 'active',
+      accountType: 'gamer',
+      balance: 0,
+      totalEarnings: 0,
+      referralEarnings: 0,
+      promoEarnings: 0,
+      totalWithdrawn: 0,
+      coins: Math.max(0, Number(body.coins) || 0),
+      charms: Math.max(0, Number(body.charms) || 0),
+      gameLevel: lv,
+      gameXp: (lv - 1) * 150,
+      vipTier: vTier as any,
+      vipTitle: vTier === 'diamond' ? 'Diamond VIP' : vTier === 'gold' ? 'Gold VIP' : vTier === 'silver' ? 'Silver VIP' : '',
+      frameType: (body.frameType || (vTier === 'diamond' ? 'royal-dragon-crown' : vTier === 'gold' ? 'vip-gold' : 'standard')) as any,
+      unlockedFrames: ['standard', body.frameType || 'standard'],
+      roomAddress: roomAddr,
+      personalRoomId: roomAddr,
+      clanName: body.clanName || 'Royal Warriors ESP',
+      avatar: body.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uname}`,
+      bio: body.bio || `Lv.${lv} ESP PLAY Challenger`,
+      role: 'member',
+      createdAt: new Date().toISOString(),
+    });
+    db.users.push(created);
+    saveDb(db);
+    return { success: true, user: created, message: `✅ नया खिलाड़ी "${created.fullName}" बन गया!` };
+  }
+  if (path.match(/^\/api\/admin\/user\/[^/]+\/edit-details$/) && method === 'PUT') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const uid = decodeURIComponent(path.split('/')[4]);
+    const user = findUser(db, uid);
+    if (!user) return { success: false, message: 'User not found' };
+    if (body.fullName) user.fullName = String(body.fullName).trim();
+    if (body.username) user.username = normalizeStaticUsername(body.username);
+    if (body.password && String(body.password).length >= 3) user.password = String(body.password).trim();
+    if (body.coins !== undefined) user.coins = Math.max(0, Number(body.coins));
+    if (body.charms !== undefined) user.charms = Math.max(0, Number(body.charms));
+    if (body.gameLevel !== undefined) {
+      user.gameLevel = Math.max(1, Number(body.gameLevel));
+      user.gameXp = (user.gameLevel - 1) * 150;
+    }
+    if (body.vipTier) {
+      user.vipTier = body.vipTier;
+      user.vipTitle = body.vipTier === 'diamond' ? 'Diamond VIP' : body.vipTier === 'gold' ? 'Gold VIP' : body.vipTier === 'silver' ? 'Silver VIP' : '';
+    }
+    if (body.frameType) user.frameType = body.frameType;
+    saveDb(db);
+    return { success: true, user, message: 'डिटेल्स अपडेट हो गईं!' };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/set-effect$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = (db.customVoiceRooms || []).find(r => r.id === rid || r.roomAddress === rid);
+    if (!room) return { success: false, message: 'Room not found' };
+    room.roomEffect = body.effect || 'none';
+    saveDb(db);
+    return { success: true, roomEffect: room.roomEffect, roomPayload: buildStaticRoomDetail(db, room, body.userId) };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/drop-packet$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = (db.customVoiceRooms || []).find(r => r.id === rid || r.roomAddress === rid);
+    const user = findUser(db, body.userId);
+    if (!room || !user) return { success: false, message: 'Not found' };
+    const pool = Math.max(2, Number(body.totalCoins) || 50);
+    if ((user.coins || 0) < pool) return { success: false, code: 'INSUFFICIENT_COINS', message: `${pool} Coins चाहिए!` };
+    user.coins = (user.coins || 0) - pool;
+    if (!Array.isArray(room.activePackets)) room.activePackets = [];
+    const packet = {
+      id: `pkt-${Date.now()}`,
+      roomId: room.id,
+      packetType: body.packetType === 'blue' ? 'blue' : 'red',
+      senderUserId: user.userId,
+      senderName: user.fullName,
+      senderAvatar: user.avatar,
+      totalCoins: pool,
+      remainingCoins: pool,
+      maxClaims: Math.max(2, Number(body.maxClaims) || 5),
+      claimedBy: [],
+      message: body.message || 'Packet Rain!',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 600000).toISOString(),
+    };
+    room.activePackets.unshift(packet);
+    saveDb(db);
+    return { success: true, packet, user, roomPayload: buildStaticRoomDetail(db, room, user.userId) };
+  }
+  if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/claim-packet$/) && method === 'POST') {
+    const rid = decodeURIComponent(path.split('/')[4]);
+    const room = (db.customVoiceRooms || []).find(r => r.id === rid || r.roomAddress === rid);
+    const user = findUser(db, body.userId);
+    if (!room || !user) return { success: false, message: 'Not found' };
+    const packet = (room.activePackets || []).find((p: any) => p.id === body.packetId);
+    if (!packet || packet.remainingCoins <= 0) return { success: false, message: 'Packet exhausted' };
+    const won = Math.max(1, Math.min(packet.remainingCoins, Math.ceil(packet.remainingCoins / Math.max(1, packet.maxClaims - packet.claimedBy.length))));
+    const xp = packet.packetType === 'blue' ? 12 : 4;
+    packet.remainingCoins -= won;
+    packet.claimedBy.push({ userId: user.userId, fullName: user.fullName, coinsWon: won, xpWon: xp, claimedAt: new Date().toISOString() });
+    user.coins = (user.coins || 0) + won;
+    user.gameXp = (user.gameXp || 0) + xp;
+    saveDb(db);
+    return { success: true, coinsWon: won, xpWon: xp, packetType: packet.packetType, user, roomPayload: buildStaticRoomDetail(db, room, user.userId) };
+  }
+  if (path === '/api/dm/thread' && method === 'GET') {
+    const uid = search.get('userId') || '';
+    const pid = search.get('peerId') || '';
+    const all = Array.isArray(db.directMessages) ? db.directMessages : [];
+    const filtered = pid
+      ? all.filter(m => (m.fromUserId === uid && m.toUserId === pid) || (m.fromUserId === pid && m.toUserId === uid))
+      : all.filter(m => m.fromUserId === uid || m.toUserId === uid);
+    return { success: true, messages: filtered.slice(-120) };
+  }
+  if (path === '/api/dm/send' && method === 'POST') {
+    const sender = findUser(db, body.fromUserId);
+    const recipient = findUser(db, body.toUserId);
+    if (!sender || !recipient) return { success: false, message: 'User not found' };
+    if (!Array.isArray(db.directMessages)) db.directMessages = [];
+    const msg: DirectMessageRecord = {
+      id: `dm-${Date.now()}`,
+      fromUserId: sender.userId,
+      fromName: sender.fullName,
+      fromAvatar: sender.avatar,
+      toUserId: recipient.userId,
+      text: body.text || (body.inviteType === 'game' ? `🎮 Play ${body.gameName} with me!` : `🔒 Join Locked Room #${body.roomAddress}`),
+      inviteType: body.inviteType,
+      gameKey: body.gameKey,
+      gameName: body.gameName,
+      roomAddress: body.roomAddress,
+      roomTitle: body.roomTitle,
+      passcode: body.passcode,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+    };
+    db.directMessages.push(msg);
+    saveDb(db);
+    const thread = db.directMessages.filter(m => (m.fromUserId === sender.userId && m.toUserId === recipient.userId) || (m.fromUserId === recipient.userId && m.toUserId === sender.userId));
+    return { success: true, message: msg, thread, user: sender };
+  }
 
   return { success: true };
 }

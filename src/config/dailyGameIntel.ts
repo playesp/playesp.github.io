@@ -298,3 +298,31 @@ export function getYesterdayDateString(dateStr: string): string {
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * India Standard Time (IST / UTC+05:30) helpers so daily tasks & check-in reset
+ * strictly at 12:00 AM (00:00:00 IST) midnight every night.
+ */
+export function getIstDateString(referenceMs: number = Date.now()): string {
+  const istMs = referenceMs + 5.5 * 60 * 60 * 1000;
+  return new Date(istMs).toISOString().slice(0, 10);
+}
+
+export function getLiveIstTimeMeta(referenceMs: number = Date.now()) {
+  const istDateObj = new Date(referenceMs + 5.5 * 60 * 60 * 1000);
+  const istDate = istDateObj.toISOString().slice(0, 10);
+  const hh = istDateObj.getUTCHours();
+  const mm = istDateObj.getUTCMinutes();
+  const ss = istDateObj.getUTCSeconds();
+  const istTimeLabel = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} IST`;
+  const elapsedSec = hh * 3600 + mm * 60 + ss;
+  const secondsUntilMidnight = Math.max(1, 86400 - elapsedSec);
+  const nextResetAtIso = new Date(referenceMs + secondsUntilMidnight * 1000).toISOString();
+  return {
+    serverIso: new Date(referenceMs).toISOString(),
+    istDate,
+    istTimeLabel,
+    secondsUntilMidnight,
+    nextResetAtIso,
+  };
+}

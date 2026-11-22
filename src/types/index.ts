@@ -87,7 +87,7 @@ export interface UserProfile {
   promoEarnings: number;
   totalWithdrawn: number;
 
-  // WePlay-Style ESP Gaming Time Profile
+  // ESP PLAY Profile, Bonds, Family & Voice Room Extensions
   gamingId?: string; // Dedicated Gaming Time ID (e.g. GAME-887749)
   coins?: number; // Real In-game coins balance (New players always start at 0)
   charms?: number; // Charm points received from gifts (Starts at 0)
@@ -100,6 +100,13 @@ export interface UserProfile {
   vipRoomAssignedAt?: string;
   vipRoomAssignedBy?: string;
   followedRooms?: string[]; // Room IDs followed by the user
+  ownedRelationshipTokens?: string[];
+  activeRelationships?: RelationshipBond[];
+  familyId?: string;
+  familyRole?: 'Founder' | 'Vice Leader' | 'Elder' | 'Member';
+  familyCoinsContributed?: number;
+  unlockedRoomTiers?: string[];
+  claimedEventIds?: string[];
   houseName?: string;
   clanName?: string;
   clanRole?: 'Leader' | 'Elder' | 'Member';
@@ -455,7 +462,111 @@ export interface UserContact {
   addedAt: string;
 }
 
-// ===================== WEPLAY-STYLE ESP GAMING ROOM TYPES =====================
+// ===================== ESP PLAY GAMING ROOM, BONDS & FAMILY TYPES =====================
+
+export interface RelationshipBond {
+  id: string;
+  tokenId: string;
+  tagName: string;
+  badgeIcon: string;
+  partnerUserId: string;
+  partnerName: string;
+  partnerUsername?: string;
+  partnerAvatar?: string;
+  intimacyPoints: number;
+  status: 'pending' | 'pending_incoming' | 'pending_outgoing' | 'accepted';
+  initiatorUserId?: string;
+  createdAt: string;
+}
+
+export interface EspFamilyMember {
+  userId: string;
+  fullName: string;
+  username?: string;
+  avatar?: string;
+  role: 'Founder' | 'Vice Leader' | 'Elder' | 'Member';
+  gameLevel?: number;
+  contributedCoins: number;
+  joinedAt: string;
+}
+
+export interface FamilyChatMessage {
+  id: string;
+  familyId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  senderRole?: string;
+  text: string;
+  isGift?: boolean;
+  giftId?: string;
+  giftIcon?: string;
+  giftName?: string;
+  giftCount?: number;
+  giftQuantity?: number;
+  giftTargetName?: string;
+  recipientName?: string;
+  coinCost?: number;
+  time?: string;
+  createdAt: string;
+}
+
+export interface EspFamily {
+  id: string;
+  familyCode: string;
+  name: string;
+  emblem: string;
+  motto: string;
+  founderUserId: string;
+  founderName: string;
+  familyLevel: number;
+  level?: number;
+  familyCoins: number;
+  familyCharms: number;
+  maxMembers: number;
+  isOpenJoin: boolean;
+  members: EspFamilyMember[];
+  chatMessages: FamilyChatMessage[];
+  createdAt: string;
+}
+
+export interface GiftHistoryRecord {
+  id: string;
+  giftId: string;
+  giftName: string;
+  giftIcon: string;
+  quantity: number;
+  coinCost: number;
+  charmValue: number;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  recipientId?: string;
+  recipientName: string;
+  recipientAvatar?: string;
+  context: 'voice_room' | 'family_chat' | 'profile';
+  roomId?: string;
+  familyId?: string;
+  createdAt: string;
+}
+
+export interface PkBattleState {
+  id?: string;
+  active: boolean;
+  title: string;
+  redTeamName?: string;
+  blueTeamName?: string;
+  redLabel?: string;
+  blueLabel?: string;
+  redScore: number;
+  blueScore: number;
+  startedByUserId?: string;
+  startedBy?: string;
+  startedAt: string;
+  endsAt: string;
+  winner?: 'red' | 'blue' | 'draw' | null;
+  winnerSide?: 'red' | 'blue' | 'draw' | null;
+}
 
 export interface VoiceChatMessage {
   id: string;
@@ -473,6 +584,47 @@ export interface VoiceChatMessage {
 
 export type VoiceRoomStageLayout = 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
 
+export type RoomAtmosphereEffect = 'none' | 'sparkles' | 'petals' | 'fireflies' | 'snow' | 'neon_lasers';
+
+export interface RoomPacketDrop {
+  id: string;
+  roomId: string;
+  packetType: 'red' | 'blue';
+  senderUserId: string;
+  senderName: string;
+  senderAvatar?: string;
+  totalCoins: number;
+  remainingCoins: number;
+  maxClaims: number;
+  claimedBy: Array<{
+    userId: string;
+    fullName: string;
+    coinsWon: number;
+    xpWon?: number;
+    claimedAt: string;
+  }>;
+  message?: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface DirectMessageRecord {
+  id: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatar?: string;
+  toUserId: string;
+  text: string;
+  inviteType?: 'game' | 'locked_room';
+  gameKey?: string;
+  gameName?: string;
+  roomAddress?: string;
+  roomTitle?: string;
+  passcode?: string;
+  timestamp: string;
+  createdAt: string;
+}
+
 export interface CustomVoiceRoom {
   id: string;
   title: string;
@@ -483,6 +635,11 @@ export interface CustomVoiceRoom {
   isPersonalFixed?: boolean;
   isVipRoom?: boolean;
   vipRoomLabel?: string;
+  roomTier?: 'normal' | 'silver_club' | 'gold_palace' | 'diamond_theater';
+  isPremiumRoom?: boolean;
+  roomEffect?: RoomAtmosphereEffect;
+  activePackets?: RoomPacketDrop[];
+  pkBattle?: PkBattleState | null;
   hostUserId: string;
   hostName: string;
   hostUsername?: string;
@@ -690,6 +847,9 @@ export interface CoinTransactionRecord {
     | 'daily_quiz'
     | 'skill_game_reward'
     | 'coin_booster'
+    | 'coin_recharge'
+    | 'packet_drop'
+    | 'packet_claim'
     | 'admin_adjustment';
   categoryLabel: string;
   amount: number;
@@ -699,8 +859,17 @@ export interface CoinTransactionRecord {
   timestamp: string;
 }
 
+export interface LiveTimeMeta {
+  serverIso: string;
+  istDate: string;
+  istTimeLabel: string;
+  secondsUntilMidnight: number;
+  nextResetAtIso: string;
+}
+
 export interface DailyGameHubData {
   today: string;
+  timeMeta?: LiveTimeMeta;
   intel: {
     id: string;
     category: string;
@@ -730,6 +899,7 @@ export interface DailyGameHubData {
     currentStreak: number;
     nextDayNumber: number;
     streakAtRisk: boolean;
+    streakMissedReset?: boolean;
     streakShields: number;
     schedule: Array<{
       day: number;

@@ -24,7 +24,13 @@ import type {
   PlanUpgradeRequest,
   RealTaskStatus,
   DailyGameHubData,
+  EspFamily,
+  GiftHistoryRecord,
+  RoomAtmosphereEffect,
+  RoomPacketDrop,
+  DirectMessageRecord,
 } from '../types/index.ts';
+import type { VoiceRoomTierId } from '../config/espSocialCatalog.ts';
 import type { TaskEventType, VipTierId } from '../config/economy.ts';
 import { handleStaticApiRequest } from './staticFallback.ts';
 
@@ -841,7 +847,7 @@ export const api = {
     return data.hub as DailyGameHubData;
   },
 
-  async claimDailyCheckIn(userId: string, useShield = true) {
+  async claimDailyCheckIn(userId: string, useShield = false) {
     const res = await apiFetch('/api/game/daily-checkin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -851,6 +857,11 @@ export const api = {
     if (!data.success) throw new Error(data.message || 'Check-in failed');
     if (data.user) this.setStoredUser(data.user);
     return data;
+  },
+
+  async getLiveServerTime() {
+    const res = await apiFetch('/api/time/live');
+    return res.json();
   },
 
   async answerDailyQuiz(userId: string, selectedIndex: number) {
@@ -920,17 +931,45 @@ export const api = {
     charmValue: number,
     giftIcon?: string,
     targetUserId?: string,
-    quantity = 1
+    quantity = 1,
+    extra?: { context?: 'voice_room' | 'family_chat' | 'profile'; roomId?: string; familyId?: string; pkSide?: 'red' | 'blue' }
   ) {
     const res = await apiFetch('/api/game/send-gift', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senderId, targetName, targetUserId, giftId, giftName, giftIcon, coinCost, charmValue, quantity }),
+      body: JSON.stringify({
+        senderId,
+        targetName,
+        targetUserId,
+        giftId,
+        giftName,
+        giftIcon,
+        coinCost,
+        charmValue,
+        quantity,
+        ...(extra || {}),
+      }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gift send failed');
     if (data.user) this.setStoredUser(data.user);
     return data;
+  },
+
+  async getGiftHistory(userId: string): Promise<{
+    success: boolean;
+    sent: GiftHistoryRecord[];
+    received: GiftHistoryRecord[];
+    all: GiftHistoryRecord[];
+    totalSentCoins: number;
+    totalReceivedCharms: number;
+  }> {
+    try {
+      const res = await apiFetch(`/api/game/gift-history/${encodeURIComponent(userId)}`);
+      return await res.json();
+    } catch {
+      return { success: false, sent: [], received: [], all: [], totalSentCoins: 0, totalReceivedCharms: 0 };
+    }
   },
 
   async getCoinRecharges(adminPassword: string) {
@@ -1017,6 +1056,7 @@ export const api = {
     customWallpaperUrl?: string;
     stageLayout?: 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
     youtubeVideoUrl?: string;
+    roomTier?: VoiceRoomTierId;
   }) {
     try {
       const res = await apiFetch('/api/game/voice-rooms/create', {
@@ -1025,10 +1065,51 @@ export const api = {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
+      if (data.user) this.setStoredUser(data.user);
       return data;
     } catch (e: any) {
       return { success: false, message: e?.message || 'नेटवर्क समस्या के कारण कमरा नहीं बन सका' };
     }
+  },
+
+  async upgradeVoiceRoomTier(roomId: string, userId: string, tierId: VoiceRoomTierId) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/upgrade-tier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, tierId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async startVoiceRoomPk(roomId: string, userId: string, title?: string, durationSeconds = 180) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/pk/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, title, durationSeconds }),
+    });
+    return await res.json();
+  },
+
+  async voteVoiceRoomPk(roomId: string, userId: string, side: 'red' | 'blue', coinsToSpend = 0) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/pk/vote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, side, coinsToSpend }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async endVoiceRoomPk(roomId: string, userId: string) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/pk/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    return await res.json();
   },
 
   async joinVoiceRoom(roomId: string, userId: string, passcode?: string) {
@@ -1089,6 +1170,64 @@ export const api = {
       body: JSON.stringify({ senderUserId, targetUserIds }),
     });
     return await res.json();
+  },
+
+  async setVoiceRoomEffect(roomId: string, userId: string, effect: RoomAtmosphereEffect) {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/set-effect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, effect }),
+    });
+    return await res.json();
+  },
+
+  async dropVoiceRoomPacket(
+    roomId: string,
+    payload: {
+      userId: string;
+      packetType: 'red' | 'blue';
+      totalCoins: number;
+      maxClaims: number;
+      message?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    packet?: RoomPacketDrop;
+    user?: UserProfile;
+    roomPayload?: any;
+  }> {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/drop-packet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimVoiceRoomPacket(
+    roomId: string,
+    userId: string,
+    packetId: string
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    coinsWon?: number;
+    xpWon?: number;
+    packetType?: 'red' | 'blue';
+    user?: UserProfile;
+    roomPayload?: any;
+  }> {
+    const res = await apiFetch(`/api/game/voice-rooms/${encodeURIComponent(roomId)}/claim-packet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, packetId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
   },
 
   async takeVoiceSeat(userId: string, seatIndex: number, roomId?: string) {
@@ -1541,6 +1680,7 @@ export const api = {
     tasks: RealTaskStatus[];
     tasksCompletedCount: number;
     claimedChestMilestones: string[];
+    timeMeta?: import('../types/index.ts').LiveTimeMeta;
     user?: UserProfile;
   }> {
     const res = await apiFetch(`/api/tasks/${encodeURIComponent(userId)}`);
@@ -1666,12 +1806,33 @@ export const api = {
   },
 
   // ---------------- Real Community Leaderboard & Clans ----------------
-  async getRealLeaderboard(): Promise<{
+  async getRealLeaderboard(period: 'daily' | 'weekly' | 'monthly' | 'all' = 'daily'): Promise<{
     success: boolean;
-    topEarners: Array<{ userId: string; fullName: string; avatar?: string; frameType?: string; vipTier?: string; gameLevel: number; charms: number; coins: number; chosenServiceCode: string }>;
+    period?: 'daily' | 'weekly' | 'monthly' | 'all';
+    topEarners: Array<{
+      userId: string;
+      username?: string;
+      fullName: string;
+      avatar?: string;
+      frameType?: string;
+      vipTier?: string;
+      vipTitle?: string;
+      gameLevel: number;
+      gameXp?: number;
+      charms: number;
+      coins: number;
+      roomAddress?: string;
+      isVipRoom?: boolean;
+      isOnline?: boolean;
+      periodScore?: number;
+      periodCoins?: number;
+      periodGames?: number;
+      periodCharms?: number;
+      chosenServiceCode?: string;
+    }>;
   }> {
     try {
-      const res = await apiFetch('/api/community/leaderboard');
+      const res = await apiFetch(`/api/community/leaderboard?period=${encodeURIComponent(period)}`);
       return await res.json();
     } catch {
       return { success: false, topEarners: [] };
@@ -1905,7 +2066,240 @@ export const api = {
     });
     return await res.json();
   },
+
+  // ---------------- Relationship Tokens & Two-Player Bonds / CP ----------------
+  async buyRelationshipToken(userId: string, tokenId: string) {
+    const res = await apiFetch('/api/social/relationships/buy-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, tokenId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async requestRelationshipBond(userId: string, targetIdentifier: string, tokenId: string) {
+    const res = await apiFetch('/api/social/relationships/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetIdentifier, tokenId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async respondRelationshipBond(userId: string, bondId: string, action: 'accept' | 'reject') {
+    const res = await apiFetch('/api/social/relationships/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, bondId, action }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async removeRelationshipBond(userId: string, bondId: string) {
+    const res = await apiFetch('/api/social/relationships/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, bondId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  // ---------------- ESP PLAY Families (Create, Join, Donate Coins, Invite, Chat + Gifts) ----------------
+  async getFamilies(): Promise<{ success: boolean; families: EspFamily[] }> {
+    try {
+      const res = await apiFetch('/api/families');
+      return await res.json();
+    } catch {
+      return { success: false, families: [] };
+    }
+  },
+
+  async getFamilyDetail(familyId: string): Promise<{ success: boolean; family?: EspFamily; message?: string }> {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}`);
+    return await res.json();
+  },
+
+  async createFamily(userId: string, name: string, emblem: string, motto: string, isOpenJoin = true) {
+    const res = await apiFetch('/api/families/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, name, emblem, motto, isOpenJoin }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async joinFamily(familyId: string, userId: string) {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async leaveFamily(familyId: string, userId: string) {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async donateFamilyCoins(familyId: string, userId: string, amount: number) {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}/donate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, amount }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async inviteToFamily(familyId: string, userId: string, targetIdentifier: string) {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetIdentifier }),
+    });
+    return await res.json();
+  },
+
+  async sendFamilyChat(familyId: string, userId: string, text: string) {
+    const res = await apiFetch(`/api/families/${encodeURIComponent(familyId)}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, text }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  // ---------------- ESP PLAY Events Center ----------------
+  async getEventsCenter(userId: string) {
+    const res = await apiFetch(`/api/events/${encodeURIComponent(userId)}`);
+    return await res.json();
+  },
+
+  async claimEventReward(userId: string, eventId: string) {
+    const res = await apiFetch('/api/events/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, eventId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  // ---------------- Admin Panel User Coin Grant / Adjust by User ID ----------------
+  async adminAdjustUserCoins(
+    adminPassword: string,
+    userIdentifier: string,
+    amount: number,
+    mode: 'credit' | 'debit',
+    reason = ''
+  ): Promise<{
+    success: boolean;
+    message: string;
+    user?: UserProfile;
+    balanceBefore?: number;
+    balanceAfter?: number;
+  }> {
+    const res = await apiFetch('/api/admin/users/adjust-coins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPassword, userIdentifier, amount, mode, reason }),
+    });
+    return await res.json();
+  },
+
+  async adminCreatePlayer(
+    adminPassword: string,
+    payload: {
+      fullName: string;
+      username?: string;
+      phone: string;
+      email?: string;
+      password: string;
+      coins?: number;
+      charms?: number;
+      gameLevel?: number;
+      vipTier?: 'none' | 'silver' | 'gold' | 'diamond';
+      frameType?: string;
+      avatar?: string;
+      bio?: string;
+      clanName?: string;
+      roomNumber?: string;
+      vipRoomLabel?: string;
+    }
+  ): Promise<{ success: boolean; message: string; user?: UserProfile }> {
+    const res = await apiFetch('/api/admin/users/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminPassword, ...payload }),
+    });
+    return await res.json();
+  },
+
+  // ---------------- Synced 1-on-1 Direct Messages, Game Invites & Locked Room Invites ----------------
+  async getDirectMessages(userId: string, peerId?: string): Promise<{
+    success: boolean;
+    messages: DirectMessageRecord[];
+  }> {
+    try {
+      const qs = new URLSearchParams({ userId });
+      if (peerId) qs.set('peerId', peerId);
+      const res = await apiFetch(`/api/dm/thread?${qs.toString()}`);
+      return await res.json();
+    } catch {
+      return { success: false, messages: [] };
+    }
+  },
+
+  async sendDirectMessage(payload: {
+    fromUserId: string;
+    toUserId: string;
+    text?: string;
+    inviteType?: 'game' | 'locked_room';
+    gameKey?: string;
+    gameName?: string;
+    roomAddress?: string;
+    roomTitle?: string;
+    passcode?: string;
+  }): Promise<{
+    success: boolean;
+    message?: DirectMessageRecord;
+    thread?: DirectMessageRecord[];
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/dm/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
 };
+
 
 
 

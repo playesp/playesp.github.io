@@ -74,7 +74,6 @@ import type { RealPlayerProfile } from '../components/PlayerInfoModal.tsx';
 import { UserProfileSheetModal, type RichProfileData } from '../components/UserProfileSheetModal.tsx';
 import { AvatarFrame, type FrameVariant } from '../components/AvatarFrame.tsx';
 import { WerewolfGameModal } from '../components/games/WerewolfGameModal.tsx';
-import { VoiceEffectSelector, VOICE_EFFECTS, type VoiceEffectType } from '../components/VoiceEffectSelector.tsx';
 import { DailyLuckySpin } from '../components/games/DailyLuckySpin.tsx';
 import { WhoIsTheSpyGameModal } from '../components/games/WhoIsTheSpyGameModal.tsx';
 import { VoiceRoomMediaStage } from '../components/VoiceRoomMediaStage.tsx';
@@ -84,7 +83,12 @@ import { VOICE_WALLPAPER_PRESETS, STAGE_LAYOUT_OPTIONS } from '../config/voiceWa
 import { LeaderboardWidget, type LeaderboardUser } from '../components/games/LeaderboardWidget.tsx';
 import { DailyFortuneSpinModal } from '../components/games/DailyFortuneSpinModal.tsx';
 import { TimedMysteryChestModal } from '../components/games/TimedMysteryChestModal.tsx';
-import { WePlayAppGiftModal, ALL_APP_GIFTS, type AppGiftItem } from '../components/games/WePlayAppGiftModal.tsx';
+import {
+  WePlayAppGiftModal,
+  ALL_APP_GIFTS,
+  type AppGiftItem,
+  type GiftComboSettings,
+} from '../components/games/WePlayAppGiftModal.tsx';
 import { DailyTasksAndLoginModal } from '../components/games/DailyTasksAndLoginModal.tsx';
 import { AdvanceRoomStoreModal, ADVANCE_ROOM_THEMES, type AdvanceRoomTheme } from '../components/games/AdvanceRoomStoreModal.tsx';
 import { WePlayHomeLobby } from '../components/games/WePlayHomeLobby.tsx';
@@ -99,6 +103,14 @@ import { COIN_RECHARGE_PACKS } from '../config/economy.ts';
 import { CreditCard as CreditCardIcon } from 'lucide-react';
 import { showToast } from '../services/toast.ts';
 import { isVipFancyRoomNumber } from '../config/giftCatalog.ts';
+import { GiftAnimationOverlay, type ActiveGiftAnimation } from '../components/GiftAnimationOverlay.tsx';
+import { RelationshipBondsModal } from '../components/RelationshipBondsModal.tsx';
+import { EspFamilyHubModal } from '../components/EspFamilyHubModal.tsx';
+import { EspEventsAndMyHomeModal } from '../components/EspEventsAndMyHomeModal.tsx';
+import { GiftWallModal, type GiftWallEntry } from '../components/GiftWallModal.tsx';
+import { VOICE_ROOM_TIERS, getVoiceRoomTierSpec, type VoiceRoomTierId } from '../config/espSocialCatalog.ts';
+import type { RoomAtmosphereEffect, RoomPacketDrop } from '../types/index.ts';
+import { sound8D } from '../services/sound8d.ts';
 
 interface GamingRoomViewProps {
   user: UserProfile;
@@ -108,6 +120,9 @@ interface GamingRoomViewProps {
   onOpenWithdrawal?: () => void;
   onOpenEarningSetup?: () => void;
   onOpenServicesSetup?: () => void;
+  isAdmin?: boolean;
+  onOpenAdmin?: () => void;
+  onLogout?: () => void;
   initialSubTab?: 'overview' | 'ludo' | 'dice_arena' | 'card_luck' | 'gift_store' | 'vip_frames' | 'leaderboard' | 'recharge_convert' | 'voice_room' | 'games' | 'clan_friends' | 'rewards_tasks';
   initialRoomId?: string;
 }
@@ -139,6 +154,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   onOpenWithdrawal,
   onOpenEarningSetup,
   onOpenServicesSetup,
+  isAdmin,
+  onOpenAdmin,
+  onLogout,
   initialSubTab = 'overview',
   initialRoomId,
 }) => {
@@ -215,20 +233,26 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [showWerewolfModal, setShowWerewolfModal] = useState(false);
   const [showSpyGameModal, setShowSpyGameModal] = useState(false);
 
-  // Simulated Voice Effect State
-  const [selectedVoiceEffect, setSelectedVoiceEffect] = useState<VoiceEffectType>(() => {
-    try {
-      return (localStorage.getItem('esp_voice_effect') as VoiceEffectType) || 'normal';
-    } catch {
-      return 'normal';
-    }
-  });
-  const [showVoiceEffectModal, setShowVoiceEffectModal] = useState(false);
-  const [pendingJoinSeatIndex, setPendingJoinSeatIndex] = useState<number | null>(null);
-  const [showEffectTrayInline, setShowEffectTrayInline] = useState(false);
-
   // Soundboard feedback
   const [soundEffectToast, setSoundEffectToast] = useState<string | null>(null);
+
+  // Pre-Send Combo Settings + Post-Send Interactive Rapid Combo Button State
+  const [comboSettings, setComboSettings] = useState<GiftComboSettings>({
+    showRapidButton: true,
+    windowSeconds: 12,
+    soundEnabled: true,
+  });
+  const [rapidComboTarget, setRapidComboTarget] = useState<{
+    gift: AppGiftItem;
+    count: number;
+    targetName: string;
+    targetUserId?: string;
+    comboStreak: number;
+    expiresAt: number;
+    windowMs: number;
+    remainingMs: number;
+  } | null>(null);
+  const [rapidComboBusy, setRapidComboBusy] = useState(false);
 
   // New Feature States
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
@@ -239,6 +263,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     giftId?: string;
     targetName?: string;
     targetUserId?: string;
+    category?: 'diwali' | 'popular' | 'romance' | 'luxury' | 'mythic' | 'packets';
   } | null>(null);
   const [showDailyTasksModal, setShowDailyTasksModal] = useState(false);
   const [showRoomStoreModal, setShowRoomStoreModal] = useState(false);
@@ -252,6 +277,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
   // 8D Interactive Game Arena Modal State
   const [activeInteractiveGame, setActiveInteractiveGame] = useState<GameKey | null>(null);
+  const [activeBoardGameModal, setActiveBoardGameModal] = useState<'bingo' | 'cards' | 'snake' | null>(null);
 
   useEffect(() => {
     if (!initialSubTab || initialSubTab === 'overview' || initialSubTab === 'games') {
@@ -370,10 +396,18 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [newRoomCategory, setNewRoomCategory] = useState<'earning' | 'gaming' | 'chitchat' | 'clan' | 'help'>('earning');
   const [newRoomWallpaperId, setNewRoomWallpaperId] = useState<string>('castle_night');
   const [newRoomStageLayout, setNewRoomStageLayout] = useState<VoiceRoomStageLayout>('classic_8');
+  const [newRoomTier, setNewRoomTier] = useState<VoiceRoomTierId>('normal');
   const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
   const [newRoomPasscode, setNewRoomPasscode] = useState('');
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [roomActionFeedback, setRoomActionFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showRelationshipsModal, setShowRelationshipsModal] = useState(false);
+  const [showFamilyHubModal, setShowFamilyHubModal] = useState(false);
+  const [eventsMyHomeState, setEventsMyHomeState] = useState<{ open: boolean; tab: 'my_home' | 'events' }>({
+    open: false,
+    tab: 'my_home',
+  });
+  const [showOwnGiftWallModal, setShowOwnGiftWallModal] = useState(false);
 
   // ==============================================================
   // REAL MICROPHONE HARDWARE & LIVE AUDIO STREAMING STATE
@@ -401,7 +435,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [selectedGift, setSelectedGift] = useState<RoomGift | null>(LUXURY_GIFTS[0]);
   const [giftTarget, setGiftTarget] = useState<string>('Entire Room (सभी को)');
   const [giftTargetUserId, setGiftTargetUserId] = useState<string | undefined>(undefined);
-  const [activeGiftAnimation, setActiveGiftAnimation] = useState<{ gift: RoomGift; sender: string; target: string } | null>(null);
+  const [activeGiftAnimation, setActiveGiftAnimation] = useState<ActiveGiftAnimation | null>(null);
   const [giftAnnouncement, setGiftAnnouncement] = useState<string | null>(null);
 
   // Gift Combo System State (Sending gifts within 12s window triggers combo multiplier and bonus charm points)
@@ -418,13 +452,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const lastGiftTimeRef = useRef<number>(0);
   const comboResetTimerRef = useRef<any>(null);
 
-  const registerGiftCombo = (baseCharms: number, giftName: string) => {
+  const registerGiftCombo = (baseCharms: number, giftName: string, windowSecondsOverride?: number) => {
+    const windowMs = (windowSecondsOverride || comboSettings.windowSeconds || 12) * 1000;
     const now = Date.now();
     const timeSinceLast = now - lastGiftTimeRef.current;
     lastGiftTimeRef.current = now;
 
     let newCombo = 1;
-    if (timeSinceLast < 12000 && lastGiftTimeRef.current !== 0 && giftComboCount > 0) {
+    if (timeSinceLast < windowMs && lastGiftTimeRef.current !== 0 && giftComboCount > 0) {
       newCombo = giftComboCount + 1;
     } else {
       newCombo = 1;
@@ -453,7 +488,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
       setTimeout(() => {
         setGiftComboBanner(prev => (prev?.combo === newCombo ? null : prev));
-      }, 4500);
+      }, 4000);
     }
 
     if (comboResetTimerRef.current) clearTimeout(comboResetTimerRef.current);
@@ -461,10 +496,23 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       setGiftComboCount(0);
       setGiftComboMultiplier(1);
       setGiftComboBonusCharms(0);
-    }, 12000);
+    }, windowMs);
 
-    return { newCombo, multiplier, bonusCharms, totalCharmsAwarded };
+    return { newCombo, multiplier, bonusCharms, totalCharmsAwarded, windowMs };
   };
+
+  useEffect(() => {
+    if (!rapidComboTarget) return;
+    const timer = setInterval(() => {
+      const left = rapidComboTarget.expiresAt - Date.now();
+      if (left <= 0) {
+        setRapidComboTarget(null);
+      } else {
+        setRapidComboTarget(prev => (prev ? { ...prev, remainingMs: left } : null));
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [rapidComboTarget?.expiresAt]);
 
   // Coins Game State
   const [selectedGame, setSelectedGame] = useState<'snake' | 'bingo' | 'cards' | 'daily_spin' | 'spin' | 'dice' | 'coin_flip'>('daily_spin');
@@ -532,15 +580,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }
   };
 
-  // Text-To-Speech (TTS) Reader for room messages with simulated voice effect
+  // Natural Real Voice TTS Reader (no artificial pitch/rate modulation)
   const speakMessage = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const clean = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '');
       const utter = new SpeechSynthesisUtterance(clean);
-      const activeEffect = VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect);
-      utter.rate = activeEffect ? activeEffect.ttsRate : 1.0;
-      utter.pitch = activeEffect ? activeEffect.ttsPitch : 1.0;
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
       window.speechSynthesis.speak(utter);
     }
   };
@@ -798,15 +845,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     setIsMicMuted(prev => !prev);
   };
 
-  // Real Mic & Speaker Loopback Test (Check voice in headphones/speakers with selected voice effect)
+  // Real Natural Mic & Speaker Loopback Test (Strictly Natural Voice — No Fake Voice Changers)
   const testSpeakerAndMic = async () => {
     const ok = await enableMicrophone();
     if (!ok || !micStreamRef.current) return;
 
     try {
       setIsLoopbackTesting(true);
-      const activeEffect = VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect);
-      setLoopbackNotice(`🔊 आवाज़ टेस्ट (${activeEffect?.icon} ${activeEffect?.name}): माइक में बोलें, आपके स्पीकर/हेडफोन में ${activeEffect?.hindiName} सुनाई देगी...`);
+      setLoopbackNotice('🔊 असली माइक टेस्ट: माइक में बोलें, आपकी स्वाभाविक आवाज़ सीधे सुनाई देगी...');
       const ctx = audioCtxRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
       if (ctx.state === 'suspended') {
         await ctx.resume();
@@ -814,69 +860,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       const source = ctx.createMediaStreamSource(micStreamRef.current);
       const mainGain = ctx.createGain();
       mainGain.gain.value = 0.85;
-
-      // Apply real audio DSP chain according to selected simulated voice effect
-      let endNode: AudioNode = source;
-
-      if (selectedVoiceEffect === 'robot') {
-        const bandpass = ctx.createBiquadFilter();
-        bandpass.type = 'bandpass';
-        bandpass.frequency.value = 850;
-        bandpass.Q.value = 3.5;
-        source.connect(bandpass);
-        endNode = bandpass;
-      } else if (selectedVoiceEffect === 'deep') {
-        const lowpass = ctx.createBiquadFilter();
-        lowpass.type = 'lowpass';
-        lowpass.frequency.value = 460;
-        lowpass.Q.value = 2.0;
-
-        const bassBoost = ctx.createBiquadFilter();
-        bassBoost.type = 'lowshelf';
-        bassBoost.frequency.value = 160;
-        bassBoost.gain.value = 11;
-
-        source.connect(lowpass);
-        lowpass.connect(bassBoost);
-        endNode = bassBoost;
-      } else if (selectedVoiceEffect === 'chipmunk') {
-        const highpass = ctx.createBiquadFilter();
-        highpass.type = 'highpass';
-        highpass.frequency.value = 1200;
-        highpass.Q.value = 1.8;
-
-        const trebleBoost = ctx.createBiquadFilter();
-        trebleBoost.type = 'highshelf';
-        trebleBoost.frequency.value = 3200;
-        trebleBoost.gain.value = 9;
-
-        source.connect(highpass);
-        highpass.connect(trebleBoost);
-        endNode = trebleBoost;
-      } else if (selectedVoiceEffect === 'radio') {
-        const bandpass = ctx.createBiquadFilter();
-        bandpass.type = 'bandpass';
-        bandpass.frequency.value = 1750;
-        bandpass.Q.value = 3.8;
-        source.connect(bandpass);
-        endNode = bandpass;
-      } else if (selectedVoiceEffect === 'echo') {
-        const delay = ctx.createDelay();
-        delay.delayTime.value = 0.22;
-
-        const feedback = ctx.createGain();
-        feedback.gain.value = 0.45;
-
-        const echoMix = ctx.createGain();
-        source.connect(echoMix);
-        source.connect(delay);
-        delay.connect(feedback);
-        feedback.connect(delay);
-        delay.connect(echoMix);
-        endNode = echoMix;
-      }
-
-      endNode.connect(mainGain);
+      source.connect(mainGain);
       mainGain.connect(ctx.destination);
 
       setTimeout(() => {
@@ -884,9 +868,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           mainGain.disconnect();
         } catch {}
         setIsLoopbackTesting(false);
-        setLoopbackNotice(`✅ टेस्ट पूरा: आपका माइक व ${activeEffect?.name} इफ़ेक्ट 100% सही काम कर रहा है!`);
+        setLoopbackNotice('✅ असली माइक टेस्ट 100% सफल: आपकी रियल आवाज़ साफ़ आ रही है!');
         setTimeout(() => setLoopbackNotice(null), 3500);
-      }, 5000);
+      }, 4500);
     } catch (e) {
       console.warn('Loopback test error', e);
       setIsLoopbackTesting(false);
@@ -943,13 +927,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       reader.onloadend = async () => {
         const base64Audio = reader.result as string;
         try {
-          const activeEffect = VOICE_EFFECTS.find(v => v.id === selectedVoiceEffect);
           const res = await api.sendVoiceAudioClip(
             user.userId,
             base64Audio,
             duration,
-            currentRoomId,
-            activeEffect ? { id: activeEffect.id, name: activeEffect.name, icon: activeEffect.icon } : undefined
+            currentRoomId
           );
           if (res && res.chatMessages) {
             setRoomChatMessages(res.chatMessages);
@@ -1017,13 +999,18 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         hostCharms: user.charms || 0,
         wallpaperId: newRoomWallpaperId,
         stageLayout: newRoomStageLayout,
+        roomTier: newRoomTier,
       });
 
       if (res && res.success && res.roomId) {
+        if (res.user) {
+          onUpdateUser(res.user);
+        }
         setShowCreateRoomModal(false);
         setNewRoomTitle('');
         setNewRoomTopic('');
         setNewRoomPasscode('');
+        setNewRoomTier('normal');
         setRoomActionFeedback(null);
         setCurrentRoomId(res.roomId);
         await loadVoiceRoomData(res.roomId);
@@ -1047,6 +1034,236 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       });
     } finally {
       setIsCreatingRoom(false);
+    }
+  };
+
+  // Upgrade Voice Room Tier (Normal -> Silver / Gold / Diamond Advance Room)
+  const handleUpgradeRoomTier = async (tierId: VoiceRoomTierId) => {
+    try {
+      const res = await api.upgradeVoiceRoomTier(currentRoomId, user.userId, tierId);
+      if (!res?.success) {
+        showToast(res?.message || 'रूम अपग्रेड नहीं हो सका', 'error');
+        if (res?.message?.toLowerCase().includes('coin')) {
+          setActiveTab('recharge_convert');
+        }
+        return;
+      }
+      if (res.user) onUpdateUser(res.user);
+      if (res.room) setActiveRoomDetail(res.room);
+      await loadVoiceRoomData(currentRoomId);
+      playSynthesizedChime('win');
+      confetti({ particleCount: 110, spread: 80 });
+      showToast(res.message || '👑 Advance Room Tier अनलॉक हो गया!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'रूम अपग्रेड त्रुटि', 'error');
+    }
+  };
+
+  // Live PK Battle Controls inside Voice Room
+  const handleStartPk = async () => {
+    try {
+      const res = await api.startVoiceRoomPk(currentRoomId, user.userId);
+      if (!res?.success) {
+        showToast(res?.message || 'PK शुरू नहीं हो सका', 'error');
+        return;
+      }
+      if (res.room) setActiveRoomDetail(res.room);
+      await loadVoiceRoomData(currentRoomId);
+      playSynthesizedChime('win');
+      showToast(res.message || '⚔️ Live PK Battle शुरू हो गया!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'PK शुरू करने में त्रुटि', 'error');
+    }
+  };
+
+  const handleVotePk = async (side: 'red' | 'blue', coins = 10) => {
+    if ((user.coins || 0) < coins) {
+      showToast(`PK वोट के लिए ${coins} Coins चाहिए — कृपया कॉइन्स खरीदें!`, 'error');
+      setActiveTab('recharge_convert');
+      return;
+    }
+    try {
+      const res = await api.voteVoiceRoomPk(currentRoomId, user.userId, side, coins);
+      if (!res?.success) {
+        showToast(res?.message || 'PK वोट नहीं जुड़ सका', 'error');
+        return;
+      }
+      if (res.user) onUpdateUser(res.user);
+      if (res.room) setActiveRoomDetail(res.room);
+      playSynthesizedChime('gift');
+      showToast(res.message || '⚡ PK Boost जुड़ा!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'PK वोट त्रुटि', 'error');
+    }
+  };
+
+  const handleEndPk = async () => {
+    try {
+      const res = await api.endVoiceRoomPk(currentRoomId, user.userId);
+      if (!res?.success) {
+        showToast(res?.message || 'PK समाप्त नहीं हो सका', 'error');
+        return;
+      }
+      if (res.room) setActiveRoomDetail(res.room);
+      await loadVoiceRoomData(currentRoomId);
+      confetti({ particleCount: 90, spread: 70 });
+      showToast(res.message || '🏁 PK Battle समाप्त!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'PK समाप्त करने में त्रुटि', 'error');
+    }
+  };
+
+  // Room Atmosphere Effects + Red & Blue Packet Rain + Rapid Gift Combo Handler
+  const handleSetRoomEffect = async (effect: RoomAtmosphereEffect) => {
+    try {
+      const res = await api.setVoiceRoomEffect(currentRoomId, user.userId, effect);
+      if (res?.roomPayload) applyVoiceRoomPayload(res.roomPayload);
+      sound8D.play8DChime(660, 'win');
+      showToast(`✨ रूम इफ़ेक्ट सेट हुआ: ${effect.toUpperCase()}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'रूम इफ़ेक्ट अपडेट नहीं हो सका', 'error');
+    }
+  };
+
+  const handleDropPacket = async (
+    packetType: 'red' | 'blue',
+    totalCoins: number,
+    maxClaims: number,
+    message: string
+  ) => {
+    try {
+      const res = await api.dropVoiceRoomPacket(currentRoomId, {
+        userId: user.userId,
+        packetType,
+        totalCoins,
+        maxClaims,
+        message,
+      });
+      if (!res?.success) {
+        showToast(res?.message || 'पैकेट बारिश शुरू नहीं हो सकी', 'error');
+        if (res?.message?.toLowerCase().includes('coin')) setActiveTab('recharge_convert');
+        return;
+      }
+      if (res.user) onUpdateUser(res.user);
+      if (res.roomPayload) applyVoiceRoomPayload(res.roomPayload);
+      sound8D.playGiftSound(packetType === 'blue' ? 'blue_packet' : 'red_packet', 2);
+      confetti({ particleCount: 110, spread: 90 });
+      showToast(res.message || '🧧 पैकेट बारिश शुरू हो गई!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'पैकेट बारिश में त्रुटि', 'error');
+    }
+  };
+
+  const handleClaimPacket = async (packet: RoomPacketDrop) => {
+    try {
+      const res = await api.claimVoiceRoomPacket(currentRoomId, user.userId, packet.id);
+      if (!res?.success) {
+        showToast(res?.message || 'पैकेट क्लेम नहीं हो सका', 'info');
+        return;
+      }
+      if (res.user) onUpdateUser(res.user);
+      if (res.roomPayload) applyVoiceRoomPayload(res.roomPayload);
+      sound8D.playGiftSound(packet.packetType === 'blue' ? 'blue_packet' : 'red_packet', 3);
+      confetti({ particleCount: 80, spread: 70 });
+      showToast(res.message || `🎉 +${res.coinsWon} Coins मिले!`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'पैकेट लूटने में त्रुटि', 'error');
+    }
+  };
+
+  const executeGiftSend = async (
+    gift: AppGiftItem,
+    count: number,
+    target: string,
+    explicitTargetUserId?: string,
+    settingsUsed: GiftComboSettings = comboSettings
+  ) => {
+    const cost = gift.coinCost * count;
+    if ((user.coins || 0) < cost) {
+      showToast(`पर्याप्त कॉइन्स नहीं हैं (${cost} Coins चाहिए)!`, 'error');
+      setRapidComboTarget(null);
+      setActiveTab('recharge_convert');
+      return;
+    }
+
+    const baseCharms = gift.charmValue * count;
+    const { newCombo, multiplier, bonusCharms, totalCharmsAwarded, windowMs } = registerGiftCombo(
+      baseCharms,
+      gift.hindiName,
+      settingsUsed.windowSeconds
+    );
+    try {
+      const res = await api.sendRoomGift(
+        user.userId,
+        target,
+        gift.id,
+        `${count}x ${gift.name}`,
+        cost,
+        totalCharmsAwarded,
+        gift.icon,
+        explicitTargetUserId,
+        count,
+        { context: 'voice_room', roomId: currentRoomId }
+      );
+      const updatedCoins = res?.coins ?? Math.max(0, (user.coins || 0) - cost);
+      onUpdateUser({
+        ...user,
+        coins: updatedCoins,
+        charms: (user.charms || 0) + Math.round(totalCharmsAwarded * 0.2),
+      });
+      if (res?.roomPayload) {
+        applyVoiceRoomPayload(res.roomPayload);
+      }
+      if (settingsUsed.soundEnabled) {
+        sound8D.playGiftSound(gift.id || gift.animationType, newCombo);
+      }
+      setActiveGiftAnimation({
+        id: `appgift-${Date.now()}`,
+        senderName: user.fullName,
+        senderAvatar: user.avatar,
+        recipientName: target,
+        giftIcon: gift.icon,
+        giftName: gift.name,
+        quantity: count,
+        coinCost: cost,
+        comboCount: newCombo,
+        contextLabel: `Voice Room #${activeRoomAddress}`,
+      });
+
+      const comboText = newCombo >= 2 ? `🔥 [COMBO x${newCombo}! ${multiplier}x] (+${bonusCharms} Bonus!)` : '';
+      setGiftAnnouncement(`🎁 ${user.fullName} ने ${target} को ${count}x ${gift.hindiName} भेजा! (+${totalCharmsAwarded}✨) ${comboText}`);
+
+      if (settingsUsed.showRapidButton) {
+        setRapidComboTarget({
+          gift,
+          count,
+          targetName: target,
+          targetUserId: explicitTargetUserId,
+          comboStreak: newCombo,
+          expiresAt: Date.now() + windowMs,
+          windowMs,
+          remainingMs: windowMs,
+        });
+      }
+      setTimeout(() => setGiftAnnouncement(null), 4500);
+    } catch (err: any) {
+      showToast(err?.message || 'गिफ्ट भेजने में समस्या आई।', 'error');
+      setRapidComboTarget(null);
+      setActiveTab('recharge_convert');
+    }
+  };
+
+  const handleLaunchGameByKey = (gameKey: string) => {
+    if (gameKey === 'spy') {
+      setShowSpyGameModal(true);
+    } else if (gameKey === 'werewolf') {
+      setShowWerewolfModal(true);
+    } else if (gameKey === 'spin') {
+      setShowFortuneSpinModal(true);
+    } else if (gameKey === 'bingo' || gameKey === 'cards' || gameKey === 'snake') {
+      setActiveBoardGameModal(gameKey);
+    } else {
+      setActiveInteractiveGame(gameKey as GameKey);
     }
   };
 
@@ -1240,7 +1457,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     }).catch(() => {});
   };
 
-  // Open WePlay-style User Profile Sheet Modal (Real Profile, Cover, Moments, Gift Wall, @Username, Add Friend)
+  // Open ESP PLAY-style User Profile Sheet Modal (Real Profile, Cover, Moments, Gift Wall, @Username, Add Friend)
   const openUserProfileSheet = (
     targetId?: string,
     fallback?: Partial<RichProfileData> | null,
@@ -1370,29 +1587,32 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         selectedGift.coinCost,
         totalCharmsAwarded,
         selectedGift.icon,
-        giftTargetUserId
+        giftTargetUserId,
+        1,
+        { context: 'voice_room', roomId: currentRoomId }
       );
 
       playSynthesizedChime(newCombo >= 2 ? 'win' : 'gift');
 
+      if (res?.roomPayload) {
+        applyVoiceRoomPayload(res.roomPayload);
+      }
+
       // Trigger full visual animation
       setActiveGiftAnimation({
-        gift: {
-          ...selectedGift,
-          charmValue: totalCharmsAwarded,
-        },
-        sender: user.fullName,
-        target: finalTarget,
+        id: `gift-${Date.now()}`,
+        senderName: user.fullName,
+        senderAvatar: user.avatar,
+        recipientName: finalTarget,
+        giftIcon: selectedGift.icon,
+        giftName: selectedGift.name,
+        quantity: 1,
+        coinCost: selectedGift.coinCost,
+        contextLabel: `Voice Room #${activeRoomAddress}`,
       });
 
       const comboText = newCombo >= 2 ? `🔥 [COMBO x${newCombo}! ${multiplier}x] (+${bonusCharms} BONUS CHARMS!)` : '';
       setGiftAnnouncement(`🎁 [LIVE GIFTING] ${user.fullName} ने ${finalTarget} को ${selectedGift.name} (${selectedGift.icon}) भेंट किया! (+${totalCharmsAwarded} Charms ✨) ${comboText}`);
-
-      confetti({
-        particleCount: newCombo >= 2 ? 220 : 150,
-        spread: newCombo >= 2 ? 100 : 90,
-        origin: { y: 0.6 }
-      });
 
       // Update user coins and charms with combo bonus
       onUpdateUser({
@@ -1401,26 +1621,27 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         charms: (user.charms || 0) + totalCharmsAwarded,
       });
 
-      // Add to room chat with combo tags
-      setRoomChatMessages(prev => [
-        ...prev,
-        {
-          id: `gift-${Date.now()}`,
-          senderId: user.userId,
-          sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'LUXURY GIFT',
-          isGift: true,
-          text: `🎁 [LIVE GIFT] ${user.fullName} gifted ${selectedGift.name} ${selectedGift.icon} to ${finalTarget}! (+${totalCharmsAwarded} Charms ✨ ${comboText})`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
+      // Add to room chat if server didn't already append
+      if (!res?.roomPayload) {
+        setRoomChatMessages(prev => [
+          ...prev,
+          {
+            id: `gift-${Date.now()}`,
+            senderId: user.userId,
+            sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'LUXURY GIFT',
+            isGift: true,
+            text: `🎁 [LIVE GIFT] ${user.fullName} gifted ${selectedGift.name} ${selectedGift.icon} to ${finalTarget}! (+${totalCharmsAwarded} Charms ✨ ${comboText})`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+      }
 
       setShowGiftModal(false);
       setSelectedSeatAction(null);
 
       setTimeout(() => {
-        setActiveGiftAnimation(null);
         setGiftAnnouncement(null);
-      }, 5500);
+      }, 5000);
     } catch (err: any) {
       setSoundEffectToast(err?.message || 'गिफ्ट भेजने में समस्या आई।');
       setTimeout(() => setSoundEffectToast(null), 3000);
@@ -1674,97 +1895,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     (roomBgTheme?.id !== 'default_dark' && roomBgTheme?.id !== 'default');
 
   return (
-    <div className={`w-full flex flex-col items-center pb-24 relative overflow-x-hidden ${activeTab === 'games' ? 'bg-[#fcfdff] text-[#212121]' : 'bg-[#f1f3f6] text-[#212121]'}`}>
+    <div className={`w-full flex flex-col items-center relative overflow-x-hidden ${activeTab === 'games' ? 'bg-[#f8fbff] text-[#212121] pb-4' : 'bg-[#f1f3f6] text-[#212121] pb-24'}`}>
       
       {/* ============================================================== */}
       {/* 1. FULL-SCREEN SPECTACULAR LIVE GIFTING VISUAL EFFECTS         */}
       {/* ============================================================== */}
-      {activeGiftAnimation && (
-        <div className="fixed inset-0 z-50 pointer-events-none flex flex-col items-center justify-center bg-black/75 backdrop-blur-md animate-fadeIn overflow-hidden">
-          
-          {/* Custom Visual Effect based on Gift Animation Type */}
-          {activeGiftAnimation.gift.animationType === 'rose' && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-8xl animate-bounce filter drop-shadow-[0_0_30px_rgba(244,63,94,0.9)]">
-                🌹
-              </div>
-              <div className="absolute top-1/4 text-6xl animate-ping">💖</div>
-              <div className="absolute bottom-1/4 text-5xl animate-pulse">🌸</div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'chocolate' && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-8xl animate-pulse filter drop-shadow-[0_0_30px_rgba(217,119,6,0.9)]">
-                🍫
-              </div>
-              <div className="absolute text-5xl top-1/3 animate-bounce">🍬</div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'ring' && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-72 h-72 rounded-full border-4 border-cyan-400 animate-spin opacity-60" />
-              <div className="text-8xl animate-bounce filter drop-shadow-[0_0_40px_rgba(6,182,212,1)]">
-                💍
-              </div>
-              <div className="absolute text-4xl animate-ping">✨</div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'car' && (
-            <div className="w-full flex items-center justify-center overflow-hidden">
-              <div className="text-9xl transform -translate-x-10 animate-bounce filter drop-shadow-[0_0_40px_rgba(239,68,68,1)]">
-                🏎️ 💨
-              </div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'rocket' && (
-            <div className="flex flex-col items-center animate-bounce">
-              <div className="text-9xl filter drop-shadow-[0_0_50px_rgba(99,102,241,1)]">
-                🚀
-              </div>
-              <div className="text-4xl animate-pulse mt-1">🔥 💨</div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'crown' && (
-            <div className="flex flex-col items-center">
-              <div className="text-9xl animate-bounce filter drop-shadow-[0_0_50px_rgba(245,158,11,1)]">
-                👑
-              </div>
-              <div className="text-4xl animate-ping mt-2">⭐ ⭐ ⭐</div>
-            </div>
-          )}
-
-          {activeGiftAnimation.gift.animationType === 'castle' && (
-            <div className="flex flex-col items-center">
-              <div className="text-9xl animate-pulse filter drop-shadow-[0_0_60px_rgba(168,85,247,1)]">
-                🏰
-              </div>
-              <div className="text-4xl animate-bounce mt-2">🎆 🎆 🎆</div>
-            </div>
-          )}
-
-          {/* Banner Details */}
-          <div className="mt-8 text-center bg-black/80 px-8 py-4 rounded-3xl border-2 border-amber-400/80 shadow-2xl">
-            <div className="text-xs font-black uppercase tracking-widest text-amber-300">
-              👑 LIVE LUXURY GIFT CELEBRATION 👑
-            </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-white mt-1">
-              {activeGiftAnimation.gift.name} {activeGiftAnimation.gift.icon}
-            </h2>
-            <p className="text-sm font-bold text-cyan-300 mt-1">
-              From <span className="text-white font-black">{activeGiftAnimation.sender}</span> to{' '}
-              <span className="text-amber-300 font-black">{activeGiftAnimation.target}</span>
-            </p>
-            <div className="mt-2 text-xs font-mono font-bold text-pink-300 bg-pink-950/60 px-3 py-1 rounded-full border border-pink-500/40 inline-block">
-              ✨ +{activeGiftAnimation.gift.charmValue} Charms Added!
-            </div>
-          </div>
-        </div>
-      )}
+      <GiftAnimationOverlay
+        animation={activeGiftAnimation}
+        onComplete={() => setActiveGiftAnimation(null)}
+      />
 
       {/* Floating Dynamic Gift Combo Badge & Multiplier Overlay */}
       {giftComboBanner && (
@@ -1787,19 +1926,50 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         </div>
       )}
 
-      {/* Persistent Combo Indicator while streak is active */}
-      {giftComboCount >= 2 && !giftComboBanner && (
-        <div className="fixed bottom-24 right-4 z-40 bg-gradient-to-r from-rose-600 to-amber-600 border border-yellow-400/80 px-3.5 py-1.5 rounded-full shadow-lg flex items-center space-x-2 animate-pulse pointer-events-none">
-          <span className="text-sm">🔥</span>
-          <span className="text-xs font-black text-white tracking-wide">
-            COMBO x{giftComboCount} ({giftComboMultiplier}x CHARMS ACTIVE)
-          </span>
+      {/* Post-Send Interactive Rapid-Tap Combo Button (appears after sending a gift when enabled) */}
+      {rapidComboTarget && (
+        <div className="fixed bottom-24 right-4 z-[65] flex flex-col items-end gap-1.5">
+          <button
+            type="button"
+            disabled={rapidComboBusy}
+            onClick={async () => {
+              if (rapidComboBusy) return;
+              setRapidComboBusy(true);
+              try {
+                await executeGiftSend(
+                  rapidComboTarget.gift,
+                  rapidComboTarget.count,
+                  rapidComboTarget.targetName,
+                  rapidComboTarget.targetUserId,
+                  comboSettings
+                );
+              } finally {
+                setRapidComboBusy(false);
+              }
+            }}
+            className="group relative w-24 h-24 rounded-full bg-gradient-to-br from-rose-600 via-amber-500 to-orange-600 border-4 border-yellow-300 shadow-[0_0_35px_rgba(245,158,11,0.85)] text-white flex flex-col items-center justify-center cursor-pointer hover:scale-105 active:scale-95 transition"
+          >
+            <span className="text-2xl leading-none drop-shadow">{rapidComboTarget.gift.icon}</span>
+            <span className="text-xs font-black tracking-tight mt-0.5">
+              COMBO x{rapidComboTarget.comboStreak + 1}
+            </span>
+            <span className="text-[9px] font-mono font-bold text-yellow-100">
+              🪙 {rapidComboTarget.gift.coinCost * rapidComboTarget.count}c · {Math.ceil(rapidComboTarget.remainingMs / 1000)}s
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRapidComboTarget(null)}
+            className="px-2 py-0.5 rounded-full bg-slate-900/80 text-white text-[10px] font-bold cursor-pointer border border-white/20"
+          >
+            Close Combo ✕
+          </button>
         </div>
       )}
 
 
 
-      {/* Top Gaming Profile Ribbon - Only shown when NOT in WePlay Home Games view */}
+      {/* Top Gaming Profile Ribbon - Only shown when NOT in ESP PLAY Home Games view */}
       {activeTab !== 'games' && (
         <div className="w-full bg-white border-b border-slate-200 px-4 py-3 relative z-10 shadow-xs text-[#212121]">
           <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -1808,7 +1978,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               <div
                 className="relative cursor-pointer group"
                 onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
-                title="Click to View & Edit WePlay Profile, Cover Photo & Unique @Username"
+                title="Click to View & Edit ESP PLAY Profile, Cover Photo & Unique @Username"
               >
                 <AvatarFrame
                   src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.userId}`}
@@ -1954,7 +2124,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         </div>
       )}
 
-      {/* Main Navigation Subtabs - Only shown when NOT in WePlay Home Games view */}
+      {/* Main Navigation Subtabs - Only shown when NOT in ESP PLAY Home Games view */}
       {activeTab !== 'games' && (
         <div className="w-full max-w-6xl px-4 mt-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -2009,8 +2179,8 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             >
               <Users className={`w-4 h-4 ${activeTab === 'clan_friends' ? 'text-[#ffe500]' : 'text-purple-600'}`} />
               <div className="text-left">
-                <div>Family & Friends</div>
-                <div className="text-[9px] font-normal opacity-80">क्लैन व दोस्त</div>
+                <div>Family &amp; Friends</div>
+                <div className="text-[9px] font-normal opacity-80">फैमिली, बॉन्ड व दोस्त</div>
               </div>
             </button>
 
@@ -2035,11 +2205,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       {/* Main Content Area */}
       <div className="w-full max-w-6xl px-4 mt-4">
         {/* ============================================================== */}
-        {/* TAB 1: WEPLAY-STYLE PERSONAL FIXED VOICE ROOM STAGE            */}
+        {/* TAB 1: ESP PLAY PERSONAL FIXED VOICE ROOM STAGE                */}
         {/* ============================================================== */}
         {activeTab === 'voice_room' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fadeIn">
-            {/* Left 2 Cols: WePlay-Style Personal Fixed Voice Stage Canvas */}
+            {/* Left 2 Cols: ESP PLAY Personal Fixed Voice Stage Canvas */}
             <div className="lg:col-span-2 space-y-4">
               <div className="relative">
                 <VoiceRoomStageCanvas
@@ -2069,7 +2239,6 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   recordDuration={recordDuration}
                   autoPlayAudio={autoPlayAudio}
                   currentlyPlayingAudioId={currentlyPlayingAudioId}
-                  selectedVoiceEffect={selectedVoiceEffect}
                   quickPhrases={PRESET_TALK_PHRASES}
                   onOpenRoomsDirectory={() => {
                     loadAvailableRooms(roomsSearchQuery);
@@ -2092,8 +2261,8 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                         }
                         return;
                       }
-                      setPendingJoinSeatIndex(idx);
-                      setShowVoiceEffectModal(true);
+                      // Directly grab seat & request genuine live mic permission (No fake voice changers)
+                      handleTakeSeat(idx);
                     } else {
                       handleOpenPlayerModal(seat.userId, {
                         userId: seat.userId,
@@ -2126,13 +2295,25 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   onStopWalkieTalkie={stopWalkieTalkie}
                   onSendChatText={handleSendChatText}
                   onPlayAudioClip={playAudioClip}
-                  onOpenGiftModal={() => setShowGiftModal(true)}
-                  onOpenVoiceEffectModal={() => {
-                    setPendingJoinSeatIndex(null);
-                    setShowVoiceEffectModal(true);
+                  onOpenGiftModal={() => {
+                    setAppGiftPreset(null);
+                    setShowAppGiftModal(true);
                   }}
+                  onOpenPacketRainModal={() => {
+                    setAppGiftPreset({ category: 'packets' });
+                    setShowAppGiftModal(true);
+                  }}
+                  onClaimPacket={handleClaimPacket}
+                  onSetRoomEffect={handleSetRoomEffect}
                   onSetYouTubeVideo={handleSetYouTubeVideo}
                   onCopyFeedback={(msg) => showToast(msg, 'success')}
+                  onStartPk={handleStartPk}
+                  onVotePk={handleVotePk}
+                  onEndPk={handleEndPk}
+                  onUpgradeRoomTier={handleUpgradeRoomTier}
+                  onOpenRelationships={() => setShowRelationshipsModal(true)}
+                  onOpenFamily={() => setShowFamilyHubModal(true)}
+                  onQuickOpenMiniGame={() => setShowStageGameOverlay(true)}
                 />
 
                 {soundEffectToast && (
@@ -2449,11 +2630,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 2: COINS GAMES (REAL ONLINE GAMES + WEPLAY HOME LOBBY)     */}
+        {/* TAB 2: ESP PLAY HOME LOBBY (Clean Match to Reference Screen)   */}
         {/* ============================================================== */}
         {activeTab === 'games' && (
-          <div className="space-y-6 animate-fadeIn w-full max-w-5xl mx-auto">
-            {/* WEPLAY HOME LOBBY (100% MATCHING USER SCREENSHOT) */}
+          <div className="animate-fadeIn w-full max-w-3xl mx-auto">
             <WePlayHomeLobby
               user={user}
               onUpdateUser={onUpdateUser}
@@ -2461,7 +2641,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               onOpenTasks={() => setShowDailyTasksModal(true)}
               onOpenFriends={() => setShowEspChatModal(true)}
               onOpenVoiceRoom={() => setActiveTab('voice_room')}
-              onOpenGame={(gameKey) => setActiveInteractiveGame(gameKey)}
+              onOpenGame={(gameKey) => handleLaunchGameByKey(gameKey)}
               onOpenWeeklyRewards={() => setShowDailyTasksModal(true)}
               onOpenRecharge={() => setActiveTab('recharge_convert')}
               onOpenProfile={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
@@ -2476,351 +2656,15 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 setActiveTab('clan_friends');
                 setShowTopClansModal(true);
               }}
+              onOpenRelationships={() => setShowRelationshipsModal(true)}
+              onOpenFamily={() => setShowFamilyHubModal(true)}
+              onOpenMyHome={() => setEventsMyHomeState({ open: true, tab: 'my_home' })}
+              onOpenEvents={() => setEventsMyHomeState({ open: true, tab: 'events' })}
+              onOpenGiftWall={() => setShowOwnGiftWallModal(true)}
+              isAdmin={isAdmin}
+              onOpenAdmin={onOpenAdmin}
+              onLogout={onLogout}
             />
-
-            {/* Individual Game Arenas Sub-Tabs */}
-            <div className="flex flex-wrap items-center justify-center gap-2 p-2 bg-white rounded-md border border-slate-200 shadow-xs">
-              <button
-                onClick={() => setSelectedGame('snake')}
-                className={`px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer ${
-                  selectedGame === 'snake'
-                    ? 'bg-[#388e3c] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <span>🐍 स्नेक रश (Snake 2D)</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('bingo')}
-                className={`px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer ${
-                  selectedGame === 'bingo'
-                    ? 'bg-[#fb641b] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <span>🔢 बिंगो तंबोला (Bingo Live)</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('cards')}
-                className={`px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer ${
-                  selectedGame === 'cards'
-                    ? 'bg-[#2874f0] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <span>🃏 ओ माय कार्ड (Card Duel)</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('daily_spin')}
-                className={`px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer ${
-                  selectedGame === 'daily_spin'
-                    ? 'bg-[#ffe500] text-[#212121] font-black shadow-xs border border-amber-400'
-                    : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
-                }`}
-              >
-                <span>🎰 डेली लकी स्पिन (24h VIP)</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('spin')}
-                className={`px-3 py-2 rounded-sm font-bold text-xs flex items-center space-x-1 transition cursor-pointer ${
-                  selectedGame === 'spin'
-                    ? 'bg-[#2874f0] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                <span>लकी व्हील</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('dice')}
-                className={`px-3 py-2 rounded-sm font-bold text-xs flex items-center space-x-1 transition cursor-pointer ${
-                  selectedGame === 'dice'
-                    ? 'bg-[#2874f0] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <Dices className="w-3.5 h-3.5" />
-                <span>हाई-लो डाइस</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedGame('coin_flip')}
-                className={`px-3 py-2 rounded-sm font-bold text-xs flex items-center space-x-1 transition cursor-pointer ${
-                  selectedGame === 'coin_flip'
-                    ? 'bg-[#388e3c] text-white shadow-xs'
-                    : 'bg-[#f1f3f6] text-[#212121] hover:bg-blue-50'
-                }`}
-              >
-                <CircleDot className="w-3.5 h-3.5" />
-                <span>कॉइन टॉस</span>
-              </button>
-
-              <button
-                onClick={() => setShowWerewolfModal(true)}
-                className="px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition bg-[#2874f0] hover:bg-[#1c62d6] text-white shadow-xs cursor-pointer"
-              >
-                <span>🐺 भेड़िया (Werewolf ESP PLAY)</span>
-              </button>
-
-              <button
-                onClick={() => setShowSpyGameModal(true)}
-                className="px-3.5 py-2 rounded-sm font-bold text-xs flex items-center space-x-1.5 transition bg-[#fb641b] hover:bg-[#e8550f] text-white shadow-xs cursor-pointer"
-              >
-                <span>🕵️ जासूस कौन? (Who is Spy)</span>
-              </button>
-            </div>
-
-            {/* REAL GAME 1: SNAKE RUSH 2D CANVAS */}
-            {selectedGame === 'snake' && (
-              <SnakeRushGame
-                user={user}
-                onCoinsUpdated={(newCoins: number) => {
-                  const latest = api.getStoredUser();
-                  const merged =
-                    latest && latest.userId === user.userId
-                      ? { ...latest, coins: newCoins }
-                      : { ...user, coins: newCoins };
-                  onUpdateUser(merged);
-                }}
-                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
-              />
-            )}
-
-            {/* REAL GAME 2: BINGO TAMBOLA LIVE */}
-            {selectedGame === 'bingo' && (
-              <BingoGame
-                user={user}
-                onCoinsUpdated={(newCoins: number) => {
-                  const latest = api.getStoredUser();
-                  const merged =
-                    latest && latest.userId === user.userId
-                      ? { ...latest, coins: newCoins }
-                      : { ...user, coins: newCoins };
-                  onUpdateUser(merged);
-                }}
-                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
-              />
-            )}
-
-            {/* REAL GAME 3: OH MY CARD HI-LO DUEL */}
-            {selectedGame === 'cards' && (
-              <OhMyCardGame
-                user={user}
-                onCoinsUpdated={(newCoins: number) => {
-                  const latest = api.getStoredUser();
-                  const merged =
-                    latest && latest.userId === user.userId
-                      ? { ...latest, coins: newCoins }
-                      : { ...user, coins: newCoins };
-                  onUpdateUser(merged);
-                }}
-                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
-              />
-            )}
-
-            {/* REAL GAME 4: DAILY LUCKY SPIN 24H WHEEL */}
-            {selectedGame === 'daily_spin' && (
-              <DailyLuckySpin
-                user={user}
-                onUpdateUser={onUpdateUser}
-                onOpenBuyCoins={() => setActiveTab('recharge_convert')}
-              />
-            )}
-
-            {/* MINI GAMES: SPIN, DICE, COIN FLIP */}
-            {(selectedGame === 'spin' || selectedGame === 'dice' || selectedGame === 'coin_flip') && (
-              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex flex-col items-center text-[#212121]">
-                {/* Game Result Toast Banner */}
-                {gameResultToast && (
-                  <div className={`w-full max-w-md mb-4 p-3 rounded-md text-center font-bold text-sm border animate-fadeIn ${
-                    gameResultToast.isWin
-                      ? 'bg-emerald-50 text-[#388e3c] border-emerald-200'
-                      : 'bg-rose-50 text-rose-700 border-rose-200'
-                  }`}>
-                    {gameResultToast.message}
-                  </div>
-                )}
-
-                {/* GAME: SPIN & WIN */}
-                {selectedGame === 'spin' && (
-                  <div className="flex flex-col items-center">
-                    <div className="relative w-64 h-64 my-4">
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-2xl filter drop-shadow">
-                        🔻
-                      </div>
-
-                      <div
-                        style={{
-                          transform: `rotate(${spinRotation}deg)`,
-                          transition: isGameSpinning ? 'transform 1.2s cubic-bezier(0.2, 0.8, 0.3, 1)' : 'none',
-                        }}
-                        className="w-full h-full rounded-full border-4 border-[#ffe500] shadow-xl relative overflow-hidden bg-gradient-to-tr from-[#2874f0] via-indigo-700 to-purple-700 flex items-center justify-center"
-                      >
-                        <div className="absolute text-xs font-black text-[#ffe500] top-2">10x 👑</div>
-                        <div className="absolute text-xs font-black text-rose-300 right-3">0x ❌</div>
-                        <div className="absolute text-xs font-black text-emerald-300 bottom-2">5x 💎</div>
-                        <div className="absolute text-xs font-black text-cyan-200 left-3">2x ⚡</div>
-                        <div className="absolute text-[10px] font-bold text-yellow-200 top-10 right-8">1.5x</div>
-                        <div className="absolute text-[10px] font-bold text-rose-300 bottom-10 right-8">0x</div>
-                        <div className="absolute text-[10px] font-bold text-cyan-200 bottom-10 left-8">3x</div>
-                        <div className="absolute text-[10px] font-bold text-rose-300 top-10 left-8">0x</div>
-
-                        <div className="w-16 h-16 rounded-full bg-[#ffe500] shadow-lg flex items-center justify-center font-black text-xs text-[#212121] border-2 border-white">
-                          ESP
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* GAME: LUCKY DICE */}
-                {selectedGame === 'dice' && (
-                  <div className="flex flex-col items-center my-4">
-                    <div className="flex items-center space-x-4 sm:space-x-6 my-4">
-                      <div className={`w-20 h-20 rounded-xl bg-[#f9fafb] text-[#212121] font-black text-4xl shadow-md flex items-center justify-center border-2 border-[#2874f0] ${isGameSpinning ? 'animate-spin' : ''}`}>
-                        {diceValues[0]}
-                      </div>
-                      <span className="text-2xl font-black text-[#2874f0]">+</span>
-                      <div className={`w-20 h-20 rounded-xl bg-[#f9fafb] text-[#212121] font-black text-4xl shadow-md flex items-center justify-center border-2 border-[#2874f0] ${isGameSpinning ? 'animate-spin' : ''}`}>
-                        {diceValues[1]}
-                      </div>
-                      <span className="text-2xl font-black text-[#2874f0]">=</span>
-                      <div className="w-20 h-20 rounded-xl bg-[#ffe500] text-[#212121] font-black text-3xl shadow-md flex items-center justify-center border-2 border-amber-400">
-                        {diceValues[0] + diceValues[1]}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mt-2 w-full max-w-sm">
-                      <button
-                        onClick={() => setDiceChoice('low')}
-                        className={`p-2.5 rounded-sm text-xs font-bold border transition cursor-pointer ${
-                          diceChoice === 'low'
-                            ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0] shadow-xs'
-                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
-                        }`}
-                      >
-                        <div>Low (2 - 6)</div>
-                        <div className="text-[10px] text-[#388e3c]">Pays 2x</div>
-                      </button>
-
-                      <button
-                        onClick={() => setDiceChoice('seven')}
-                        className={`p-2.5 rounded-sm text-xs font-bold border transition cursor-pointer ${
-                          diceChoice === 'seven'
-                            ? 'bg-amber-50 border-[#fb641b] text-[#fb641b] shadow-xs'
-                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
-                        }`}
-                      >
-                        <div>Lucky 7 ⭐</div>
-                        <div className="text-[10px] text-[#fb641b]">Pays 5x</div>
-                      </button>
-
-                      <button
-                        onClick={() => setDiceChoice('high')}
-                        className={`p-2.5 rounded-sm text-xs font-bold border transition cursor-pointer ${
-                          diceChoice === 'high'
-                            ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0] shadow-xs'
-                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
-                        }`}
-                      >
-                        <div>High (8 - 12)</div>
-                        <div className="text-[10px] text-[#388e3c]">Pays 2x</div>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* GAME: COIN FLIP */}
-                {selectedGame === 'coin_flip' && (
-                  <div className="flex flex-col items-center my-4">
-                    <div className={`w-32 h-32 rounded-full bg-gradient-to-tr from-[#ffe500] via-amber-400 to-amber-500 border-4 border-amber-200 shadow-lg flex items-center justify-center font-black text-2xl text-[#212121] my-4 ${isGameSpinning ? 'animate-bounce' : ''}`}>
-                      {coinResultState === 'heads' ? 'HEADS 👑' : 'TAILS 🪙'}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mt-2 w-full max-w-xs">
-                      <button
-                        onClick={() => setCoinChoice('heads')}
-                        className={`p-3 rounded-sm font-bold text-xs border transition cursor-pointer ${
-                          coinChoice === 'heads'
-                            ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0]'
-                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
-                        }`}
-                      >
-                        HEADS (2x)
-                      </button>
-
-                      <button
-                        onClick={() => setCoinChoice('tails')}
-                        className={`p-3 rounded-sm font-bold text-xs border transition cursor-pointer ${
-                          coinChoice === 'tails'
-                            ? 'bg-[#f5f8ff] border-[#2874f0] text-[#2874f0]'
-                            : 'bg-[#f9fafb] border-slate-200 text-[#212121]'
-                        }`}
-                      >
-                        TAILS (2x)
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Bet Amount Selector */}
-                <div className="mt-4 w-full max-w-md bg-[#f9fafb] p-3.5 rounded-md border border-slate-200">
-                  <div className="text-xs font-semibold text-[#212121] mb-2 flex items-center justify-between">
-                    <span>Bet Amount (दांव के सिक्के):</span>
-                    <span className="text-[#fb641b] font-mono tabular-nums font-bold">🪙 {betAmount} Coins</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[10, 50, 100, 500].map(amt => (
-                      <button
-                        key={amt}
-                        onClick={() => setBetAmount(amt)}
-                        className={`py-1.5 rounded-sm font-bold text-xs transition cursor-pointer border ${
-                          betAmount === amt
-                            ? 'bg-[#2874f0] border-[#2874f0] text-white shadow-xs'
-                            : 'bg-white border-slate-300 text-[#212121] hover:bg-blue-50'
-                        }`}
-                      >
-                        🪙 {amt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Main Play Action Button */}
-                {(user.coins || 0) >= betAmount ? (
-                  <button
-                    onClick={() => handlePlayGame()}
-                    disabled={isGameSpinning}
-                    className="mt-5 bg-[#fb641b] hover:bg-[#e8550f] text-white py-3 px-8 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 disabled:opacity-50 cursor-pointer shadow-sm"
-                  >
-                    <Zap className="w-4 h-4" />
-                    <span>{isGameSpinning ? 'Playing...' : `PLAY FOR ${betAmount} COINS 🚀`}</span>
-                  </button>
-                ) : (
-                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      onClick={() => setActiveTab('recharge_convert')}
-                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white py-3 px-6 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 cursor-pointer shadow-sm"
-                    >
-                      <Coins className="w-4 h-4" />
-                      <span>🪙 Buy Coins ({betAmount} Coins चाहिए)</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('rewards_tasks')}
-                      className="bg-[#2874f0] hover:bg-[#1c62d6] text-white py-3 px-5 rounded-sm font-bold text-sm tracking-wide flex items-center space-x-2 cursor-pointer shadow-sm"
-                    >
-                      <Trophy className="w-4 h-4" />
-                      <span>टास्क पूरे करें (+5 🪙)</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -3269,13 +3113,24 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-4 bg-[#f5f8ff] p-3 rounded-md border border-blue-200 text-xs text-[#212121]">
-                  <div className="font-bold text-[#2874f0] mb-1">रियल क्लैन और गेमिंग नियम:</div>
-                  <ul className="space-y-1 text-[11px] list-disc list-inside text-[#878787]">
-                    <li>सभी क्लैन स्कोर पंजीकृत सदस्यों के असली गेम लेवल और चार्म्स से जुड़ते हैं।</li>
-                    <li>नए सदस्य 0 कॉइन्स से शुरू करते हैं और असली टास्क पूरा करके +5 कॉइन्स + EXP कमाते हैं।</li>
-                    <li>VIP व प्रीमियम अवतार फ्रेम खरीदने के लिए कॉइन्स बैलेंस आवश्यक है।</li>
-                  </ul>
+                <div className="mt-4 bg-[#f5f8ff] p-3 rounded-md border border-blue-200 text-xs text-[#212121] space-y-2.5">
+                  <div className="font-bold text-[#2874f0]">ESP PLAY Family Coins, Live Chat &amp; Relationship Suite:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowFamilyHubModal(true)}
+                      className="px-3 py-2 rounded-md bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer hover:opacity-95"
+                    >
+                      <span>🏰 ESP Family Hub (Chat &amp; Coins)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowRelationshipsModal(true)}
+                      className="px-3 py-2 rounded-md bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer hover:opacity-95"
+                    >
+                      <span>💍 Relationship &amp; CP Tags</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -3731,7 +3586,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         </div>
       )}
 
-      {/* WePlay-Style Rich Profile Sheet Modal (Profile Setup, Unique @Username, Cover, Moments, Gift Wall, Add Friend) */}
+      {/* ESP PLAY Rich Profile Sheet Modal (Profile Setup, Unique @Username, Cover, Moments, Gift Wall, Add Friend) */}
       <UserProfileSheetModal
         isOpen={profileSheetState.isOpen}
         onClose={() => setProfileSheetState(prev => ({ ...prev, isOpen: false }))}
@@ -3762,6 +3617,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         onVisitVoiceRoom={(roomAddressOrUserId) => {
           setProfileSheetState(prev => ({ ...prev, isOpen: false }));
           openRoomByLookup(roomAddressOrUserId, true);
+        }}
+        onOpenRelationships={() => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          setShowRelationshipsModal(true);
+        }}
+        onOpenFamily={() => {
+          setProfileSheetState(prev => ({ ...prev, isOpen: false }));
+          setShowFamilyHubModal(true);
         }}
       />
 
@@ -3918,6 +3781,51 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Normal (Free) vs Advance Premium Voice Room Tier Selector */}
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1.5">
+                    रूम प्लान चुनें (Normal Free बनाम Advance Premium Coins Room)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {VOICE_ROOM_TIERS.map((tier) => {
+                      const selected = newRoomTier === tier.id;
+                      const affordable = tier.coinPrice === 0 || (user.coins || 0) >= tier.coinPrice;
+                      return (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          onClick={() => setNewRoomTier(tier.id)}
+                          className={`p-2.5 rounded-md border text-left transition cursor-pointer ${
+                            selected
+                              ? 'bg-[#f5f8ff] border-[#2874f0] ring-1 ring-blue-300'
+                              : 'bg-[#f9fafb] border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-black text-[#212121]">
+                              {tier.badgeIcon} {tier.name}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-black tabular-nums ${
+                                tier.coinPrice === 0
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : affordable
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : 'bg-rose-100 text-rose-700'
+                              }`}
+                            >
+                              {tier.coinPrice === 0 ? 'FREE (0🪙)' : `🪙 ${tier.coinPrice}`}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">
+                            {tier.hindiName} · PK {tier.pkBoostMultiplier}x
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -4392,7 +4300,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         </div>
       )}
 
-      {/* 5. WePlay Werewolf Game Modal */}
+      {/* 5. ESP PLAY Werewolf Game Modal */}
       {showWerewolfModal && (
         <WerewolfGameModal
           user={user}
@@ -4407,35 +4315,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         />
       )}
 
-      {/* 6. Simulated Voice Effect Selector Modal (Pre-join & Room Setting) */}
-      {showVoiceEffectModal && (
-        <VoiceEffectSelector
-          currentEffect={selectedVoiceEffect}
-          onSelectEffect={(effect) => {
-            setSelectedVoiceEffect(effect);
-            try {
-              localStorage.setItem('esp_voice_effect', effect);
-            } catch {}
-            const cfg = VOICE_EFFECTS.find(v => v.id === effect);
-            setSoundEffectToast(`🎭 आवाज़ इफ़ेक्ट सेट: ${cfg?.icon} ${cfg?.name} (${cfg?.hindiName})`);
-            setTimeout(() => setSoundEffectToast(null), 3000);
-          }}
-          isModal={true}
-          seatIndexToJoin={pendingJoinSeatIndex}
-          onClose={() => {
-            setShowVoiceEffectModal(false);
-            setPendingJoinSeatIndex(null);
-          }}
-          onConfirmJoinSeat={async () => {
-            const targetSeat = pendingJoinSeatIndex;
-            setShowVoiceEffectModal(false);
-            setPendingJoinSeatIndex(null);
-            if (targetSeat !== null) {
-              await handleTakeSeat(targetSeat);
-            }
-          }}
-        />
-      )}
+      {/* Real live voice only — fake voice effect modal removed */}
 
       {/* 7. Daily Lucky Spin Modal */}
       {showDailySpinModal && (
@@ -4451,7 +4331,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         />
       )}
 
-      {/* 8. Who is the Spy (जासूस कौन है?) WePlay Game Modal */}
+      {/* 8. Who is the Spy (जासूस कौन है?) ESP PLAY Game Modal */}
       {showSpyGameModal && (
         <WhoIsTheSpyGameModal
           user={user}
@@ -4525,7 +4405,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         />
       )}
 
-      {/* 12. WePlay App Gift Sheet (Server-verified real coins & Gift Wall recording) */}
+      {/* 12. ESP PLAY Luxury Gift Sheet (Sound FX, Combo Setup, Packet Rain & Real Coins) */}
       {showAppGiftModal && (
         <WePlayAppGiftModal
           user={user}
@@ -4533,6 +4413,10 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           initialGiftId={appGiftPreset?.giftId}
           initialTargetName={appGiftPreset?.targetName}
           initialTargetUserId={appGiftPreset?.targetUserId}
+          initialCategory={appGiftPreset?.category}
+          comboSettings={comboSettings}
+          onUpdateComboSettings={(next) => setComboSettings(next)}
+          onDropPacket={handleDropPacket}
           onClose={() => {
             setShowAppGiftModal(false);
             setAppGiftPreset(null);
@@ -4542,78 +4426,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             setAppGiftPreset(null);
             setActiveTab('recharge_convert');
           }}
-          onSendGift={async (gift, count, target, _coinsBackWon, explicitTargetUserId) => {
-            const cost = gift.coinCost * count;
-            const baseCharms = gift.charmValue * count;
-            const { newCombo, multiplier, bonusCharms, totalCharmsAwarded } = registerGiftCombo(
-              baseCharms,
-              gift.hindiName
-            );
+          onSendGift={async (gift, count, target, _coinsBackWon, explicitTargetUserId, settingsUsed) => {
             const resolvedTargetUserId = explicitTargetUserId || appGiftPreset?.targetUserId;
-            try {
-              const res = await api.sendRoomGift(
-                user.userId,
-                target,
-                gift.id,
-                `${count}x ${gift.name}`,
-                cost,
-                totalCharmsAwarded,
-                gift.icon,
-                resolvedTargetUserId,
-                count
-              );
-              const updatedCoins = res?.coins ?? Math.max(0, (user.coins || 0) - cost);
-              onUpdateUser({
-                ...user,
-                coins: updatedCoins,
-                charms: (user.charms || 0) + Math.round(totalCharmsAwarded * 0.2),
-              });
-              setShowAppGiftModal(false);
-              setAppGiftPreset(null);
-              setActiveGiftAnimation({
-                gift: {
-                  id: gift.id,
-                  name: gift.name,
-                  hindiName: gift.hindiName,
-                  icon: gift.icon,
-                  coinCost: gift.coinCost,
-                  charmValue: totalCharmsAwarded,
-                  animationType: gift.animationType as any,
-                  gradient: gift.gradient,
-                },
-                sender: user.fullName,
-                target,
-              });
-              const comboText = newCombo >= 2 ? `🔥 [COMBO x${newCombo}! ${multiplier}x Multiplier] (+${bonusCharms} Extra Charms!)` : '';
-              setGiftAnnouncement(`🎁 ${user.fullName} ने ${target} को ${count}x ${gift.hindiName} भेजा! (+${totalCharmsAwarded}✨ Charms) ${comboText}`);
-              playSynthesizedChime(newCombo >= 2 ? 'win' : 'gift');
-              confetti({
-                particleCount: newCombo >= 2 ? 220 : 140,
-                spread: 100,
-                origin: { y: 0.6 }
-              });
-              setRoomChatMessages(prev => [
-                ...prev,
-                {
-                  id: `gift-${Date.now()}`,
-                  senderId: user.userId,
-                  sender: newCombo >= 2 ? `🔥 COMBO x${newCombo}` : 'APP GIFT',
-                  isGift: true,
-                  text: `🎁 ${user.fullName} sent ${count}x ${gift.name} ${gift.icon} to ${target}! (+${totalCharmsAwarded} Charms ${comboText})`,
-                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                }
-              ]);
-              setTimeout(() => {
-                setActiveGiftAnimation(null);
-                setGiftAnnouncement(null);
-              }, 4500);
-            } catch (err: any) {
-              setSoundEffectToast(err?.message || 'गिफ्ट भेजने के लिए पर्याप्त कॉइन्स नहीं हैं।');
-              setTimeout(() => setSoundEffectToast(null), 3500);
-              setShowAppGiftModal(false);
-              setAppGiftPreset(null);
-              setActiveTab('recharge_convert');
-            }
+            setShowAppGiftModal(false);
+            setAppGiftPreset(null);
+            await executeGiftSend(gift, count, target, resolvedTargetUserId, settingsUsed || comboSettings);
           }}
         />
       )}
@@ -4729,15 +4546,28 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         }}
       />
 
-      {/* 19. ESP CHAT Modal (Facebook-style Social Friend Making & 1-on-1 Chat) */}
+      {/* 19. ESP CHAT Modal (1-on-1 DM, Game Invites & Personal Locked Room Invites) */}
       <EspChatModal
         currentUser={user}
         isOpen={showEspChatModal}
         onClose={() => setShowEspChatModal(false)}
         onUpdateUser={onUpdateUser}
+        onAcceptGameInvite={(gameKey) => handleLaunchGameByKey(gameKey)}
+        onAcceptRoomInvite={async (roomAddress, passcode) => {
+          try {
+            const lookup = await api.lookupVoiceRoom(roomAddress, user.userId);
+            if (lookup?.success && lookup.room) {
+              await handleJoinAndSwitchRoom(lookup.room, passcode);
+            } else {
+              showToast(`रूम #${roomAddress} नहीं मिला`, 'error');
+            }
+          } catch {
+            showToast('रूम जॉइन करने में त्रुटि', 'error');
+          }
+        }}
       />
 
-      {/* 20. Interactive 8D Gaming Arena Modal (Who's the Spy, Ludo, Space Werewolf, etc.) */}
+      {/* 20. Interactive 8D Gaming Arena Modal (Liar's Party, Crazy Alpaca, Pool, Mic Grab, Ludo, Drawing, Hide & Seek) */}
       {activeInteractiveGame && (
         <InteractiveGameArenaModal
           gameKey={activeInteractiveGame}
@@ -4756,6 +4586,144 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 : { ...user, coins: newCoins };
             onUpdateUser(updated);
             api.setStoredUser(updated);
+          }}
+        />
+      )}
+
+      {/* 20B. Dedicated Real Playable Modals for Bingo Live, Oh My Card, and Snake Rush */}
+      {activeBoardGameModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-4">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+              <div className="font-black text-sm">
+                {activeBoardGameModal === 'bingo'
+                  ? '🎱 Bingo Live Tambola'
+                  : activeBoardGameModal === 'cards'
+                  ? '🃏 Oh My Card Duel'
+                  : '🐍 Snake Rush 2D'}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveBoardGameModal(null)}
+                className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 sm:p-4 max-h-[84vh] overflow-y-auto">
+              {activeBoardGameModal === 'bingo' && (
+                <BingoGame
+                  user={user}
+                  onCoinsUpdated={(newCoins: number) => {
+                    const latest = api.getStoredUser();
+                    onUpdateUser(latest && latest.userId === user.userId ? { ...latest, coins: newCoins } : { ...user, coins: newCoins });
+                  }}
+                  onOpenBuyCoins={() => {
+                    setActiveBoardGameModal(null);
+                    setActiveTab('recharge_convert');
+                  }}
+                />
+              )}
+              {activeBoardGameModal === 'cards' && (
+                <OhMyCardGame
+                  user={user}
+                  onCoinsUpdated={(newCoins: number) => {
+                    const latest = api.getStoredUser();
+                    onUpdateUser(latest && latest.userId === user.userId ? { ...latest, coins: newCoins } : { ...user, coins: newCoins });
+                  }}
+                  onOpenBuyCoins={() => {
+                    setActiveBoardGameModal(null);
+                    setActiveTab('recharge_convert');
+                  }}
+                />
+              )}
+              {activeBoardGameModal === 'snake' && (
+                <SnakeRushGame
+                  user={user}
+                  onCoinsUpdated={(newCoins: number) => {
+                    const latest = api.getStoredUser();
+                    onUpdateUser(latest && latest.userId === user.userId ? { ...latest, coins: newCoins } : { ...user, coins: newCoins });
+                  }}
+                  onOpenBuyCoins={() => {
+                    setActiveBoardGameModal(null);
+                    setActiveTab('recharge_convert');
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 21. Two-Player Relationship Tags & CP Token Store Modal */}
+      {showRelationshipsModal && (
+        <RelationshipBondsModal
+          user={user}
+          onClose={() => setShowRelationshipsModal(false)}
+          onUserUpdated={onUpdateUser}
+          onOpenBuyCoins={() => {
+            setShowRelationshipsModal(false);
+            setActiveTab('recharge_convert');
+          }}
+        />
+      )}
+
+      {/* 22. ESP PLAY Family Hub (Create, Join, Invite, Family Coins & Live Family Chat + Gift Effects) */}
+      {showFamilyHubModal && (
+        <EspFamilyHubModal
+          user={user}
+          onClose={() => setShowFamilyHubModal(false)}
+          onUserUpdated={onUpdateUser}
+          onTriggerGiftAnimation={(anim) => setActiveGiftAnimation(anim)}
+          onOpenBuyCoins={() => {
+            setShowFamilyHubModal(false);
+            setActiveTab('recharge_convert');
+          }}
+        />
+      )}
+
+      {/* 23. My Home Showcase & Events Center Modal */}
+      {eventsMyHomeState.open && (
+        <EspEventsAndMyHomeModal
+          user={user}
+          initialTab={eventsMyHomeState.tab}
+          onClose={() => setEventsMyHomeState(prev => ({ ...prev, open: false }))}
+          onUserUpdated={onUpdateUser}
+          onOpenRelationships={() => {
+            setEventsMyHomeState(prev => ({ ...prev, open: false }));
+            setShowRelationshipsModal(true);
+          }}
+          onOpenFamily={() => {
+            setEventsMyHomeState(prev => ({ ...prev, open: false }));
+            setShowFamilyHubModal(true);
+          }}
+          onOpenGiftWall={() => {
+            setEventsMyHomeState(prev => ({ ...prev, open: false }));
+            setShowOwnGiftWallModal(true);
+          }}
+          onJoinMyRoom={() => {
+            setEventsMyHomeState(prev => ({ ...prev, open: false }));
+            loadMyPersonalRoom(true);
+          }}
+        />
+      )}
+
+      {/* 24. Personal Gift Wall & Full Gift History Modal */}
+      {showOwnGiftWallModal && (
+        <GiftWallModal
+          isOpen={showOwnGiftWallModal}
+          recipientUserId={user.userId}
+          recipientName={user.fullName}
+          recipientAvatar={user.avatar}
+          recipientRoomAddress={user.roomAddress || cleanUserRoomFallback}
+          isVipRoom={Boolean(user.isVipRoom || isVipFancyRoomNumber(user.roomAddress))}
+          giftWall={Object.values(user.receivedGifts || {}) as GiftWallEntry[]}
+          isOwnProfile={true}
+          onClose={() => setShowOwnGiftWallModal(false)}
+          onSendCatalogGift={(gift) => {
+            setShowOwnGiftWallModal(false);
+            setAppGiftPreset({ giftId: gift.id, targetName: user.fullName, targetUserId: user.userId });
+            setShowAppGiftModal(true);
           }}
         />
       )}

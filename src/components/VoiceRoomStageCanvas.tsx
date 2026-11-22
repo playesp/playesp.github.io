@@ -27,6 +27,9 @@ import {
   Disc,
   Radio,
   LogIn,
+  Swords,
+  Shield,
+  Gamepad2,
 } from 'lucide-react';
 import type {
   UserProfile,
@@ -34,14 +37,21 @@ import type {
   VoiceRoomSeat,
   VoiceChatMessage,
   VoiceRoomStageLayout,
+  RoomAtmosphereEffect,
+  RoomPacketDrop,
 } from '../types/index.ts';
 import {
   resolveWallpaperBackdrop,
   extractYouTubeEmbedUrl,
 } from '../config/voiceWallpapers.ts';
 import { AvatarFrame, type FrameVariant } from './AvatarFrame.tsx';
-import { VOICE_EFFECTS, type VoiceEffectType } from './VoiceEffectSelector.tsx';
+import { PacketRainOverlay } from './GiftAnimationOverlay.tsx';
 import { isVipFancyRoomNumber } from '../config/giftCatalog.ts';
+import {
+  VOICE_ROOM_TIERS,
+  getVoiceRoomTierSpec,
+  type VoiceRoomTierId,
+} from '../config/espSocialCatalog.ts';
 
 interface VoiceRoomHostInfo {
   userId: string;
@@ -76,7 +86,6 @@ interface VoiceRoomStageCanvasProps {
   recordDuration: number;
   autoPlayAudio: boolean;
   currentlyPlayingAudioId: string | null;
-  selectedVoiceEffect: VoiceEffectType;
   quickPhrases: string[];
   onOpenRoomsDirectory: () => void;
   onJumpToMyPersonalRoom: () => void;
@@ -96,9 +105,18 @@ interface VoiceRoomStageCanvasProps {
   onSendChatText: (text: string) => Promise<void> | void;
   onPlayAudioClip: (url: string, id: string) => void;
   onOpenGiftModal: () => void;
-  onOpenVoiceEffectModal: () => void;
+  onOpenPacketRainModal?: () => void;
+  onClaimPacket?: (packet: RoomPacketDrop) => void;
+  onSetRoomEffect?: (effect: RoomAtmosphereEffect) => void;
   onSetYouTubeVideo: (url: string) => Promise<void> | void;
   onCopyFeedback: (msg: string) => void;
+  onStartPk?: () => void;
+  onVotePk?: (side: 'red' | 'blue', coins?: number) => void;
+  onEndPk?: () => void;
+  onUpgradeRoomTier?: (tierId: VoiceRoomTierId) => void;
+  onOpenRelationships?: () => void;
+  onOpenFamily?: () => void;
+  onQuickOpenMiniGame?: () => void;
 }
 
 const HEART_INTERACT_TABS = ['Interact', 'Select', 'Reveal', 'Confess'] as const;
@@ -119,7 +137,6 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
   recordDuration,
   autoPlayAudio,
   currentlyPlayingAudioId,
-  selectedVoiceEffect,
   quickPhrases,
   onOpenRoomsDirectory,
   onJumpToMyPersonalRoom,
@@ -139,9 +156,18 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
   onSendChatText,
   onPlayAudioClip,
   onOpenGiftModal,
-  onOpenVoiceEffectModal,
+  onOpenPacketRainModal,
+  onClaimPacket,
+  onSetRoomEffect,
   onSetYouTubeVideo,
   onCopyFeedback,
+  onStartPk,
+  onVotePk,
+  onEndPk,
+  onUpgradeRoomTier,
+  onOpenRelationships,
+  onOpenFamily,
+  onQuickOpenMiniGame,
 }) => {
   const [chatText, setChatText] = useState('');
   const [showEmojiTray, setShowEmojiTray] = useState(false);
@@ -150,6 +176,11 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
   const [youtubeInput, setYoutubeInput] = useState(room.youtubeVideoUrl || '');
   const [savingYoutube, setSavingYoutube] = useState(false);
   const [ambientMusicOn, setAmbientMusicOn] = useState(false);
+  const [showTierUpgradeTray, setShowTierUpgradeTray] = useState(false);
+  const [showFxPicker, setShowFxPicker] = useState(false);
+
+  const currentTierSpec = getVoiceRoomTierSpec(room.roomTier || 'normal');
+  const activeRoomEffect: RoomAtmosphereEffect = (room.roomEffect as RoomAtmosphereEffect) || 'none';
 
   const isOwner =
     room.hostUserId === currentUser.userId ||
@@ -245,6 +276,20 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <span className="absolute -top-1 -left-1 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[9px] font-black flex items-center justify-center border border-white/80">
                 {idx + 1}
               </span>
+              {(() => {
+                const bond = (currentUser.activeRelationships || []).find(
+                  (r) => r.status === 'accepted' && r.partnerUserId === seat.userId
+                );
+                if (!bond) return null;
+                return (
+                  <span
+                    className="absolute -bottom-0.5 -left-0.5 px-1 h-4 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[8px] font-black flex items-center justify-center border border-white shadow"
+                    title={`${bond.tagName} Bond`}
+                  >
+                    {bond.badgeIcon}
+                  </span>
+                );
+              })()}
             </>
           ) : isLocked ? (
             <div className="flex flex-col items-center justify-center">
@@ -324,7 +369,52 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
         }`}
       />
 
-      {/* 2. TOP BAR (Matching WePlay Voice Room Header) */}
+      {/* Room Atmosphere Effects Layer */}
+      {activeRoomEffect !== 'none' && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-[5]">
+          <style>{`
+            @keyframes espAtmosphereFloat {
+              0% { transform: translateY(-20px) translateX(0px) scale(0.9); opacity: 0; }
+              20% { opacity: 0.9; }
+              80% { opacity: 0.85; }
+              100% { transform: translateY(620px) translateX(24px) scale(1.1); opacity: 0; }
+            }
+          `}</style>
+          {activeRoomEffect === 'neon_lasers' && (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(236,72,153,0.22),transparent_45%),radial-gradient(circle_at_80%_25%,rgba(34,211,238,0.22),transparent_45%)] animate-pulse" />
+          )}
+          {[8, 18, 29, 41, 53, 66, 78, 89].map((leftPct, i) => (
+            <span
+              key={`fx-${activeRoomEffect}-${i}`}
+              style={{
+                left: `${leftPct}%`,
+                top: '-10px',
+                animation: `espAtmosphereFloat ${4.2 + (i % 3) * 1.1}s linear ${i * 0.55}s infinite`,
+              }}
+              className="absolute text-sm sm:text-base drop-shadow"
+            >
+              {activeRoomEffect === 'sparkles'
+                ? '✨'
+                : activeRoomEffect === 'petals'
+                ? '🌸'
+                : activeRoomEffect === 'fireflies'
+                ? '🟡'
+                : activeRoomEffect === 'snow'
+                ? '❄️'
+                : '⚡'}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Animated Clickable Red & Blue Packet Rain Overlay */}
+      <PacketRainOverlay
+        packets={room.activePackets || []}
+        currentUserId={currentUser.userId}
+        onClaimPacket={(pkt) => onClaimPacket?.(pkt)}
+      />
+
+      {/* 2. TOP BAR (Matching ESP PLAY Voice Room Header) */}
       <div className="relative z-10 px-3 sm:px-4 pt-3 pb-2 space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {/* Left: Back/Rooms + Room Pill + Follow + */}
@@ -349,7 +439,7 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
                 <div className="text-xs font-extrabold text-white truncate max-w-[140px] sm:max-w-[210px]">
                   {room.title}
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-sky-200 font-mono tabular-nums">
+                <div className="flex items-center gap-1 text-[10px] text-sky-200 font-mono tabular-nums flex-wrap">
                   <button
                     type="button"
                     onClick={handleCopyRoomId}
@@ -362,6 +452,11 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
                   {(room.isVipRoom || isVipFancyRoomNumber(room.roomAddress)) && (
                     <span className="px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 text-[8px] font-sans font-black shadow-xs">
                       👑 {room.vipRoomLabel || 'VIP'}
+                    </span>
+                  )}
+                  {currentTierSpec.id !== 'normal' && (
+                    <span className={`px-1.5 py-0.5 rounded bg-gradient-to-r ${currentTierSpec.gradient} text-white text-[8px] font-sans font-black shadow-xs`}>
+                      {currentTierSpec.badgeIcon} {currentTierSpec.badgeLabel}
                     </span>
                   )}
                   {room.isPersonalFixed && (
@@ -503,15 +598,248 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <UserPlus className="w-3 h-3" />
               <span>Invite</span>
             </button>
+            {isOwner && onUpgradeRoomTier && currentTierSpec.id !== 'diamond_theater' && (
+              <button
+                type="button"
+                onClick={() => setShowTierUpgradeTray((p) => !p)}
+                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black flex items-center gap-1 shadow-xs cursor-pointer transition"
+              >
+                <Crown className="w-3 h-3" />
+                <span>Upgrade Room</span>
+              </button>
+            )}
+            {onStartPk && !room.pkBattle?.active && (
+              <button
+                type="button"
+                onClick={onStartPk}
+                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-500 to-indigo-600 hover:opacity-95 text-white font-black flex items-center gap-1 shadow-xs cursor-pointer transition border border-white/25"
+              >
+                <Swords className="w-3 h-3" />
+                <span>Start PK</span>
+              </button>
+            )}
+            {onQuickOpenMiniGame && (
+              <button
+                type="button"
+                onClick={onQuickOpenMiniGame}
+                className="px-2.5 py-1 rounded-full bg-cyan-500/85 hover:bg-cyan-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-cyan-300/40"
+              >
+                <Gamepad2 className="w-3 h-3" />
+                <span>Games</span>
+              </button>
+            )}
+            {onOpenFamily && (
+              <button
+                type="button"
+                onClick={onOpenFamily}
+                className="px-2.5 py-1 rounded-full bg-purple-600/85 hover:bg-purple-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-purple-300/40"
+              >
+                <Shield className="w-3 h-3" />
+                <span>Family</span>
+              </button>
+            )}
+            {onOpenRelationships && (
+              <button
+                type="button"
+                onClick={onOpenRelationships}
+                className="px-2.5 py-1 rounded-full bg-pink-600/85 hover:bg-pink-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-pink-300/40"
+              >
+                <Heart className="w-3 h-3" />
+                <span>Bonds/CP</span>
+              </button>
+            )}
+            {onOpenPacketRainModal && (
+              <button
+                type="button"
+                onClick={onOpenPacketRainModal}
+                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-600 to-cyan-600 hover:brightness-110 text-white font-black flex items-center gap-1 cursor-pointer transition border border-yellow-300/60 shadow-xs"
+              >
+                <span>🧧</span>
+                <span>Packet Rain</span>
+              </button>
+            )}
+            {onSetRoomEffect && (
+              <button
+                type="button"
+                onClick={() => setShowFxPicker((v) => !v)}
+                className={`px-2.5 py-1 rounded-full font-bold flex items-center gap-1 cursor-pointer transition border ${
+                  activeRoomEffect !== 'none'
+                    ? 'bg-fuchsia-600 text-white border-fuchsia-300'
+                    : 'bg-black/35 hover:bg-black/55 text-white border-white/15'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>Room FX</span>
+              </button>
+            )}
           </div>
 
           <div className="px-2.5 py-0.5 rounded-full bg-black/35 backdrop-blur-md border border-white/10 text-[10px] text-white/90 truncate max-w-[260px]">
             Topic: {room.topic}
           </div>
         </div>
+
+        {/* Room Atmosphere Effect Quick Picker */}
+        {showFxPicker && onSetRoomEffect && (
+          <div className="bg-slate-950/90 backdrop-blur-md border border-fuchsia-400/50 rounded-xl p-2.5 flex flex-wrap items-center gap-1.5 text-[11px] shadow-xl">
+            <span className="font-black text-fuchsia-200 mr-1">✨ रूम इफ़ेक्ट चुनें:</span>
+            {[
+              { id: 'none' as const, label: 'Off' },
+              { id: 'sparkles' as const, label: '✨ Sparkles' },
+              { id: 'petals' as const, label: '🌸 Rose Petals' },
+              { id: 'fireflies' as const, label: '🟡 Gold Fireflies' },
+              { id: 'snow' as const, label: '❄️ Snowfall' },
+              { id: 'neon_lasers' as const, label: '⚡ Party Lasers' },
+            ].map((fx) => (
+              <button
+                key={fx.id}
+                type="button"
+                onClick={() => {
+                  onSetRoomEffect(fx.id);
+                  setShowFxPicker(false);
+                }}
+                className={`px-2.5 py-1 rounded-full font-bold cursor-pointer transition ${
+                  activeRoomEffect === fx.id
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+              >
+                {fx.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Inline Advance Room Tier Upgrade Drawer */}
+        {showTierUpgradeTray && isOwner && onUpgradeRoomTier && (
+          <div className="bg-slate-950/90 backdrop-blur-md border border-amber-400/50 rounded-xl p-3 space-y-2 shadow-xl">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-black text-amber-300 flex items-center gap-1.5">
+                <Crown className="w-4 h-4" />
+                Advance Premium Voice Room अपग्रेड करें (Coins से अनलॉक)
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTierUpgradeTray(false)}
+                className="text-white/70 hover:text-white font-bold cursor-pointer px-1.5"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {VOICE_ROOM_TIERS.filter((t) => t.id !== 'normal').map((tier) => {
+                const isCurrentOrLower =
+                  VOICE_ROOM_TIERS.findIndex((x) => x.id === currentTierSpec.id) >=
+                  VOICE_ROOM_TIERS.findIndex((x) => x.id === tier.id);
+                return (
+                  <div
+                    key={tier.id}
+                    className={`rounded-lg p-2.5 border ${
+                      isCurrentOrLower
+                        ? 'bg-emerald-950/50 border-emerald-400/40 text-emerald-200'
+                        : 'bg-white/10 border-white/20 text-white'
+                    } flex flex-col justify-between gap-2`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1 text-[11px] font-black">
+                        <span>{tier.badgeIcon} {tier.name}</span>
+                        <span className="text-amber-300 font-mono">🪙 {tier.coinPrice}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-300 mt-0.5">
+                        PK Boost {tier.pkBoostMultiplier}x · Stage Layouts Unlocked
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isCurrentOrLower}
+                      onClick={() => {
+                        setShowTierUpgradeTray(false);
+                        onUpgradeRoomTier(tier.id);
+                      }}
+                      className={`w-full py-1.5 rounded-lg text-[10px] font-black cursor-pointer ${
+                        isCurrentOrLower
+                          ? 'bg-emerald-500/20 text-emerald-300 cursor-default'
+                          : 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 hover:from-amber-300 hover:to-orange-400'
+                      }`}
+                    >
+                      {isCurrentOrLower ? '✓ Unlocked' : `Upgrade (${tier.coinPrice}🪙)`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* LIVE PK BATTLE ARENA VS BAR */}
+        {room.pkBattle?.active && (() => {
+          const redScore = room.pkBattle.redScore || 0;
+          const blueScore = room.pkBattle.blueScore || 0;
+          const totalScore = Math.max(1, redScore + blueScore);
+          const redPct = Math.round((redScore / totalScore) * 100);
+          const bluePct = 100 - redPct;
+          return (
+            <div className="bg-slate-950/80 backdrop-blur-md border border-pink-400/40 rounded-xl p-2.5 shadow-lg space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-black">
+                <span className="text-rose-300 flex items-center gap-1">
+                  🔥 {room.pkBattle.redLabel || room.pkBattle.redTeamName || 'Team Red'} ({redScore.toLocaleString()})
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500 to-indigo-600 text-white text-[10px] tracking-wider flex items-center gap-1">
+                  <Swords className="w-3 h-3" /> PK BATTLE
+                </span>
+                <span className="text-sky-300 flex items-center gap-1">
+                  ({blueScore.toLocaleString()}) {room.pkBattle.blueLabel || room.pkBattle.blueTeamName || 'Team Blue'} ⚡
+                </span>
+              </div>
+
+              <div className="h-3 rounded-full overflow-hidden bg-slate-800 flex border border-white/20">
+                <div
+                  className="bg-gradient-to-r from-rose-600 to-pink-500 transition-all duration-500"
+                  style={{ width: `${redScore + blueScore === 0 ? 50 : Math.max(10, Math.min(90, redPct))}%` }}
+                />
+                <div
+                  className="bg-gradient-to-r from-sky-500 to-indigo-600 transition-all duration-500"
+                  style={{ width: `${redScore + blueScore === 0 ? 50 : Math.max(10, Math.min(90, bluePct))}%` }}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+                {onVotePk && (
+                  <button
+                    type="button"
+                    onClick={() => onVotePk('red', 10)}
+                    className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-black cursor-pointer transition shadow-xs"
+                  >
+                    +Vote Red (10🪙)
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5">
+                  {isOwner && onEndPk && (
+                    <button
+                      type="button"
+                      onClick={onEndPk}
+                      className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black cursor-pointer transition"
+                    >
+                      🏁 End PK
+                    </button>
+                  )}
+                  {onVotePk && (
+                    <button
+                      type="button"
+                      onClick={() => onVotePk('blue', 10)}
+                      className="px-2.5 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-black cursor-pointer transition shadow-xs"
+                    >
+                      +Vote Blue (10🪙)
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
-      {/* 3. CENTER STAGE AREA (4 SWITCHABLE LAYOUTS MATCHING MOCKUP) */}
+      {/* 3. CENTER STAGE AREA (4 SWITCHABLE LAYOUTS) */}
       <div className="relative z-10 px-3 sm:px-6 py-2 flex-1 flex flex-col justify-center">
         {/* LAYOUT 1: CLASSIC 8-SEAT CASTLE STAGE */}
         {layout === 'classic_8' && (
@@ -764,24 +1092,35 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
 
       {/* 4. FLOATING TRANSLUCENT CHAT FEED & BOTTOM CONTROLS */}
       <div className="relative z-10 px-3 sm:px-4 pb-3 pt-1 space-y-2">
-        {/* Mic / Leave Seat quick status bar */}
+        {/* Real Natural Mic & Leave Seat quick status bar (No Fake Voice Effects) */}
         {(mySeatIndex !== null || micPermission === 'granted' || isRecordingVoice) && (
           <div className="flex items-center justify-between gap-2 bg-black/45 backdrop-blur-md border border-white/15 rounded-xl px-3 py-1.5 text-[11px]">
             <div className="flex items-center gap-2">
-              {micPermission === 'granted' && (
+              {micPermission === 'granted' ? (
                 <span className="flex items-center gap-1.5 text-emerald-300 font-bold">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Mic {micLevel}%</span>
+                  <span>🎙️ Real Voice Live ({micLevel}%)</span>
                 </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onEnableMic}
+                  className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold cursor-pointer"
+                >
+                  🎙️ माइक अनुमति दें
+                </button>
               )}
-              <button
-                type="button"
-                onClick={onOpenVoiceEffectModal}
-                className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-[10px] font-bold cursor-pointer"
-              >
-                {VOICE_EFFECTS.find((v) => v.id === selectedVoiceEffect)?.icon}{' '}
-                {VOICE_EFFECTS.find((v) => v.id === selectedVoiceEffect)?.name}
-              </button>
+              {micPermission === 'granted' && (
+                <button
+                  type="button"
+                  onClick={onTogglePhysicalMute}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${
+                    isMicMuted ? 'bg-rose-500/85 text-white' : 'bg-white/15 text-white'
+                  }`}
+                >
+                  {isMicMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                </button>
+              )}
             </div>
             {mySeatIndex !== null && (
               <button

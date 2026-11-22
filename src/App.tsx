@@ -25,6 +25,7 @@ import { DashboardView } from './views/DashboardView.tsx';
 import { AdminView } from './views/AdminView.tsx';
 import { GamingRoomView } from './views/GamingRoomView.tsx';
 import { NwiSystemView } from './views/NwiSystemView.tsx';
+import { DailyTasksAndLoginModal } from './components/games/DailyTasksAndLoginModal.tsx';
 import { 
   Home, 
   Layers, 
@@ -117,6 +118,9 @@ export default function App() {
   const [idCardModalOpen, setIdCardModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [showPostLoginProfileModal, setShowPostLoginProfileModal] = useState(false);
+  const [showWeeklyRewardPopup, setShowWeeklyRewardPopup] = useState(false);
+  const [weeklyPopupReason, setWeeklyPopupReason] = useState<'login' | 'midnight' | 'manual'>('login');
+  const weeklyLiveIstDateRef = React.useRef<string>('');
   const [remoteLogoutNotice, setRemoteLogoutNotice] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -235,7 +239,90 @@ export default function App() {
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser?.userId || loginModalOpen || showPostLoginProfileModal || currentTab === 'admin') {
+      return;
+    }
+    let cancelled = false;
+    let midnightTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const checkLiveWeeklyRewardPopup = async (triggerSource: 'login' | 'midnight') => {
+      try {
+        const [liveTimeRes, hubData] = await Promise.all([
+          api.getLiveServerTime().catch(() => null),
+          api.getDailyGameHub(currentUser.userId).catch(() => null),
+        ]);
+        if (cancelled) return;
+        const meta = liveTimeRes?.timeMeta || hubData?.timeMeta;
+        const liveIstDate = meta?.istDate || hubData?.today || '';
+        if (liveIstDate) {
+          weeklyLiveIstDateRef.current = liveIstDate;
+        }
+        const canClaim = Boolean(hubData?.checkIn?.canClaimToday);
+        const dismissKey = `esp_weekly_popup_dismissed_${currentUser.userId}`;
+        const dismissedDate = (() => {
+          try {
+            return sessionStorage.getItem(dismissKey) || '';
+          } catch {
+            return '';
+          }
+        })();
+
+        if (canClaim && (!liveIstDate || dismissedDate !== liveIstDate || triggerSource === 'midnight')) {
+          setWeeklyPopupReason(triggerSource);
+          setShowWeeklyRewardPopup(true);
+          if (triggerSource === 'midnight') {
+            showToast(
+              `🌙 12:00 AM IST Live! Day ${hubData?.checkIn?.nextDayNumber || 1} Weekly Reward अनलॉक हो गया है!`,
+              'reward',
+              'Weekly Reward Unlocked'
+            );
+          }
+        }
+
+        if (meta?.secondsUntilMidnight && meta.secondsUntilMidnight > 0) {
+          if (midnightTimeout) clearTimeout(midnightTimeout);
+          const waitMs = Math.min(24 * 60 * 60 * 1000, meta.secondsUntilMidnight * 1000 + 1200);
+          midnightTimeout = setTimeout(() => {
+            if (!cancelled) {
+              checkLiveWeeklyRewardPopup('midnight');
+            }
+          }, waitMs);
+        }
+      } catch {
+        // silent fail on network hiccup
+      }
+    };
+
+    checkLiveWeeklyRewardPopup('login');
+
+    // Also poll live server IST clock every 30s so waking from device sleep across 12:00 AM IST pops immediately
+    const liveClockPoll = setInterval(async () => {
+      try {
+        const timeRes = await api.getLiveServerTime();
+        const latestIstDate = timeRes?.timeMeta?.istDate;
+        if (
+          !cancelled &&
+          latestIstDate &&
+          weeklyLiveIstDateRef.current &&
+          latestIstDate !== weeklyLiveIstDateRef.current
+        ) {
+          checkLiveWeeklyRewardPopup('midnight');
+        }
+      } catch {}
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      if (midnightTimeout) clearTimeout(midnightTimeout);
+      clearInterval(liveClockPoll);
+    };
+  }, [currentUser?.userId, loginModalOpen, showPostLoginProfileModal, currentTab === 'admin']);
+
   const handleUserLogin = (user: UserProfile, destination?: 'platform' | 'gaming-room', promptProfileChoice = false) => {
+    try {
+      sessionStorage.removeItem(`esp_weekly_popup_dismissed_${user.userId}`);
+    } catch {}
     api.setStoredUser(user);
     showToast(`नमस्ते ${user.fullName}, ESP पोर्टल में आपका स्वागत है!`, 'success');
     setCurrentUser(user);
@@ -330,22 +417,26 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const isCleanGameLobby = currentUser?.accountType === 'gamer' && currentTab === 'gaming-room';
+
   return (
     <div className="min-h-screen bg-[#f1f3f6] text-[#212121] flex flex-col font-sans selection:bg-[#2874f0] selection:text-white w-full overflow-x-hidden">
-      {/* Flipkart-Themed Clean Marketplace Navigation Header */}
-      <Navbar
-        currentUser={currentUser}
-        isAdmin={isAdmin}
-        settings={settings}
-        currentTab={currentTab}
-        onSelectTab={handleTabChange}
-        onSelectServiceCode={code => setSelectedServiceCode(code)}
-        onOpenLogin={() => setLoginModalOpen(true)}
-        onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
-        onLogout={handleUserLogout}
-        onShowIdCard={() => setIdCardModalOpen(true)}
-        onOpenLegalModal={() => setLegalModalOpen(true)}
-      />
+      {/* Flipkart-Themed Clean Marketplace Navigation Header (Hidden for gamer users on Gaming Room to keep screenshot-exact clean header) */}
+      {!isCleanGameLobby && (
+        <Navbar
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          settings={settings}
+          currentTab={currentTab}
+          onSelectTab={handleTabChange}
+          onSelectServiceCode={code => setSelectedServiceCode(code)}
+          onOpenLogin={() => setLoginModalOpen(true)}
+          onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
+          onLogout={handleUserLogout}
+          onShowIdCard={() => setIdCardModalOpen(true)}
+          onOpenLegalModal={() => setLegalModalOpen(true)}
+        />
+      )}
 
       {/* Remote Logout Alert Banner */}
       {remoteLogoutNotice && (
@@ -361,7 +452,7 @@ export default function App() {
       )}
 
       {/* Main Content View Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-24 sm:pb-24 lg:pb-16">
+      <main className={isCleanGameLobby ? 'flex-1 w-full overflow-x-hidden' : 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-24 sm:pb-24 lg:pb-16'}>
         {currentTab === 'home' && (
           <HomeView
             settings={settings}
@@ -466,6 +557,9 @@ export default function App() {
               settings={settings}
               initialSubTab={gamingInitialSubTab}
               initialRoomId={initialRoomCode || undefined}
+              isAdmin={isAdmin}
+              onOpenAdmin={() => setCurrentTab('admin')}
+              onLogout={handleUserLogout}
               onUpdateUser={updated => {
                 setCurrentUser(updated);
                 api.setStoredUser(updated);
@@ -700,14 +794,16 @@ export default function App() {
       )}
 
 
-      {/* Footer */}
-      <Footer
-        settings={settings}
-        currentUser={currentUser}
-        onSelectTab={handleTabChange}
-        onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
-        onOpenLegalModal={() => setLegalModalOpen(true)}
-      />
+      {/* Footer (Hidden inside clean gamer lobby) */}
+      {!isCleanGameLobby && (
+        <Footer
+          settings={settings}
+          currentUser={currentUser}
+          onSelectTab={handleTabChange}
+          onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
+          onOpenLegalModal={() => setLegalModalOpen(true)}
+        />
+      )}
 
       {/* Modals */}
       <LoginModal
@@ -754,6 +850,46 @@ export default function App() {
           }
         }}
       />
+
+      {showWeeklyRewardPopup && currentUser && (
+        <DailyTasksAndLoginModal
+          user={currentUser}
+          initialTab="login"
+          autoTriggeredReason={weeklyPopupReason}
+          onUpdateUser={(updatedUser) => {
+            setCurrentUser(updatedUser);
+            api.setStoredUser(updatedUser);
+          }}
+          onOpenBuyCoins={handleOpenBuyCoins}
+          onNavigateTab={(actionTab) => {
+            try {
+              if (weeklyLiveIstDateRef.current) {
+                sessionStorage.setItem(
+                  `esp_weekly_popup_dismissed_${currentUser.userId}`,
+                  weeklyLiveIstDateRef.current
+                );
+              }
+            } catch {}
+            setShowWeeklyRewardPopup(false);
+            if (actionTab === 'voice_room' || actionTab === 'voice-room') {
+              handleTabChange('gaming-voice');
+            } else {
+              handleTabChange('gaming-room');
+            }
+          }}
+          onClose={() => {
+            try {
+              if (weeklyLiveIstDateRef.current) {
+                sessionStorage.setItem(
+                  `esp_weekly_popup_dismissed_${currentUser.userId}`,
+                  weeklyLiveIstDateRef.current
+                );
+              }
+            } catch {}
+            setShowWeeklyRewardPopup(false);
+          }}
+        />
+      )}
 
       {/* Clean Flipkart Toast Notification System */}
       <div

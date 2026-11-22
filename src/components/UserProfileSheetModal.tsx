@@ -21,7 +21,9 @@ import {
   Users,
   Crop,
   Radio,
+  HeartHandshake,
 } from 'lucide-react';
+import { getRelationshipTokenSpec } from '../config/espSocialCatalog.ts';
 import type { UserProfile, Moment } from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { syncUserToFirestore } from '../services/firebase.ts';
@@ -71,6 +73,25 @@ export interface RichProfileData {
   momentsCount?: number;
   giftWall?: GiftWallEntry[];
   totalGiftsLit?: number;
+  activeRelationships?: Array<{
+    id: string;
+    tokenId: string;
+    tagName: string;
+    badgeIcon: string;
+    partnerUserId: string;
+    partnerName: string;
+    partnerAvatar?: string;
+    intimacyPoints: number;
+    status: string;
+  }>;
+  familySummary?: {
+    id: string;
+    name: string;
+    emblem: string;
+    familyCode: string;
+    level: number;
+    familyCoins: number;
+  } | null;
 }
 
 interface UserProfileSheetModalProps {
@@ -85,6 +106,8 @@ interface UserProfileSheetModalProps {
   onOpenAvatarCustomizer?: () => void;
   onOpenMoments?: () => void;
   onVisitVoiceRoom?: (roomAddressOrUserId: string) => void;
+  onOpenRelationships?: (targetIdentifier?: string) => void;
+  onOpenFamily?: () => void;
 }
 
 export const UserProfileSheetModal: React.FC<UserProfileSheetModalProps> = ({
@@ -99,6 +122,8 @@ export const UserProfileSheetModal: React.FC<UserProfileSheetModalProps> = ({
   onOpenAvatarCustomizer,
   onOpenMoments,
   onVisitVoiceRoom,
+  onOpenRelationships,
+  onOpenFamily,
 }) => {
   const [viewedUserId, setViewedUserId] = useState<string>(targetUserId || currentUser.userId);
   const [mode, setMode] = useState<'view' | 'edit' | 'search'>(initialMode);
@@ -450,7 +475,7 @@ export const UserProfileSheetModal: React.FC<UserProfileSheetModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/75 backdrop-blur-xs sm:p-4 animate-fadeIn">
       <div className="relative w-full max-w-md bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] text-[#212121]">
-        {/* ================= MODE 1: WEPLAY-STYLE RICH PROFILE SHEET ================= */}
+        {/* ================= MODE 1: ESP PLAY RICH PROFILE SHEET ================= */}
         {mode === 'view' && (
           <>
             <div className="flex-1 overflow-y-auto no-scrollbar pb-24">
@@ -789,6 +814,78 @@ export const UserProfileSheetModal: React.FC<UserProfileSheetModalProps> = ({
                     <span>{displayData.chosenServiceCode || 'ESP'} Member</span>
                   </span>
                 </div>
+
+                {/* Row 4B: Active Relationship / CP Bonds & ESP Family Crest */}
+                {((displayData.activeRelationships && displayData.activeRelationships.length > 0) || displayData.familySummary || onOpenRelationships || onOpenFamily) && (
+                  <div className="space-y-2 pt-1">
+                    {displayData.activeRelationships && displayData.activeRelationships.filter(b => b.status === 'accepted').length > 0 && (
+                      <div className="space-y-1.5">
+                        {displayData.activeRelationships
+                          .filter(b => b.status === 'accepted')
+                          .slice(0, 2)
+                          .map((bond) => {
+                            const spec = getRelationshipTokenSpec(bond.tokenId);
+                            return (
+                              <div
+                                key={bond.id}
+                                className={`rounded-xl px-3 py-2 bg-gradient-to-r ${spec.gradient} text-white flex items-center justify-between gap-2 shadow-xs`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-lg shrink-0">{spec.badgeIcon}</span>
+                                  <div className="min-w-0">
+                                    <p className="text-[11px] font-black truncate">
+                                      {spec.tagName} · with {bond.partnerName}
+                                    </p>
+                                    <p className="text-[10px] text-white/85 font-mono tabular-nums">
+                                      Intimacy: {(bond.intimacyPoints || 0).toLocaleString('en-IN')}
+                                    </p>
+                                  </div>
+                                </div>
+                                {bond.partnerAvatar && (
+                                  <img
+                                    src={bond.partnerAvatar}
+                                    alt={bond.partnerName}
+                                    className="w-7 h-7 rounded-full object-cover border border-white/80 shrink-0"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {displayData.familySummary && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenFamily) {
+                              onClose();
+                              onOpenFamily();
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold cursor-pointer hover:bg-emerald-100"
+                        >
+                          <span>{displayData.familySummary.emblem}</span>
+                          <span>{displayData.familySummary.name} · Lv.{displayData.familySummary.level}</span>
+                        </button>
+                      )}
+                      {onOpenRelationships && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenRelationships(isOwnProfile ? '' : displayData.userId);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold cursor-pointer hover:bg-rose-100"
+                        >
+                          <HeartHandshake className="w-3.5 h-3.5" />
+                          <span>{isOwnProfile ? 'Manage Relationship & CP Tags' : `Send Bond Tag to ${displayData.fullName.split(' ')[0]}`}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Row 5: MOMENTS SECTION */}
                 <div className="space-y-2.5 pt-1">
@@ -1428,6 +1525,7 @@ export const UserProfileSheetModal: React.FC<UserProfileSheetModalProps> = ({
 
         <GiftWallModal
           isOpen={showGiftWallModal}
+          recipientUserId={displayData.userId}
           recipientName={displayData.fullName}
           recipientAvatar={displayAvatar}
           recipientRoomAddress={displayData.roomAddress || '10001'}

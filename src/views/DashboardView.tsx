@@ -851,7 +851,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               title="कवर फोटो, यूनिक @Username और सोशल प्रोफाइल खोलें"
             >
               <UserIcon className="w-3.5 h-3.5 text-[#ffe500]" />
-              <span>WePlay Profile</span>
+              <span>ESP PLAY Profile</span>
             </button>
 
             <button
@@ -2752,7 +2752,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Editable Details Fields */}
             <div className="space-y-4">
-              {/* Unique @Username + WePlay Cover Profile Bar */}
+              {/* Unique @Username + ESP PLAY Cover Profile Bar */}
               <div className="bg-cyan-50/60 border border-cyan-200 rounded-md p-3.5 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2776,7 +2776,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       onClick={() => setProfileSheetOpen({ open: true, mode: 'edit' })}
                       className="px-2.5 py-1.5 rounded bg-[#2874f0] text-white text-[11px] font-bold hover:bg-blue-700 transition cursor-pointer"
                     >
-                      🖼️ Cover &amp; WePlay Sheet
+                      🖼️ Cover &amp; ESP PLAY Sheet
                     </button>
                   </div>
                 </div>

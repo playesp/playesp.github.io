@@ -49,7 +49,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onUpdateSettings,
   onLogoutAdmin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'members' | 'services' | 'payouts' | 'coin_recharges' | 'messages' | 'gift_cards' | 'vip_rooms' | 'settings' | 'audits' | 'slider_photos'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'settings' | 'audits' | 'slider_photos'>('members');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all');
   
   const [stats, setStats] = useState<any>(null);
@@ -127,6 +127,46 @@ export const AdminView: React.FC<AdminViewProps> = ({
   } | null>(null);
   const [vipChecking, setVipChecking] = useState(false);
   const [vipSaving, setVipSaving] = useState(false);
+
+  // Admin Direct Coin Grant / Adjust by User ID State
+  const [coinGrantIdentifier, setCoinGrantIdentifier] = useState('');
+  const [coinGrantAmount, setCoinGrantAmount] = useState('100');
+  const [coinGrantMode, setCoinGrantMode] = useState<'credit' | 'debit'>('credit');
+  const [coinGrantReason, setCoinGrantReason] = useState('Admin Coin Reward / Balance Top-Up');
+  const [coinGrantBusy, setCoinGrantBusy] = useState(false);
+  const [coinGrantResult, setCoinGrantResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Admin Real Player Creator + Individual Password / Level / VIP Editor State
+  const [newPlayerForm, setNewPlayerForm] = useState({
+    fullName: '',
+    username: '',
+    phone: '',
+    password: '',
+    coins: '500',
+    charms: '120',
+    gameLevel: '5',
+    vipTier: 'gold' as 'none' | 'silver' | 'gold' | 'diamond',
+    frameType: 'vip-gold',
+    roomNumber: '',
+    clanName: 'Royal Warriors ESP',
+    bio: '',
+  });
+  const [creatingPlayer, setCreatingPlayer] = useState(false);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+  const [editingPlayerModal, setEditingPlayerModal] = useState<{
+    user: UserProfile;
+    fullName: string;
+    username: string;
+    phone: string;
+    password: string;
+    coins: string;
+    charms: string;
+    gameLevel: string;
+    vipTier: 'none' | 'silver' | 'gold' | 'diamond';
+    frameType: string;
+    clanName: string;
+  } | null>(null);
+  const [savingPlayerEdit, setSavingPlayerEdit] = useState(false);
 
   // Reusable React Confirmation & Input Modal (replaces browser confirm/prompt)
   const [actionModal, setActionModal] = useState<{
@@ -465,6 +505,133 @@ export const AdminView: React.FC<AdminViewProps> = ({
       showToast(err?.message || 'VIP Room ID पहले से उपयोग में है या अमान्य है', 'error');
     } finally {
       setVipSaving(false);
+    }
+  };
+
+  const handleAdminAdjustCoins = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanId = coinGrantIdentifier.trim();
+    const numericAmt = Math.floor(Number(coinGrantAmount) || 0);
+    if (!cleanId) {
+      setCoinGrantResult({ ok: false, text: 'कृपया User ID या @username दर्ज करें या लिस्ट से मेंबर चुनें।' });
+      return;
+    }
+    if (numericAmt <= 0) {
+      setCoinGrantResult({ ok: false, text: 'कृपया 1 या उससे अधिक Coins संख्या दर्ज करें।' });
+      return;
+    }
+    setCoinGrantBusy(true);
+    setCoinGrantResult(null);
+    try {
+      const res = await api.adminAdjustUserCoins(
+        adminPassword,
+        cleanId,
+        numericAmt,
+        coinGrantMode,
+        coinGrantReason.trim() || 'Admin Coin Adjustment'
+      );
+      if (!res?.success) {
+        const msg = res?.message || 'Coins अपडेट नहीं हो सके';
+        setCoinGrantResult({ ok: false, text: msg });
+        showToast(msg, 'error');
+        return;
+      }
+      const updatedUser = res.user;
+      if (updatedUser) {
+        setUsers(prev => prev.map(u => (u.userId === updatedUser.userId ? { ...u, ...updatedUser } : u)));
+      } else {
+        await loadAdminData();
+      }
+      const msg = res.message || `✅ Coins सफलतापूर्वक अपडेट हुए (${res.balanceBefore ?? ''} -> ${res.balanceAfter ?? ''})`;
+      setCoinGrantResult({ ok: true, text: msg });
+      showToast(msg, 'success');
+    } catch (err: any) {
+      const msg = err?.message || 'Coins एडजस्ट करने में त्रुटि आई';
+      setCoinGrantResult({ ok: false, text: msg });
+      showToast(msg, 'error');
+    } finally {
+      setCoinGrantBusy(false);
+    }
+  };
+
+  const handleCreateRealPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlayerForm.fullName.trim() || !newPlayerForm.phone.trim() || newPlayerForm.password.trim().length < 3) {
+      showToast('प्लेयर नाम, मोबाइल नंबर और कम से कम 3 अक्षर का पासवर्ड लिखें!', 'error');
+      return;
+    }
+    setCreatingPlayer(true);
+    try {
+      const res = await api.adminCreatePlayer(adminPassword, {
+        fullName: newPlayerForm.fullName.trim(),
+        username: newPlayerForm.username.trim() || undefined,
+        phone: newPlayerForm.phone.trim(),
+        password: newPlayerForm.password.trim(),
+        coins: Number(newPlayerForm.coins) || 0,
+        charms: Number(newPlayerForm.charms) || 0,
+        gameLevel: Number(newPlayerForm.gameLevel) || 1,
+        vipTier: newPlayerForm.vipTier,
+        frameType: newPlayerForm.frameType,
+        roomNumber: newPlayerForm.roomNumber.trim() || undefined,
+        clanName: newPlayerForm.clanName.trim() || 'Royal Warriors ESP',
+        bio: newPlayerForm.bio.trim() || undefined,
+      });
+      if (res?.success && res.user) {
+        showToast(res.message || 'नया खिलाड़ी सफलतापूर्वक बन गया!', 'success');
+        setUsers(prev => [res.user!, ...prev]);
+        setNewPlayerForm({
+          fullName: '',
+          username: '',
+          phone: '',
+          password: '',
+          coins: '500',
+          charms: '120',
+          gameLevel: '5',
+          vipTier: 'gold',
+          frameType: 'vip-gold',
+          roomNumber: '',
+          clanName: 'Royal Warriors ESP',
+          bio: '',
+        });
+        await loadAdminData();
+      } else {
+        showToast(res?.message || 'खिलाड़ी बनाने में विफल', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'नेटवर्क त्रुटि', 'error');
+    } finally {
+      setCreatingPlayer(false);
+    }
+  };
+
+  const handleSaveEditedPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlayerModal) return;
+    setSavingPlayerEdit(true);
+    try {
+      const res = await api.editUserDetails(editingPlayerModal.user.userId, adminPassword, {
+        fullName: editingPlayerModal.fullName.trim(),
+        username: editingPlayerModal.username.trim(),
+        phone: editingPlayerModal.phone.trim(),
+        password: editingPlayerModal.password.trim() || undefined,
+        coins: Number(editingPlayerModal.coins),
+        charms: Number(editingPlayerModal.charms),
+        gameLevel: Number(editingPlayerModal.gameLevel),
+        vipTier: editingPlayerModal.vipTier,
+        frameType: editingPlayerModal.frameType,
+        clanName: editingPlayerModal.clanName.trim(),
+      });
+      if (res?.success) {
+        showToast(res.message || 'प्लेयर डिटेल्स व पासवर्ड अपडेट हो गए!', 'success');
+        setEditingPlayerModal(null);
+        await loadAdminData();
+      } else {
+        showToast(res?.message || 'अपडेट विफल रहा', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'त्रुटि हुई', 'error');
+    } finally {
+      setSavingPlayerEdit(false);
     }
   };
 
@@ -883,6 +1050,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('players_builder')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'players_builder'
+              ? 'bg-indigo-600 text-white'
+              : 'text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>🎮 Real Players &amp; Passwords ({users.length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('services')}
           className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap ${
             activeTab === 'services'
@@ -913,6 +1092,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
           }`}
         >
           <span>🪙 कॉइन रिचार्ज ऑर्डर्स ({coinRecharges.filter(r => r.status === 'pending').length} Pending)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('give_coins')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'give_coins'
+              ? 'bg-[#388e3c] text-white'
+              : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+          }`}
+        >
+          <Coins className="w-3.5 h-3.5" />
+          <span>🪙 Give Coins (User ID)</span>
         </button>
 
         <button
@@ -986,6 +1177,299 @@ export const AdminView: React.FC<AdminViewProps> = ({
           <span>🖼️ होम पॉपअप 7-फोटो स्लाइडर ({sliderPhotos.length}/7)</span>
         </button>
       </div>
+
+      {/* ===================== TAB 1B: REAL PLAYERS & PASSWORD CREDENTIALS BUILDER ===================== */}
+      {activeTab === 'players_builder' && (() => {
+        const pq = playerSearchQuery.toLowerCase().trim();
+        const filteredPlayers = users.filter(
+          u =>
+            !pq ||
+            u.fullName.toLowerCase().includes(pq) ||
+            u.userId.toLowerCase().includes(pq) ||
+            (u.username || '').toLowerCase().includes(pq) ||
+            (u.phone || '').includes(pq) ||
+            (u.roomAddress || '').includes(pq)
+        );
+        return (
+          <div className="space-y-5">
+            {/* Create Real Player Card */}
+            <form
+              onSubmit={handleCreateRealPlayer}
+              className="bg-white border border-indigo-200 rounded-md p-5 shadow-2xs space-y-4 text-[#212121]"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-indigo-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>नया रियल खिलाड़ी बनाएं (Individual ID, Password, Level &amp; VIP Effect)</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    यहां से बने हर खिलाड़ी की अलग असली ID, अलग पासवर्ड (लॉगिन योग्य), अलग Level व VIP इफ़ेक्ट होगा जो लाइव लीडरबोर्ड और रूम में दिखेगा।
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">खिलाड़ी का नाम *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newPlayerForm.fullName}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, fullName: e.target.value }))}
+                    placeholder="उदा. Aarav Rajput"
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">@Username (Symbol-free)</label>
+                  <input
+                    type="text"
+                    value={newPlayerForm.username}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, username: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() }))}
+                    placeholder="उदा. aaravpro07"
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">मोबाइल नंबर *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newPlayerForm.phone}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, phone: e.target.value }))}
+                    placeholder="10-digit Mobile"
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">व्यक्तिगत पासवर्ड (Login Pass) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newPlayerForm.password}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, password: e.target.value }))}
+                    placeholder="उदा. aarav@7788"
+                    className="w-full bg-amber-50 border border-amber-300 rounded-sm px-3 py-2 font-mono font-bold outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">प्रारंभिक Coins (🪙)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newPlayerForm.coins}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, coins: e.target.value }))}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">प्रारंभिक Charms (✨)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newPlayerForm.charms}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, charms: e.target.value }))}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Game Level (1–99)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={newPlayerForm.gameLevel}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, gameLevel: e.target.value }))}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">VIP Tier इफ़ेक्ट</label>
+                  <select
+                    value={newPlayerForm.vipTier}
+                    onChange={e => {
+                      const vt = e.target.value as 'none' | 'silver' | 'gold' | 'diamond';
+                      setNewPlayerForm(p => ({
+                        ...p,
+                        vipTier: vt,
+                        frameType:
+                          vt === 'diamond'
+                            ? 'royal-dragon-crown'
+                            : vt === 'gold'
+                            ? 'vip-gold'
+                            : vt === 'silver'
+                            ? 'cyber-diamond'
+                            : 'standard',
+                      }));
+                    }}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-bold outline-none"
+                  >
+                    <option value="none">Standard (No VIP)</option>
+                    <option value="silver">🛡️ Silver VIP</option>
+                    <option value="gold">👑 Gold VIP</option>
+                    <option value="diamond">💎 Diamond Royal VIP</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Avatar Frame Effect</label>
+                  <select
+                    value={newPlayerForm.frameType}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, frameType: e.target.value }))}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 outline-none"
+                  >
+                    <option value="standard">Standard Ring</option>
+                    <option value="vip-gold">👑 VIP Gold Glow</option>
+                    <option value="cyber-diamond">💠 Cyber Diamond</option>
+                    <option value="royal-dragon-crown">🐉 Royal Dragon Crown</option>
+                    <option value="mythic-crimson">🔥 Mythic Crimson</option>
+                    <option value="clan-leader">🛡️ Clan Leader Emblem</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Custom Numeric / VIP Room ID (Optional)</label>
+                  <input
+                    type="text"
+                    value={newPlayerForm.roomNumber}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, roomNumber: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="उदा. 2222 या खाली छोड़ें"
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 font-mono outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Family / Clan Name</label>
+                  <input
+                    type="text"
+                    value={newPlayerForm.clanName}
+                    onChange={e => setNewPlayerForm(p => ({ ...p, clanName: e.target.value }))}
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-2 outline-none"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    disabled={creatingPlayer}
+                    className="w-full py-2.5 px-4 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow cursor-pointer disabled:opacity-50"
+                  >
+                    {creatingPlayer ? 'खिलाड़ी बन रहा है...' : '➕ नया खिलाड़ी व पासवर्ड बनाएं'}
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {/* All Players Password, Level, VIP & Stats Table */}
+            <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h4 className="text-sm font-black text-[#212121]">
+                  रजिस्टर्ड खिलाड़ी व लॉगिन पासवर्ड सूची ({filteredPlayers.length})
+                </h4>
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={playerSearchQuery}
+                    onChange={e => setPlayerSearchQuery(e.target.value)}
+                    placeholder="नाम, @username, मोबाइल या ID खोजें..."
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3 py-1.5 text-xs outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-[#f9fafb] text-[10px] uppercase text-slate-600">
+                      <th className="py-2.5 px-3">Player &amp; @Username</th>
+                      <th className="py-2.5 px-3">User ID &amp; Phone</th>
+                      <th className="py-2.5 px-3">Password</th>
+                      <th className="py-2.5 px-3">Level &amp; VIP Effect</th>
+                      <th className="py-2.5 px-3">Coins &amp; Charms</th>
+                      <th className="py-2.5 px-3">Room #</th>
+                      <th className="py-2.5 px-3 text-right">Edit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredPlayers.map(u => (
+                      <tr key={u.userId} className="hover:bg-indigo-50/40">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`}
+                              alt={u.fullName}
+                              className="w-8 h-8 rounded-full object-cover border border-slate-300"
+                            />
+                            <div>
+                              <div className="font-bold text-[#212121]">{u.fullName}</div>
+                              <div className="text-[10px] font-mono text-indigo-600">
+                                @{u.username || 'user'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-[11px]">
+                          <div className="font-bold text-[#2874f0] select-all">{u.userId}</div>
+                          <div className="text-slate-600 select-all">{u.phone}</div>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-amber-900 select-all">
+                          <span className="px-2 py-0.5 rounded-sm bg-amber-50 border border-amber-200">
+                            {u.password || '—'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded-sm bg-blue-50 text-[#2874f0] border border-blue-200 font-black text-[10px]">
+                              Lv.{u.gameLevel || 1}
+                            </span>
+                            {u.vipTier && u.vipTier !== 'none' ? (
+                              <span className="px-1.5 py-0.5 rounded-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-[10px] uppercase">
+                                {u.vipTier === 'diamond' ? '💎 DIAMOND' : u.vipTier === 'gold' ? '👑 GOLD' : '🛡️ SILVER'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Standard</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono">
+                          <div className="font-bold text-[#fb641b]">🪙 {(u.coins || 0).toLocaleString()}</div>
+                          <div className="text-[10px] text-pink-600">✨ {(u.charms || 0).toLocaleString()}</div>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
+                          #{u.roomAddress || '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingPlayerModal({
+                                user: u,
+                                fullName: u.fullName,
+                                username: u.username || '',
+                                phone: u.phone || '',
+                                password: u.password || '',
+                                coins: String(u.coins || 0),
+                                charms: String(u.charms || 0),
+                                gameLevel: String(u.gameLevel || 1),
+                                vipTier: (u.vipTier as any) || 'none',
+                                frameType: u.frameType || 'standard',
+                                clanName: u.clanName || 'Royal Warriors ESP',
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold cursor-pointer"
+                          >
+                            ✏️ Edit
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===================== TAB 1: MEMBERS AUDIT ===================== */}
       {activeTab === 'members' && (
@@ -1884,6 +2368,256 @@ export const AdminView: React.FC<AdminViewProps> = ({
           )}
         </div>
       )}
+
+      {/* ===================== TAB: GIVE / ADJUST COINS BY USER ID ===================== */}
+      {activeTab === 'give_coins' && (() => {
+        const cleanQuery = coinGrantIdentifier.trim().toLowerCase().replace(/^@/, '');
+        const matchedUser = cleanQuery
+          ? users.find(
+              u =>
+                u.userId.toLowerCase() === cleanQuery ||
+                (u.username || '').toLowerCase() === cleanQuery
+            ) ||
+            users.find(
+              u =>
+                u.userId.toLowerCase().includes(cleanQuery) ||
+                u.fullName.toLowerCase().includes(cleanQuery) ||
+                (u.username || '').toLowerCase().includes(cleanQuery)
+            )
+          : null;
+
+        return (
+          <div className="bg-white rounded-md p-5 border border-slate-200 space-y-5 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="text-base font-bold text-[#212121] flex items-center gap-2">
+                  <Coins className="w-5 h-5 text-emerald-600" />
+                  <span>Direct Coins Credit / Debit by User ID (एडमिन कॉइन आवंटन)</span>
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  किसी भी यूजर का User ID (जैसे ESPGTRK01, EMO-MOM-MMO) या @username चुनकर तुरंत कॉइन्स जोड़ें या घटाएं।
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadAdminData}
+                className="px-3 py-1.5 rounded-sm bg-[#f1f3f6] hover:bg-slate-200 text-xs font-bold text-[#212121] border border-slate-300 transition self-start sm:self-auto cursor-pointer"
+              >
+                🔄 रीफ्रेश मेंबर्स
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left 7 Cols: Adjustment Form */}
+              <form onSubmit={handleAdminAdjustCoins} className="lg:col-span-7 bg-[#f9fafb] border border-slate-200 rounded-md p-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
+                    1. जल्दी से मेंबर चुनें (Quick Select User)
+                  </label>
+                  <select
+                    value={matchedUser?.userId || ''}
+                    onChange={e => {
+                      if (e.target.value) {
+                        setCoinGrantIdentifier(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-xs font-semibold text-[#212121] outline-none focus:border-[#2874f0]"
+                  >
+                    <option value="">-- मेंबर चुनें या नीचे User ID टाइप करें --</option>
+                    {users.map(u => (
+                      <option key={u.userId} value={u.userId}>
+                        {u.fullName} ({u.userId}{u.username ? ` · @${u.username}` : ''}) — 🪙 {(u.coins || 0).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
+                    2. User ID या @Username दर्ज करें *
+                  </label>
+                  <input
+                    type="text"
+                    value={coinGrantIdentifier}
+                    onChange={e => setCoinGrantIdentifier(e.target.value)}
+                    placeholder="उदा: ESPGTRK01 या @rahul"
+                    className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-xs font-mono font-bold text-[#212121] outline-none focus:border-[#2874f0]"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCoinGrantMode('credit')}
+                    className={`py-2.5 rounded-sm text-xs font-black border transition cursor-pointer ${
+                      coinGrantMode === 'credit'
+                        ? 'bg-[#388e3c] border-[#388e3c] text-white shadow-xs'
+                        : 'bg-white border-slate-300 text-slate-700 hover:bg-emerald-50'
+                    }`}
+                  >
+                    ➕ Credit Coins (जोड़ें)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoinGrantMode('debit')}
+                    className={`py-2.5 rounded-sm text-xs font-black border transition cursor-pointer ${
+                      coinGrantMode === 'debit'
+                        ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
+                        : 'bg-white border-slate-300 text-slate-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    ➖ Debit Coins (घटाएं)
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
+                    3. Coins संख्या (Amount) *
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000000}
+                    value={coinGrantAmount}
+                    onChange={e => setCoinGrantAmount(e.target.value)}
+                    className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-sm font-mono font-black text-[#212121] outline-none focus:border-[#2874f0]"
+                    required
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[50, 100, 250, 500, 1000, 2500, 5000].map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCoinGrantAmount(String(preset))}
+                        className={`px-2.5 py-1 rounded-sm text-[11px] font-bold border cursor-pointer transition ${
+                          Number(coinGrantAmount) === preset
+                            ? 'bg-[#2874f0] border-[#2874f0] text-white'
+                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        🪙 {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#212121] mb-1">
+                    4. कारण / नोट (User Notification में दिखेगा)
+                  </label>
+                  <input
+                    type="text"
+                    value={coinGrantReason}
+                    onChange={e => setCoinGrantReason(e.target.value)}
+                    placeholder="उदा: Tournament Winner Bonus / VIP Gift"
+                    className="w-full px-3 py-2 rounded-sm bg-white border border-slate-300 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
+                  />
+                </div>
+
+                {coinGrantResult && (
+                  <div
+                    className={`p-3 rounded-sm border text-xs font-bold ${
+                      coinGrantResult.ok
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-700'
+                    }`}
+                  >
+                    {coinGrantResult.text}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={coinGrantBusy}
+                  className={`w-full py-2.5 rounded-sm text-xs font-black text-white shadow-sm transition cursor-pointer disabled:opacity-50 ${
+                    coinGrantMode === 'credit'
+                      ? 'bg-[#388e3c] hover:bg-[#2e7d32]'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  {coinGrantBusy
+                    ? 'अपडेट हो रहा है...'
+                    : coinGrantMode === 'credit'
+                    ? `🪙 +${Number(coinGrantAmount || 0).toLocaleString()} Coins तुरंत क्रेडिट करें`
+                    : `🪙 -${Number(coinGrantAmount || 0).toLocaleString()} Coins तुरंत डेबिट करें`}
+                </button>
+              </form>
+
+              {/* Right 5 Cols: Live Matched Player Preview & Quick Directory */}
+              <div className="lg:col-span-5 space-y-3">
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-4">
+                  <div className="text-xs font-bold text-[#212121] mb-2">
+                    चयनित यूजर प्रीव्यू (Live Balance)
+                  </div>
+                  {matchedUser ? (
+                    <div className="bg-white border border-slate-200 rounded-md p-3.5 space-y-2.5">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={matchedUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${matchedUser.userId}`}
+                          alt={matchedUser.fullName}
+                          className="w-11 h-11 rounded-full object-cover border border-slate-200"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-black text-[#212121] truncate">{matchedUser.fullName}</div>
+                          <div className="text-[11px] font-mono text-[#2874f0] truncate">
+                            {matchedUser.userId} {matchedUser.username ? `• @${matchedUser.username}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-center pt-2 border-t border-slate-100">
+                        <div className="p-2 rounded bg-amber-50 border border-amber-200">
+                          <div className="text-[10px] text-amber-800 font-bold">वर्तमान Coins</div>
+                          <div className="text-sm font-black text-amber-900 tabular-nums">
+                            🪙 {(matchedUser.coins || 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="p-2 rounded bg-blue-50 border border-blue-200">
+                          <div className="text-[10px] text-blue-800 font-bold">अपडेट के बाद</div>
+                          <div className="text-sm font-black text-blue-900 tabular-nums">
+                            🪙{' '}
+                            {coinGrantMode === 'credit'
+                              ? ((matchedUser.coins || 0) + Math.max(0, Math.floor(Number(coinGrantAmount) || 0))).toLocaleString()
+                              : Math.max(0, (matchedUser.coins || 0) - Math.max(0, Math.floor(Number(coinGrantAmount) || 0))).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500 bg-white border border-dashed border-slate-300 rounded-md p-4 text-center">
+                      सदस्य का लाइव कॉइन बैलेंस देखने के लिए बाईं ओर से मेंबर चुनें या User ID लिखें।
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-3">
+                  <div className="text-[11px] font-bold text-slate-600 mb-2">
+                    रजिस्टर्ड यूजर्स (क्लिक करके चुनें)
+                  </div>
+                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-200 bg-white rounded border border-slate-200">
+                    {users.slice(0, 20).map(u => (
+                      <button
+                        key={u.userId}
+                        type="button"
+                        onClick={() => setCoinGrantIdentifier(u.userId)}
+                        className="w-full px-3 py-2 text-left hover:bg-[#f5f8ff] flex items-center justify-between gap-2 text-xs cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#212121] truncate">{u.fullName}</div>
+                          <div className="text-[10px] font-mono text-slate-500 truncate">{u.userId}</div>
+                        </div>
+                        <span className="font-black text-amber-700 font-mono shrink-0 tabular-nums">
+                          🪙 {(u.coins || 0).toLocaleString()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===================== TAB: ADMIN MESSAGES & ALERTS ===================== */}
       {activeTab === 'messages' && (
@@ -3140,6 +3874,163 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ===================== EDIT PLAYER PASSWORD, LEVEL & VIP MODAL ===================== */}
+      {editingPlayerModal && (
+        <div
+          onClick={() => setEditingPlayerModal(null)}
+          className="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <form
+            onClick={e => e.stopPropagation()}
+            onSubmit={handleSaveEditedPlayer}
+            className="bg-white border border-slate-200 rounded-md p-5 max-w-lg w-full shadow-2xl space-y-3 text-[#212121] text-xs"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+              <div>
+                <h3 className="text-sm font-black text-indigo-900">
+                  ✏️ Edit Player Credentials &amp; VIP Effect
+                </h3>
+                <p className="text-[11px] font-mono text-slate-500">
+                  User ID: {editingPlayerModal.user.userId}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPlayerModal(null)}
+                className="p-1 rounded-sm bg-[#f1f3f6] text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingPlayerModal.fullName}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, fullName: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">@Username</label>
+                <input
+                  type="text"
+                  value={editingPlayerModal.username}
+                  onChange={e =>
+                    setEditingPlayerModal(p => p && ({ ...p, username: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() }))
+                  }
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Mobile</label>
+                <input
+                  type="text"
+                  value={editingPlayerModal.phone}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, phone: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Login Password</label>
+                <input
+                  type="text"
+                  value={editingPlayerModal.password}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, password: e.target.value }))}
+                  className="w-full bg-amber-50 border border-amber-300 rounded-sm px-3 py-1.5 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Coins (🪙)</label>
+                <input
+                  type="number"
+                  value={editingPlayerModal.coins}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, coins: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Charms (✨)</label>
+                <input
+                  type="number"
+                  value={editingPlayerModal.charms}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, charms: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Game Level</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={editingPlayerModal.gameLevel}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, gameLevel: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">VIP Tier</label>
+                <select
+                  value={editingPlayerModal.vipTier}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, vipTier: e.target.value as any }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5 font-bold"
+                >
+                  <option value="none">Standard (No VIP)</option>
+                  <option value="silver">🛡️ Silver VIP</option>
+                  <option value="gold">👑 Gold VIP</option>
+                  <option value="diamond">💎 Diamond Royal VIP</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Avatar Frame</label>
+                <select
+                  value={editingPlayerModal.frameType}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, frameType: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5"
+                >
+                  <option value="standard">Standard Ring</option>
+                  <option value="vip-gold">👑 VIP Gold Glow</option>
+                  <option value="cyber-diamond">💠 Cyber Diamond</option>
+                  <option value="royal-dragon-crown">🐉 Royal Dragon Crown</option>
+                  <option value="mythic-crimson">🔥 Mythic Crimson</option>
+                  <option value="clan-leader">🛡️ Clan Leader Emblem</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Clan / Family</label>
+                <input
+                  type="text"
+                  value={editingPlayerModal.clanName}
+                  onChange={e => setEditingPlayerModal(p => p && ({ ...p, clanName: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-3 py-1.5"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setEditingPlayerModal(null)}
+                className="px-3.5 py-2 rounded-sm bg-[#f1f3f6] font-bold cursor-pointer"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="submit"
+                disabled={savingPlayerEdit}
+                className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-black cursor-pointer disabled:opacity-50"
+              >
+                {savingPlayerEdit ? 'सेव हो रहा है...' : '💾 Save Credentials'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

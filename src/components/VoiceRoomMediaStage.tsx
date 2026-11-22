@@ -604,7 +604,7 @@ export const VoiceRoomMediaStage: React.FC<VoiceRoomMediaStageProps> = ({
                 </button>
               </div>
 
-              {/* Game 2: Werewolf WePlay */}
+              {/* Game 2: Werewolf ESP PLAY */}
               <div 
                 onClick={onOpenWerewolfGame}
                 className="bg-purple-50 p-3 rounded-md border border-purple-200 hover:border-purple-500 shadow-xs cursor-pointer transition flex flex-col justify-between"

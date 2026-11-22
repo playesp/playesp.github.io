@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { X, Sparkles, Lock, Gift, CheckCircle2, Flame } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Sparkles, Lock, Gift, CheckCircle2, Flame, History, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import {
   ALL_GIFTS_CATALOG,
   GIFT_CATEGORY_META,
   resolveCanonicalGiftId,
   type GiftCatalogItem,
 } from '../config/giftCatalog.ts';
+import type { GiftHistoryRecord } from '../types/index.ts';
+import { api } from '../services/api.ts';
 
 export interface GiftWallEntry {
   id: string;
@@ -20,6 +22,7 @@ export interface GiftWallEntry {
 
 interface GiftWallModalProps {
   isOpen: boolean;
+  recipientUserId?: string;
   recipientName: string;
   recipientAvatar?: string;
   recipientRoomAddress?: string;
@@ -32,6 +35,7 @@ interface GiftWallModalProps {
 
 export const GiftWallModal: React.FC<GiftWallModalProps> = ({
   isOpen,
+  recipientUserId,
   recipientName,
   recipientAvatar,
   recipientRoomAddress,
@@ -41,8 +45,35 @@ export const GiftWallModal: React.FC<GiftWallModalProps> = ({
   onClose,
   onSendCatalogGift,
 }) => {
+  const [activeView, setActiveView] = useState<'wall' | 'history'>('wall');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'received' | 'sent'>('all');
+  const [giftHistory, setGiftHistory] = useState<{
+    sent: GiftHistoryRecord[];
+    received: GiftHistoryRecord[];
+    all: GiftHistoryRecord[];
+  }>({ sent: [], received: [], all: [] });
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'lit' | 'unlit'>('all');
   const [categoryFilter, setCategoryFilter] = useState<'all' | GiftCatalogItem['category']>('all');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const lookupKey = recipientUserId || recipientName;
+    if (!lookupKey) return;
+    setLoadingHistory(true);
+    api
+      .getGiftHistory(lookupKey)
+      .then((res) => {
+        if (res.success) {
+          setGiftHistory({
+            sent: res.sent || [],
+            received: res.received || [],
+            all: res.all || [],
+          });
+        }
+      })
+      .finally(() => setLoadingHistory(false));
+  }, [isOpen, recipientUserId, recipientName]);
 
   const mergedCatalog = useMemo(() => {
     const receivedMap = new Map<
@@ -101,7 +132,7 @@ export const GiftWallModal: React.FC<GiftWallModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-xl bg-white sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] text-[#212121]"
       >
-        {/* Top WePlay Header */}
+        {/* Top ESP PLAY Header */}
         <div className="bg-gradient-to-r from-[#2874f0] via-indigo-600 to-purple-700 px-4 sm:px-5 py-4 text-white flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <img
@@ -182,65 +213,180 @@ export const GiftWallModal: React.FC<GiftWallModalProps> = ({
             </div>
           </div>
 
-          {/* Filters: Status + Category */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+          {/* Mode Switch: Gift Wall vs Gift History */}
+          <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
             <div className="flex items-center gap-1.5 text-[11px] font-bold">
-              {[
-                { id: 'all', label: `All (${mergedCatalog.length})` },
-                { id: 'lit', label: `Lit ✓ (${litUniqueCount})` },
-                { id: 'unlit', label: `Unlit (${unlitCount})` },
-              ].map((st) => (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => setStatusFilter(st.id as any)}
-                  className={`px-2.5 py-1 rounded-md border transition cursor-pointer ${
-                    statusFilter === st.id
-                      ? 'bg-[#2874f0] text-white border-[#2874f0]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {st.label}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setActiveView('wall')}
+                className={`px-3 py-1.5 rounded-md border flex items-center gap-1 cursor-pointer transition ${
+                  activeView === 'wall'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Gift className="w-3.5 h-3.5" />
+                <span>Gift Wall</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('history')}
+                className={`px-3 py-1.5 rounded-md border flex items-center gap-1 cursor-pointer transition ${
+                  activeView === 'history'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Gift History ({giftHistory.all.length})</span>
+              </button>
             </div>
+
+            {activeView === 'wall' ? (
+              <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                {[
+                  { id: 'all', label: `All (${mergedCatalog.length})` },
+                  { id: 'lit', label: `Lit ✓ (${litUniqueCount})` },
+                  { id: 'unlit', label: `Unlit (${unlitCount})` },
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setStatusFilter(st.id as any)}
+                    className={`px-2.5 py-1 rounded-md border transition cursor-pointer ${
+                      statusFilter === st.id
+                        ? 'bg-[#2874f0] text-white border-[#2874f0]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                {[
+                  { id: 'all', label: `All (${giftHistory.all.length})` },
+                  { id: 'received', label: `Received (${giftHistory.received.length})` },
+                  { id: 'sent', label: `Sent (${giftHistory.sent.length})` },
+                ].map((hf) => (
+                  <button
+                    key={hf.id}
+                    type="button"
+                    onClick={() => setHistoryFilter(hf.id as any)}
+                    className={`px-2.5 py-1 rounded-md border transition cursor-pointer ${
+                      historyFilter === hf.id
+                        ? 'bg-[#2874f0] text-white border-[#2874f0]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {hf.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[11px] font-bold">
-            <button
-              type="button"
-              onClick={() => setCategoryFilter('all')}
-              className={`px-2.5 py-1 rounded-md border shrink-0 transition cursor-pointer ${
-                categoryFilter === 'all'
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              ✨ All Categories
-            </button>
-            {(Object.keys(GIFT_CATEGORY_META) as GiftCatalogItem['category'][]).map((catKey) => {
-              const meta = GIFT_CATEGORY_META[catKey];
-              return (
-                <button
-                  key={catKey}
-                  type="button"
-                  onClick={() => setCategoryFilter(catKey)}
-                  className={`px-2.5 py-1 rounded-md border shrink-0 transition cursor-pointer ${
-                    categoryFilter === catKey
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {meta.icon} {meta.label}
-                </button>
-              );
-            })}
-          </div>
+          {activeView === 'wall' && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('all')}
+                className={`px-2.5 py-1 rounded-md border shrink-0 transition cursor-pointer ${
+                  categoryFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                ✨ All Categories
+              </button>
+              {(Object.keys(GIFT_CATEGORY_META) as GiftCatalogItem['category'][]).map((catKey) => {
+                const meta = GIFT_CATEGORY_META[catKey];
+                return (
+                  <button
+                    key={catKey}
+                    type="button"
+                    onClick={() => setCategoryFilter(catKey)}
+                    className={`px-2.5 py-1 rounded-md border shrink-0 transition cursor-pointer ${
+                      categoryFilter === catKey
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {meta.icon} {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Gift Wall Cards Grid */}
+        {/* Gift Wall Cards Grid OR Gift History Ledger */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-white">
-          {visibleItems.length === 0 ? (
+          {activeView === 'history' ? (
+            loadingHistory ? (
+              <div className="py-12 text-center text-xs text-slate-500">गिफ्ट हिस्ट्री लोड हो रही है...</div>
+            ) : (() => {
+              const rows =
+                historyFilter === 'sent'
+                  ? giftHistory.sent
+                  : historyFilter === 'received'
+                    ? giftHistory.received
+                    : giftHistory.all;
+              if (rows.length === 0) {
+                return (
+                  <div className="py-14 text-center text-xs text-slate-500 space-y-2">
+                    <History className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="font-bold text-slate-600">अभी कोई गिफ्ट लेनदेन रिकॉर्ड नहीं है।</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                  {rows.map((item) => {
+                    const isSent = recipientUserId
+                      ? item.senderId.toLowerCase() === recipientUserId.toLowerCase()
+                      : false;
+                    return (
+                      <div key={item.id} className="px-3.5 py-2.5 flex items-center justify-between gap-3 bg-white hover:bg-slate-50">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-2xl shrink-0">
+                            {item.giftIcon || '🎁'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                              <span>{item.quantity}x {item.giftName}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                · {item.context === 'family_chat' ? '🏰 Family Chat' : '🎙️ Voice Stage'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 truncate mt-0.5 flex items-center gap-1">
+                              {isSent ? (
+                                <ArrowUpRight className="w-3 h-3 text-rose-500 shrink-0" />
+                              ) : (
+                                <ArrowDownLeft className="w-3 h-3 text-emerald-600 shrink-0" />
+                              )}
+                              <span>
+                                {item.senderName} ➔ {item.recipientName}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-black font-mono tabular-nums text-amber-600">
+                            🪙 {item.coinCost.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {new Date(item.createdAt).toLocaleDateString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : visibleItems.length === 0 ? (
             <div className="py-14 text-center text-xs text-slate-500 space-y-2">
               <Gift className="w-8 h-8 mx-auto text-slate-300" />
               <p className="font-bold text-slate-600">इस फ़िल्टर में कोई गिफ्ट नहीं मिला।</p>

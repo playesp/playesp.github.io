@@ -334,10 +334,10 @@ export const VoiceRoomDesignModal: React.FC<VoiceRoomDesignModalProps> = ({
                 </div>
               </div>
 
-              {/* Stage Layout Picker (4 WePlay Layouts) */}
+              {/* Stage Layout Picker (4 ESP PLAY Layouts) */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-2">
-                  🎭 स्टेज लेआउट चुनें (WePlay Stage Layout)
+                  🎭 स्टेज लेआउट चुनें (ESP PLAY Stage Layout)
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {STAGE_LAYOUT_OPTIONS.map((opt) => (
@@ -647,18 +647,47 @@ export const VoiceRoomDesignModal: React.FC<VoiceRoomDesignModalProps> = ({
                               </div>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            disabled={alreadyInvited}
-                            onClick={() => handleSendInvite(p.userId, p.fullName)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
-                              alreadyInvited
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                            }`}
-                          >
-                            {alreadyInvited ? '✓ Invited' : 'Invite'}
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={alreadyInvited}
+                              onClick={() => handleSendInvite(p.userId, p.fullName)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
+                                alreadyInvited
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
+                            >
+                              {alreadyInvited ? '✓ Invited' : 'Invite'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const roomPass = (room as any).passcode || passcode.trim() || '';
+                                  await api.sendDirectMessage({
+                                    fromUserId: currentUser.userId,
+                                    toUserId: p.userId,
+                                    inviteType: 'locked_room',
+                                    roomAddress: room.roomAddress || '',
+                                    roomTitle: room.title || 'Private Voice Room',
+                                    passcode: roomPass,
+                                    text: roomPass
+                                      ? `🔒 मेरे पर्सनल लॉक वॉइस रूम "${room.title}" (#${room.roomAddress}) में जुड़ें! पासकोड: ${roomPass}`
+                                      : `🏠 मेरे पर्सनल वॉइस रूम "${room.title}" (#${room.roomAddress}) में जुड़ें!`,
+                                  });
+                                  setInvitedIds((prev) => new Set(prev).add(p.userId));
+                                  showToast(`🔒 ${p.fullName} को DM लॉक रूम इनवाइट भेज दिया गया!`, 'success');
+                                } catch {
+                                  showToast('DM इनवाइट भेजने में त्रुटि', 'error');
+                                }
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold cursor-pointer"
+                              title="1-on-1 DM में पासकोड सहित रूम इनवाइट भेजें"
+                            >
+                              🔒 DM Invite
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

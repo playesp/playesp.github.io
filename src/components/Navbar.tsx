@@ -102,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   const searchableShortcuts = [
-    { type: 'tab', tab: 'gaming-room', title: 'ESP Gaming Time (WePlay Voice & Games)', subtitle: '8-Seat Stage, Ludo, Bingo & Coins', keywords: 'gaming game ludo bingo voice room play' },
+    { type: 'tab', tab: 'gaming-room', title: 'ESP PLAY Gaming Room (Voice, Family & Games)', subtitle: '8-Seat Stage, PK, Family, CP & Coins', keywords: 'gaming game ludo bingo voice room play family cp' },
     { type: 'tab', tab: 'nwi', title: 'NWI 3-Level Passive Dashboard', subtitle: 'Track real 3-level downline & claim bonus', keywords: 'nwi tree passive level team' },
     { type: 'tab', tab: 'chat-club', title: 'ESP Chat Club', subtitle: 'Channels, Friends & Group Chat', keywords: 'chat club friends message' },
     { type: 'tab', tab: 'moments', title: 'Moments Daily Status', subtitle: 'Share photos & updates', keywords: 'moments status photos feed' },

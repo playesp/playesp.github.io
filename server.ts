@@ -31,6 +31,10 @@ import type {
   NwiTreeRecord,
   NwiMemberNode,
   PlanUpgradeRequest,
+  RelationshipBond,
+  EspFamily,
+  GiftHistoryRecord,
+  PkBattleState,
 } from './src/types/index.ts';
 import {
   FRAME_CATALOG,
@@ -53,7 +57,18 @@ import {
   getDailyQuizForDate,
   getSpotlightGameForDate,
   getYesterdayDateString,
+  getIstDateString,
+  getLiveIstTimeMeta,
 } from './src/config/dailyGameIntel.ts';
+import {
+  RELATIONSHIP_TOKENS,
+  VOICE_ROOM_TIERS,
+  ESP_EVENTS_CATALOG,
+  FAMILY_EMBLEMS,
+  getRelationshipTokenSpec,
+  getVoiceRoomTierSpec,
+  type VoiceRoomTierId,
+} from './src/config/espSocialCatalog.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,6 +122,8 @@ interface Database {
   activeGameWagers?: Record<string, { gameName: string; bet: number; createdAt: string }>;
   nwiTreeRecords?: NwiTreeRecord[];
   planUpgrades?: PlanUpgradeRequest[];
+  families?: EspFamily[];
+  giftHistory?: GiftHistoryRecord[];
   voiceRoomSeats?: VoiceRoomSeat[];
   voiceRoomChat?: Array<{ id: string; senderId: string; sender: string; senderRoll: string; text: string; isGift?: boolean; time: string; audioDataUrl?: string; audioDuration?: number; isVoiceNote?: boolean }>;
   customVoiceRooms?: Array<{
@@ -119,6 +136,25 @@ interface Database {
     isPersonalFixed?: boolean;
     isVipRoom?: boolean;
     vipRoomLabel?: string;
+    roomTier?: VoiceRoomTierId;
+    isPremiumRoom?: boolean;
+    roomEffect?: 'none' | 'sparkles' | 'petals' | 'fireflies' | 'snow' | 'neon_lasers';
+    activePackets?: Array<{
+      id: string;
+      roomId: string;
+      packetType: 'red' | 'blue';
+      senderUserId: string;
+      senderName: string;
+      senderAvatar?: string;
+      totalCoins: number;
+      remainingCoins: number;
+      maxClaims: number;
+      claimedBy: Array<{ userId: string; fullName: string; coinsWon: number; xpWon?: number; claimedAt: string }>;
+      message?: string;
+      createdAt: string;
+      expiresAt: string;
+    }>;
+    pkBattle?: PkBattleState;
     hostUserId: string;
     hostName: string;
     hostUsername?: string;
@@ -151,6 +187,22 @@ interface Database {
       time: string;
     }>;
     audience: string[];
+  }>;
+  directMessages?: Array<{
+    id: string;
+    fromUserId: string;
+    fromName: string;
+    fromAvatar?: string;
+    toUserId: string;
+    text: string;
+    inviteType?: 'game' | 'locked_room';
+    gameKey?: string;
+    gameName?: string;
+    roomAddress?: string;
+    roomTitle?: string;
+    passcode?: string;
+    timestamp: string;
+    createdAt: string;
   }>;
   adminMasterKey: string;
 }
@@ -472,11 +524,11 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
   {
     id: 'BOT-BHAI',
     code: 'we_bhai',
-    name: 'We Bhai (वी भाई)',
-    hindiName: '🤝 वी भाई (गाइड)',
-    roleTitle: 'Community Guide Bot',
-    hindiRole: 'कम्युनिटी गाइड साथी',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeBhaiBhojpuriBrother',
+    name: 'ESP Bhai (ईएसपी भाई)',
+    hindiName: '🤝 ईएसपी भाई (गाइड)',
+    roleTitle: 'ESP PLAY Guide Bot',
+    hindiRole: 'ESP PLAY कम्युनिटी गाइड',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=EspBhaiBrother',
     frameType: 'vip-gold',
     level: 1,
     charms: 0,
@@ -484,25 +536,25 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
     badge: '🤝 GUIDE',
     voiceAccent: 'Hindi-Friendly',
     status: 'online',
-    description: 'Friendly guide that explains ESP plans, verified tasks, and coin store.',
-    hindiDescription: 'दोस्ताना गाइड जो 10 प्लान, असली टास्क सिस्टम और कॉइन शॉप की जानकारी देता है।',
+    description: 'Friendly ESP PLAY guide that explains services, verified tasks, relationships, and coin store.',
+    hindiDescription: 'दोस्ताना गाइड जो ESP PLAY गेम्स, असली टास्क सिस्टम, फैमिली और कॉइन शॉप की जानकारी देता है।',
     superpowers: [
-      '10 सर्विसेज मार्गदर्शन',
+      'ESP PLAY इकोसिस्टम मार्गदर्शन',
       'टास्क सिस्टम गाइड (+5 Coins)',
     ],
     sampleDialogues: [
       '🤝 नमस्ते! असली टास्क पूरे करें और हर टास्क पर +5 कॉइन्स व EXP पाएं।',
-      '🤝 फ्रेम और VIP अनलॉक करने के लिए कॉइन्स अर्न करें या UPI से खरीदें।',
+      '🤝 फ्रेम, रिलेशनशिप टैग और VIP अनलॉक करने के लिए कॉइन्स अर्न करें या UPI से खरीदें।',
     ]
   },
   {
     id: 'BOT-CHAT',
     code: 'we_chat',
-    name: 'We Chat (वी चैट AI)',
-    hindiName: '💬 वी चैट (मनोरंजन साथी)',
-    roleTitle: 'Voice & Banter Companion',
+    name: 'ESP Chat (ईएसपी चैट AI)',
+    hindiName: '💬 ईएसपी चैट (मनोरंजन साथी)',
+    roleTitle: 'ESP PLAY Voice Companion',
     hindiRole: 'शायरी व बातचीत साथी',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WeChatCompanionPoet',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=EspChatCompanionPoet',
     frameType: 'cosmic-neon',
     level: 1,
     charms: 0,
@@ -510,14 +562,14 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
     badge: '💬 COMPANION',
     voiceAccent: 'Hindi-Sweet',
     status: 'online',
-    description: 'Shares Hindi shayari and keeps the stage welcoming.',
-    hindiDescription: 'हिंदी शायरी और बातचीत से रूम का माहौल खुशनुमा बनाता है।',
+    description: 'Shares Hindi shayari and keeps the ESP PLAY stage welcoming.',
+    hindiDescription: 'हिंदी शायरी और बातचीत से ESP PLAY रूम का माहौल खुशनुमा बनाता है।',
     superpowers: [
       'खूबसूरत हिंदी व उर्दू शायरी',
       'स्वस्थ मनोरंजन बातचीत',
     ],
     sampleDialogues: [
-      '💬 महफ़िल में आपका स्वागत है! आइए सब मिलकर रूम चैट में बात करें।',
+      '💬 महफ़िल में आपका स्वागत है! आइए सब मिलकर ESP PLAY रूम चैट में बात करें।',
       '💬 "मंजिल उन्हीं को मिलती है, जिनके सपनों में जान होती है... हौसलों से उड़ान होती है!"',
     ]
   },
@@ -526,7 +578,7 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
 const SYNTHETIC_USER_IDS = new Set(['SHARMA-JI-VIP', 'ESP-SHARMA-JI-VIP', 'ESP-GUEST-01', 'TEST-ESP-USER']);
 
 function getTodayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+  return getIstDateString();
 }
 
 function ensureDailyTaskState(user: UserProfile) {
@@ -687,6 +739,16 @@ function normalizeUserRecord(u: any): UserProfile {
   if (u.totalCoinsSpent === undefined) u.totalCoinsSpent = 0;
   if (u.totalOnlineMinutes === undefined) u.totalOnlineMinutes = 0;
   if (u.isOnline === undefined) u.isOnline = false;
+  if (!Array.isArray(u.ownedRelationshipTokens)) u.ownedRelationshipTokens = [];
+  if (!Array.isArray(u.activeRelationships)) u.activeRelationships = [];
+  if (u.familyId === undefined) u.familyId = '';
+  if (!u.familyRole) u.familyRole = 'Member';
+  if (u.familyCoinsContributed === undefined) u.familyCoinsContributed = 0;
+  if (!Array.isArray(u.unlockedRoomTiers) || u.unlockedRoomTiers.length === 0) {
+    u.unlockedRoomTiers = ['normal'];
+  }
+  if (!u.unlockedRoomTiers.includes('normal')) u.unlockedRoomTiers.unshift('normal');
+  if (!Array.isArray(u.claimedEventIds)) u.claimedEventIds = [];
   ensureDailyTaskState(u);
   return u;
 }
@@ -742,6 +804,9 @@ function loadDatabase(): Database {
       if (!Array.isArray(data.homeSliderPhotos)) data.homeSliderPhotos = [];
       if (!Array.isArray(data.nwiTreeRecords)) data.nwiTreeRecords = [];
       if (!Array.isArray(data.planUpgrades)) data.planUpgrades = [];
+      if (!Array.isArray(data.families)) data.families = [];
+      if (!Array.isArray(data.giftHistory)) data.giftHistory = [];
+      if (!Array.isArray(data.directMessages)) data.directMessages = [];
       return data;
     } catch (e) {
       console.error('Failed to parse database file, resetting to clean defaults', e);
@@ -842,6 +907,9 @@ function loadDatabase(): Database {
     activeGameWagers: {},
     nwiTreeRecords: [],
     planUpgrades: [],
+    families: [],
+    giftHistory: [],
+    directMessages: [],
     voiceRoomSeats: Array.from({ length: 8 }, (_, i) => ({
       seatNumber: i + 1,
       seatNumberLabel: String(i + 1),
@@ -3689,15 +3757,16 @@ function buildDailyHubPayload(user: UserProfile) {
   const fullQuiz = getDailyQuizForDate(today);
   const spotlightGame = getSpotlightGameForDate(today);
 
+  const timeMeta = getLiveIstTimeMeta();
   const lastCheckIn = user.lastDailyCheckInDate || '';
   const claimedToday = lastCheckIn === today;
   const rawStreak = Number(user.loginStreak || 0);
-  const streakAtRisk = Boolean(lastCheckIn && lastCheckIn !== today && lastCheckIn !== yesterday && rawStreak > 0);
+  const isConsecutiveFromYesterday = Boolean(lastCheckIn && lastCheckIn === yesterday && rawStreak > 0);
+  const streakMissedReset = Boolean(lastCheckIn && !claimedToday && !isConsecutiveFromYesterday && rawStreak > 0);
+  // Strict consecutive rule: miss even 1 day -> resets cleanly back to Day 1!
   const effectiveStreak = claimedToday
     ? rawStreak
-    : lastCheckIn === yesterday
-    ? rawStreak
-    : streakAtRisk
+    : isConsecutiveFromYesterday
     ? rawStreak
     : 0;
   const nextDayNumber = claimedToday
@@ -3708,7 +3777,7 @@ function buildDailyHubPayload(user: UserProfile) {
     const completedDaysInCycle = claimedToday
       ? ((effectiveStreak - 1) % 7) + 1
       : (effectiveStreak % 7);
-    const isClaimedInCycle = !streakAtRisk && item.day <= completedDaysInCycle;
+    const isClaimedInCycle = !streakMissedReset && item.day <= completedDaysInCycle;
     const isToday = !claimedToday && item.day === nextDayNumber;
     return {
       ...item,
@@ -3738,6 +3807,7 @@ function buildDailyHubPayload(user: UserProfile) {
 
   return {
     today,
+    timeMeta,
     intel,
     quiz: {
       id: fullQuiz.id,
@@ -3753,7 +3823,8 @@ function buildDailyHubPayload(user: UserProfile) {
       canClaimToday: !claimedToday,
       currentStreak: effectiveStreak,
       nextDayNumber,
-      streakAtRisk,
+      streakAtRisk: streakMissedReset,
+      streakMissedReset,
       streakShields: Number(user.streakShields || 0),
       schedule,
     },
@@ -3768,6 +3839,11 @@ function buildDailyHubPayload(user: UserProfile) {
   };
 }
 
+// Live IST Midnight Clock API
+app.get('/api/time/live', (_req, res) => {
+  res.json({ success: true, timeMeta: getLiveIstTimeMeta() });
+});
+
 // 3A. GET Daily Fresh Hub (Rotating Knowledge Intel, Daily Quiz, 7-Day Streak, Free Play Cap, Leaderboard)
 app.get('/api/game/daily-hub/:userId', (req, res) => {
   const uid = decodeURIComponent(req.params.userId || '').trim();
@@ -3775,8 +3851,9 @@ app.get('/api/game/daily-hub/:userId', (req, res) => {
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
+  ensureDailyTaskState(user);
   const hub = buildDailyHubPayload(user);
-  res.json({ success: true, hub, user });
+  res.json({ success: true, hub, timeMeta: hub.timeMeta, user });
 });
 
 // 3B. Claim Daily 7-Day Check-In Streak (+5c -> +50c Mega Chest, supports Streak Shield)
@@ -4085,7 +4162,7 @@ app.post('/api/game/buy-booster', (req, res) => {
   });
 });
 
-// 4. Send Room Gift (WePlay Voice Stage)
+// 4. Send Room / Family / Profile Gift (ESP PLAY Stage + Gift Wall + Gift History + PK Battle)
 const SERVER_LEGACY_GIFT_MAP: Record<string, { id: string; name: string; icon: string }> = {
   g1: { id: 'pop_2', name: 'Red Rose', icon: '🌹' },
   g2: { id: 'pop_4', name: 'Choco Delight', icon: '🍫' },
@@ -4097,7 +4174,21 @@ const SERVER_LEGACY_GIFT_MAP: Record<string, { id: string; name: string; icon: s
 };
 
 app.post('/api/game/send-gift', (req, res) => {
-  const { senderId, targetName, targetUserId, giftId, giftName, giftIcon, coinCost, charmValue, quantity } = req.body;
+  const {
+    senderId,
+    targetName,
+    targetUserId,
+    giftId,
+    giftName,
+    giftIcon,
+    coinCost,
+    charmValue,
+    quantity,
+    context,
+    roomId,
+    familyId,
+    pkSide,
+  } = req.body;
   const sender = db.users.find(u => u.userId === senderId || u.id === senderId);
   if (!sender) {
     return res.status(404).json({ success: false, message: 'Sender not found' });
@@ -4136,6 +4227,13 @@ app.post('/api/game/send-gift', (req, res) => {
         )
       : undefined;
 
+  const rawKey = String(giftId || giftName || 'pop_2').trim();
+  const mapped = SERVER_LEGACY_GIFT_MAP[rawKey];
+  const gKey = mapped ? mapped.id : rawKey;
+  const canonicalName = mapped ? mapped.name : String(giftName || 'Gift').replace(/^\d+x\s+/i, '');
+  const canonicalIcon = mapped ? mapped.icon : String(giftIcon || '🎁');
+  const nowIso = new Date().toISOString();
+
   if (recipient) {
     if (recipient.userId !== sender.userId) {
       recipient.charms = (recipient.charms || 0) + charmsVal;
@@ -4143,11 +4241,6 @@ app.post('/api/game/send-gift', (req, res) => {
     if (!recipient.receivedGifts || typeof recipient.receivedGifts !== 'object') {
       recipient.receivedGifts = {};
     }
-    const rawKey = String(giftId || giftName || 'pop_2').trim();
-    const mapped = SERVER_LEGACY_GIFT_MAP[rawKey];
-    const gKey = mapped ? mapped.id : rawKey;
-    const canonicalName = mapped ? mapped.name : String(giftName || 'Gift').replace(/^\d+x\s+/i, '');
-    const canonicalIcon = mapped ? mapped.icon : String(giftIcon || '🎁');
     const prevGift = recipient.receivedGifts[gKey];
     recipient.receivedGifts[gKey] = {
       id: gKey,
@@ -4156,19 +4249,119 @@ app.post('/api/game/send-gift', (req, res) => {
       count: (prevGift?.count || 0) + qty,
       coinCost: Math.round(cost / qty),
       charmValue: Math.round(charmsVal / qty),
-      lastReceivedAt: new Date().toISOString(),
+      lastReceivedAt: nowIso,
       lastSenderName: sender.fullName,
     };
+
+    // Boost intimacy points for any active mutual Relationship Bond / CP tag
+    if (Array.isArray(sender.activeRelationships)) {
+      sender.activeRelationships.forEach(b => {
+        if (b.partnerUserId === recipient.userId && b.status === 'accepted') {
+          b.intimacyPoints = (b.intimacyPoints || 0) + cost;
+        }
+      });
+    }
+    if (Array.isArray(recipient.activeRelationships)) {
+      recipient.activeRelationships.forEach(b => {
+        if (b.partnerUserId === sender.userId && b.status === 'accepted') {
+          b.intimacyPoints = (b.intimacyPoints || 0) + cost;
+        }
+      });
+    }
+  }
+
+  // Record permanent Gift History entry
+  if (!Array.isArray(db.giftHistory)) db.giftHistory = [];
+  const giftCtx: GiftHistoryRecord['context'] =
+    context === 'family_chat' || familyId ? 'family_chat' : context === 'profile' ? 'profile' : 'voice_room';
+  const giftRecord: GiftHistoryRecord = {
+    id: `GH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    senderId: sender.userId,
+    senderName: sender.fullName,
+    senderAvatar: sender.avatar,
+    recipientId: recipient?.userId || String(targetUserId || targetName || 'STAGE'),
+    recipientName: recipient?.fullName || String(targetName || 'Voice Stage'),
+    recipientAvatar: recipient?.avatar,
+    giftId: gKey,
+    giftName: canonicalName,
+    giftIcon: canonicalIcon,
+    quantity: qty,
+    coinCost: cost,
+    charmValue: charmsVal,
+    context: giftCtx,
+    roomId: roomId || undefined,
+    familyId: familyId || undefined,
+    createdAt: nowIso,
+  };
+  db.giftHistory.unshift(giftRecord);
+  if (db.giftHistory.length > 5000) db.giftHistory = db.giftHistory.slice(0, 5000);
+
+  // If sent inside an active Voice Room, update room charms, PK score & stage chat
+  let updatedRoomSummary: any = undefined;
+  if (roomId) {
+    const rooms = getOrCreateRooms(db);
+    const room = rooms.find(r => r.id === roomId || String(r.roomAddress) === String(roomId));
+    if (room) {
+      const tierSpec = getVoiceRoomTierSpec(room.roomTier);
+      const effectiveCharms = Math.round(charmsVal * (tierSpec.pkBoostMultiplier || 1));
+      room.roomCharms = (room.roomCharms || 0) + effectiveCharms;
+      if (room.pkBattle?.active) {
+        if (pkSide === 'blue' || (recipient && recipient.userId !== room.hostUserId && pkSide !== 'red')) {
+          room.pkBattle.blueScore = (room.pkBattle.blueScore || 0) + effectiveCharms;
+        } else {
+          room.pkBattle.redScore = (room.pkBattle.redScore || 0) + effectiveCharms;
+        }
+      }
+      if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+      room.chatMessages.push({
+        id: `rgift-${Date.now()}`,
+        senderId: sender.userId,
+        sender: sender.fullName,
+        senderRoll: sender.userId,
+        senderAvatar: sender.avatar,
+        isGift: true,
+        text: `${canonicalIcon} ${sender.fullName} ने ${recipient?.fullName || targetName || 'Stage'} को ${qty}x ${canonicalName} भेजा! (+${effectiveCharms} Charms ✨)`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+      updatedRoomSummary = buildRoomDetailPayload(room, sender.userId);
+    }
+  }
+
+  // If sent inside an ESP Family chat, credit Family Charms & Family Chat stream
+  if (familyId && Array.isArray(db.families)) {
+    const fam = db.families.find(f => f.id === familyId);
+    if (fam) {
+      fam.familyCharms = (fam.familyCharms || 0) + charmsVal;
+      if (!Array.isArray(fam.chatMessages)) fam.chatMessages = [];
+      fam.chatMessages.push({
+        id: `fgift-${Date.now()}`,
+        familyId: fam.id,
+        senderId: sender.userId,
+        senderName: sender.fullName,
+        senderAvatar: sender.avatar,
+        senderRole: (fam.members.find(m => m.userId === sender.userId)?.role) || 'Member',
+        text: `${canonicalIcon} ${sender.fullName} ने ${recipient?.fullName || targetName || fam.name} को ${qty}x ${canonicalName} भेंट किया! (+${charmsVal} Family Charms)`,
+        isGift: true,
+        giftId: gKey,
+        giftName: canonicalName,
+        giftIcon: canonicalIcon,
+        giftQuantity: qty,
+        recipientName: recipient?.fullName || targetName || fam.name,
+        coinCost: cost,
+        createdAt: nowIso,
+      });
+      if (fam.chatMessages.length > 200) fam.chatMessages = fam.chatMessages.slice(-200);
+    }
   }
 
   logCoinTransaction(db, sender, {
     type: 'debit',
     category: 'gift_sent',
-    categoryLabel: 'रूम गिफ्ट भेंट',
+    categoryLabel: giftCtx === 'family_chat' ? 'फैमिली गिफ्ट भेंट' : 'रूम गिफ्ट भेंट',
     amount: cost,
     balanceBefore,
     balanceAfter: sender.coins,
-    description: `${targetName || 'रूम स्टेज'} को ${giftName} भेंट किया (-${cost} कॉइन्स)`,
+    description: `${recipient?.fullName || targetName || 'रूम स्टेज'} को ${qty}x ${canonicalName} भेंट किया (-${cost} कॉइन्स)`,
   });
 
   db.chatMessages.push({
@@ -4178,19 +4371,51 @@ app.post('/api/game/send-gift', (req, res) => {
     senderName: sender.fullName,
     senderRollNumber: sender.userId,
     senderAvatar: sender.avatar,
-    text: `🎁 [गिफ्ट भेजा] ${sender.fullName} ने ${targetName || 'रूम स्टेज'} को ${giftName} भेंट किया! (+${charmsVal} Charms ✨)`,
-    createdAt: new Date().toISOString(),
+    text: `🎁 [गिफ्ट भेजा] ${sender.fullName} ने ${recipient?.fullName || targetName || 'रूम स्टेज'} को ${qty}x ${canonicalName} भेंट किया! (+${charmsVal} Charms ✨)`,
+    createdAt: nowIso,
   });
 
   saveDatabase(db);
   res.json({
     success: true,
-    message: `${giftName} सफलतापूर्वक भेजा गया! ✨`,
+    message: `${qty}x ${canonicalName} सफलतापूर्वक भेजा गया! ✨`,
     coins: sender.coins,
     charms: sender.charms,
     gameXp: sender.gameXp,
     gameLevel: sender.gameLevel,
+    giftRecord,
+    roomPayload: updatedRoomSummary,
     user: sender,
+  });
+});
+
+app.get('/api/game/gift-history/:userId', (req, res) => {
+  const { userId } = req.params;
+  const user = db.users.find(
+    u =>
+      u.userId.toLowerCase() === userId.toLowerCase() ||
+      u.id.toLowerCase() === userId.toLowerCase() ||
+      (normalizeUsername(userId) && normalizeUsername(u.username) === normalizeUsername(userId))
+  );
+  const targetUid = user ? user.userId.toLowerCase() : userId.toLowerCase();
+  const targetName = user ? user.fullName.trim().toLowerCase() : '';
+  const all = (db.giftHistory || []).filter(
+    g =>
+      g.senderId.toLowerCase() === targetUid ||
+      (g.recipientId || '').toLowerCase() === targetUid ||
+      (targetName && g.recipientName.trim().toLowerCase() === targetName)
+  );
+  const sent = all.filter(g => g.senderId.toLowerCase() === targetUid);
+  const received = all.filter(
+    g => (g.recipientId || '').toLowerCase() === targetUid || (targetName && g.recipientName.trim().toLowerCase() === targetName)
+  );
+  res.json({
+    success: true,
+    sent,
+    received,
+    all,
+    totalSentCoins: sent.reduce((s, x) => s + (x.coinCost || 0), 0),
+    totalReceivedCharms: received.reduce((s, x) => s + (x.charmValue || 0), 0),
   });
 });
 
@@ -4219,7 +4444,9 @@ app.get('/api/tasks/:userId', (req, res) => {
     tasks,
     chests,
     claimedTodayCount: claimedCount,
+    claimedChestMilestones: user.claimedChestMilestones || [],
     tasksCompletedCount: user.tasksCompletedCount || 0,
+    timeMeta: getLiveIstTimeMeta(),
     user,
   });
 });
@@ -4808,6 +5035,11 @@ function buildRoomSummary(r: any, viewerId?: string) {
   const audience = Array.isArray(r.audience) ? r.audience : [];
   const lockedSeats = Array.isArray(r.lockedSeats) ? r.lockedSeats : [];
   const seats = Array.isArray(r.seats) ? r.seats : [];
+  const tierId: VoiceRoomTierId = r.roomTier || 'normal';
+  const nowMs = Date.now();
+  const activePackets = (Array.isArray(r.activePackets) ? r.activePackets : []).filter(
+    (p: any) => p.remainingCoins > 0 && p.claimedBy.length < p.maxClaims && new Date(p.expiresAt).getTime() > nowMs
+  );
   return {
     id: r.id,
     title: r.title,
@@ -4818,6 +5050,11 @@ function buildRoomSummary(r: any, viewerId?: string) {
     isPersonalFixed: Boolean(r.isPersonalFixed),
     isVipRoom: Boolean(r.isVipRoom || isVipFancyRoomNumber(r.roomAddress)),
     vipRoomLabel: r.vipRoomLabel || '',
+    roomTier: tierId,
+    isPremiumRoom: Boolean(r.isPremiumRoom || tierId !== 'normal'),
+    roomEffect: r.roomEffect || 'none',
+    activePackets,
+    pkBattle: r.pkBattle || { active: false, redLabel: 'Team Red', blueLabel: 'Team Blue', redScore: 0, blueScore: 0 },
     hostUserId: r.hostUserId,
     hostName: r.hostName,
     hostUsername: r.hostUsername || '',
@@ -4835,6 +5072,7 @@ function buildRoomSummary(r: any, viewerId?: string) {
     isFollowed: Boolean(viewerId && followers.includes(viewerId)),
     roomCharms: r.roomCharms || r.hostCharms || 0,
     isPrivate: Boolean(r.isPrivate),
+    passcode: viewerId && viewerId === r.hostUserId ? r.passcode || '' : undefined,
     occupiedSeatsCount: seats.filter((s: any) => Boolean(s.userId)).length,
     listenersCount: Math.max(1, audience.length),
     audience,
@@ -4999,7 +5237,7 @@ app.get('/api/game/voice-rooms/lookup/:query', (req, res) => {
   return res.json(buildRoomDetailPayload(match, viewerId));
 });
 
-// 6.1 Create New Custom Voice Room (With Custom Wallpaper & Stage Layout)
+// 6.1 Create New Custom Voice Room (Normal Free 0c OR Advance/Premium Tiers with Coins)
 app.post('/api/game/voice-rooms/create', (req, res) => {
   const {
     userId,
@@ -5014,6 +5252,7 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
     customWallpaperUrl,
     stageLayout,
     youtubeVideoUrl,
+    roomTier,
   } = req.body;
   const user = db.users.find(u =>
     (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
@@ -5022,6 +5261,34 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
 
   if (!user) {
     return res.status(401).json({ success: false, message: 'वॉइस रूम बनाने के लिए कृपया पहले लॉगिन करें।' });
+  }
+
+  const chosenTier = getVoiceRoomTierSpec(roomTier || 'normal');
+  if (!Array.isArray(user.unlockedRoomTiers)) user.unlockedRoomTiers = ['normal'];
+  const alreadyUnlocked = chosenTier.coinPrice === 0 || user.unlockedRoomTiers.includes(chosenTier.id);
+  if (!alreadyUnlocked) {
+    const before = user.coins || 0;
+    if (before < chosenTier.coinPrice) {
+      return res.status(400).json({
+        success: false,
+        code: 'INSUFFICIENT_COINS',
+        requiredCoins: chosenTier.coinPrice,
+        currentCoins: before,
+        message: `${chosenTier.hindiName} के लिए ${chosenTier.coinPrice} Coins चाहिए! आपके पास केवल ${before} Coins हैं (Normal Room बिल्कुल फ्री है)।`,
+      });
+    }
+    user.coins = before - chosenTier.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + chosenTier.coinPrice;
+    user.unlockedRoomTiers.push(chosenTier.id);
+    logCoinTransaction(db, user, {
+      type: 'debit',
+      category: 'room_purchase',
+      categoryLabel: 'प्रीमियम रूम टियर अनलॉक',
+      amount: chosenTier.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${chosenTier.name} रूम क्रिएशन अनलॉक (-${chosenTier.coinPrice} कॉइन्स)`,
+    });
   }
 
   const cleanTitle = (title || `${user.fullName}'s Voice Room`).trim();
@@ -5053,6 +5320,9 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
     }))
   ];
 
+  const requestedLayout = (stageLayout || 'classic_8') as 'classic_8' | 'heart_stage' | 'event_hall' | 'watch_party';
+  const safeLayout = chosenTier.allowedLayouts.includes(requestedLayout) ? requestedLayout : chosenTier.allowedLayouts[0];
+
   const newRoom = {
     id: roomId,
     title: cleanTitle,
@@ -5061,6 +5331,9 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
     roomAddress,
     roomNumber: roomAddress,
     isPersonalFixed: false,
+    roomTier: chosenTier.id,
+    isPremiumRoom: chosenTier.id !== 'normal',
+    pkBattle: null as any,
     hostUserId: user.userId,
     hostName: hostName || user.fullName,
     hostUsername: user.username || '',
@@ -5069,7 +5342,7 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
     hostCharms: user.charms || 0,
     wallpaperId: wallpaperId || 'castle_night',
     customWallpaperUrl: typeof customWallpaperUrl === 'string' ? customWallpaperUrl : '',
-    stageLayout: stageLayout || 'classic_8',
+    stageLayout: safeLayout,
     youtubeVideoUrl: typeof youtubeVideoUrl === 'string' ? youtubeVideoUrl.trim() : '',
     youtubeVideoTitle: '',
     lockedSeats: [],
@@ -5085,7 +5358,7 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
         senderId: 'SYSTEM',
         sender: 'System',
         senderRoll: 'STAGE',
-        text: `🔔 System: ${user.fullName} started voice room "${cleanTitle}" (ID: ${roomAddress})!`,
+        text: `🔔 System: ${user.fullName} started ${chosenTier.badgeLabel} voice room "${cleanTitle}" (ID: ${roomAddress})!`,
         time: 'Live',
       }
     ],
@@ -5098,9 +5371,10 @@ app.post('/api/game/voice-rooms/create', (req, res) => {
 
   res.json({
     success: true,
-    message: `🎉 आपका वॉइस रूम "${cleanTitle}" (ID: ${roomAddress}) तैयार हो गया!`,
+    message: `🎉 आपका ${chosenTier.name} "${cleanTitle}" (ID: ${roomAddress}) तैयार हो गया!`,
     room: buildRoomSummary(newRoom, user.userId),
     roomId: newRoom.id,
+    user,
   });
 });
 
@@ -5799,13 +6073,77 @@ app.get('/api/community/real-players', (_req, res) => {
   res.json({ success: true, players: realPlayers });
 });
 
-app.get('/api/community/leaderboard', (_req, res) => {
-  const leaderboard = [...db.users]
-    .sort((a, b) => (b.gameXp || 0) - (a.gameXp || 0) || (b.charms || 0) - (a.charms || 0))
-    .slice(0, 30)
-    .map((u, idx) => ({
-      rank: idx + 1,
+app.get('/api/community/leaderboard', (req, res) => {
+  const rawPeriod = String(req.query.period || 'daily').toLowerCase();
+  const period: 'daily' | 'weekly' | 'monthly' | 'all' =
+    rawPeriod === 'weekly' || rawPeriod === 'monthly' || rawPeriod === 'all' ? rawPeriod : 'daily';
+
+  const nowMs = Date.now();
+  const todayIst = getLiveIstTimeMeta(nowMs).istDate;
+  const windowDays = period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 36500;
+  const cutoffMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
+
+  // Build real recent activity maps per user from gamePlayHistory, giftHistory, and coinTransactions
+  const activityCoinsMap = new Map<string, number>();
+  const activityGamesMap = new Map<string, number>();
+  const activityCharmsMap = new Map<string, number>();
+
+  for (const g of db.gamePlayHistory || []) {
+    const tMs = new Date(g.playedAt).getTime();
+    const inPeriod =
+      period === 'daily'
+        ? (Number.isFinite(tMs) && getIstDateString(tMs) === todayIst)
+        : period === 'all' || (Number.isFinite(tMs) && tMs >= cutoffMs);
+    if (!inPeriod) continue;
+    activityCoinsMap.set(g.userId, (activityCoinsMap.get(g.userId) || 0) + Math.max(0, Number(g.wonCoins) || 0));
+    activityGamesMap.set(g.userId, (activityGamesMap.get(g.userId) || 0) + 1);
+  }
+
+  for (const gh of db.giftHistory || []) {
+    const tMs = new Date(gh.createdAt).getTime();
+    const inPeriod =
+      period === 'daily'
+        ? (Number.isFinite(tMs) && getIstDateString(tMs) === todayIst)
+        : period === 'all' || (Number.isFinite(tMs) && tMs >= cutoffMs);
+    if (!inPeriod) continue;
+    if (gh.recipientId) {
+      activityCharmsMap.set(
+        gh.recipientId,
+        (activityCharmsMap.get(gh.recipientId) || 0) + Math.max(0, Number(gh.charmValue) || 0)
+      );
+    }
+    if (gh.senderId) {
+      activityCoinsMap.set(
+        gh.senderId,
+        (activityCoinsMap.get(gh.senderId) || 0) + Math.round((Number(gh.coinCost) || 0) * 0.5)
+      );
+    }
+  }
+
+  const vipWeight = (tier?: string) =>
+    tier === 'diamond' ? 200 : tier === 'gold' ? 120 : tier === 'silver' ? 60 : 0;
+
+  const enriched = [...db.users].map(u => {
+    const recentWon = activityCoinsMap.get(u.userId) || 0;
+    const recentGames = activityGamesMap.get(u.userId) || 0;
+    const recentCharms = activityCharmsMap.get(u.userId) || 0;
+    const baseCoins = u.coins || 0;
+    const baseCharms = u.charms || 0;
+    const baseXp = u.gameXp || (u.gameLevel || 1) * 150;
+
+    // Combine real period activity with verified profile stats so daily/weekly/monthly reflect genuine differences cleanly
+    const periodScore =
+      period === 'daily'
+        ? recentWon * 4 + recentCharms * 3 + recentGames * 40 + Math.round(baseCoins * 0.25 + baseCharms * 0.5 + baseXp * 0.2) + vipWeight(u.vipTier)
+        : period === 'weekly'
+        ? recentWon * 2 + recentCharms * 2 + Math.round(baseCoins * 0.55 + baseCharms * 0.8 + baseXp * 0.45) + vipWeight(u.vipTier) * 2
+        : period === 'monthly'
+        ? recentWon + recentCharms + Math.round(baseCoins * 0.85 + baseCharms + baseXp * 0.75) + vipWeight(u.vipTier) * 3
+        : baseCoins + baseCharms * 2 + baseXp;
+
+    return {
       userId: u.userId,
+      username: u.username || '',
       fullName: u.fullName,
       avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.userId}`,
       gameLevel: u.gameLevel || 1,
@@ -5813,12 +6151,35 @@ app.get('/api/community/leaderboard', (_req, res) => {
       charms: u.charms || 0,
       coins: u.coins || 0,
       vipTier: u.vipTier || 'none',
+      vipTitle: u.vipTitle || '',
       frameType: u.frameType || 'standard',
+      roomAddress: ensureUserRoomAddress(db, u),
+      isVipRoom: Boolean(u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)),
       clanName: u.clanName || 'Royal Warriors ESP',
+      chosenServiceCode: u.chosenServiceCode || 'GAME',
+      isOnline: Boolean(u.isOnline),
       tasksCompletedCount: u.tasksCompletedCount || 0,
-    }));
+      periodScore,
+      periodCoins: recentWon > 0 ? recentWon : baseCoins,
+      periodGames: recentGames,
+      periodCharms: recentCharms > 0 ? recentCharms : baseCharms,
+    };
+  });
 
-  res.json({ success: true, leaderboard });
+  enriched.sort(
+    (a, b) =>
+      b.periodScore - a.periodScore ||
+      b.coins - a.coins ||
+      b.gameLevel - a.gameLevel ||
+      b.charms - a.charms
+  );
+
+  const leaderboard = enriched.slice(0, 50).map((item, idx) => ({
+    rank: idx + 1,
+    ...item,
+  }));
+
+  res.json({ success: true, period, leaderboard, topEarners: leaderboard });
 });
 
 app.get('/api/community/clans', (_req, res) => {
@@ -6074,6 +6435,23 @@ app.get('/api/community/player-profile/:userId', (req, res) => {
     verifiedAt: u.verifiedAt,
     role: u.role,
     isOnline: Boolean(u.isOnline),
+    activeRelationships: (u.activeRelationships || []).filter(b => b.status === 'accepted'),
+    ownedRelationshipTokens: u.ownedRelationshipTokens || [],
+    familyId: u.familyId || '',
+    familyRole: u.familyRole || 'Member',
+    familyCoinsContributed: u.familyCoinsContributed || 0,
+    familySummary: u.familyId
+      ? (() => {
+          const f = (db.families || []).find(fm => fm.id === u.familyId);
+          return f
+            ? { id: f.id, name: f.name, emblem: f.emblem, familyCode: f.familyCode, level: f.level, familyCoins: f.familyCoins }
+            : null;
+        })()
+      : null,
+    unlockedRoomTiers: u.unlockedRoomTiers || ['normal'],
+    giftHistoryCount: (db.giftHistory || []).filter(
+      g => g.senderId === u.userId || g.recipientId === u.userId
+    ).length,
   };
 
   res.json({ success: true, profile });
@@ -6696,7 +7074,25 @@ app.post('/api/admin/contact-messages/:id/reply', (req, res) => {
 
 app.put('/api/admin/user/:userId/edit-details', (req, res) => {
   const { userId } = req.params;
-  const { adminPassword, fullName, avatar, phone, email, coins, charms, gameLevel, status, houseName, clanName, bio } = req.body;
+  const {
+    adminPassword,
+    fullName,
+    username,
+    password,
+    avatar,
+    phone,
+    email,
+    coins,
+    charms,
+    gameLevel,
+    gameXp,
+    vipTier,
+    frameType,
+    status,
+    houseName,
+    clanName,
+    bio,
+  } = req.body;
   if (!verifyAdmin(adminPassword)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
@@ -6704,6 +7100,19 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  if (username !== undefined) {
+    const normalizedUname = normalizeUsername(username);
+    if (normalizedUname) {
+      if (!isValidUsernameFormat(normalizedUname)) {
+        return res.status(400).json({ success: false, message: 'Username में केवल a-z व 0-9 (3-24 अक्षर) लिखें।' });
+      }
+      if (isUsernameTaken(db.users, normalizedUname, user.userId)) {
+        return res.status(409).json({ success: false, message: `@${normalizedUname} किसी दूसरे प्लेयर के पास है।` });
+      }
+      user.username = normalizedUname;
+    }
   }
 
   const now = new Date().toISOString();
@@ -6743,9 +7152,25 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
 
   if (phone) user.phone = phone.trim();
   if (email) user.email = email.trim();
-  if (coins !== undefined && !isNaN(Number(coins))) user.coins = Number(coins);
-  if (charms !== undefined && !isNaN(Number(charms))) user.charms = Number(charms);
-  if (gameLevel !== undefined && !isNaN(Number(gameLevel))) user.gameLevel = Number(gameLevel);
+  if (password && String(password).trim().length >= 3) user.password = String(password).trim();
+  if (coins !== undefined && !isNaN(Number(coins))) user.coins = Math.max(0, Number(coins));
+  if (charms !== undefined && !isNaN(Number(charms))) user.charms = Math.max(0, Number(charms));
+  if (gameLevel !== undefined && !isNaN(Number(gameLevel))) {
+    user.gameLevel = Math.max(1, Number(gameLevel));
+    if (gameXp === undefined) {
+      user.gameXp = Math.max(user.gameXp || 0, (user.gameLevel - 1) * 150);
+    }
+  }
+  if (gameXp !== undefined && !isNaN(Number(gameXp))) user.gameXp = Math.max(0, Number(gameXp));
+  if (vipTier && ['none', 'silver', 'gold', 'diamond'].includes(vipTier)) {
+    user.vipTier = vipTier;
+    user.vipTitle = vipTier === 'diamond' ? 'Diamond VIP' : vipTier === 'gold' ? 'Gold VIP' : vipTier === 'silver' ? 'Silver VIP' : '';
+  }
+  if (frameType) {
+    user.frameType = frameType;
+    if (!Array.isArray(user.unlockedFrames)) user.unlockedFrames = ['standard'];
+    if (!user.unlockedFrames.includes(frameType)) user.unlockedFrames.push(frameType);
+  }
   if (status) user.status = status;
   if (houseName) user.houseName = houseName.trim();
   if (clanName) user.clanName = clanName.trim();
@@ -7206,6 +7631,1223 @@ app.post('/api/nwi/activate', (req, res) => {
     tree,
     user,
   });
+});
+
+// ==============================================================
+// ESP PLAY SOCIAL ECOSYSTEM: RELATIONSHIPS/CP, FAMILIES, PK BATTLE,
+// ADVANCE ROOM TIERS, EVENTS CENTER & ADMIN USER COIN GRANT
+// ==============================================================
+
+// A. Advance / Premium Voice Room Tier Upgrade & PK Battle Arena
+app.post('/api/game/voice-rooms/:roomId/upgrade-tier', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, tierId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress) === String(roomId));
+  if (!user || !room) {
+    return res.status(404).json({ success: false, message: 'User or Voice Room not found' });
+  }
+  if (room.hostUserId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'केवल रूम होस्ट ही प्रीमियम टियर अपग्रेड कर सकते हैं।' });
+  }
+  const spec = getVoiceRoomTierSpec(tierId);
+  if (!Array.isArray(user.unlockedRoomTiers)) user.unlockedRoomTiers = ['normal'];
+  const alreadyUnlocked = spec.coinPrice === 0 || user.unlockedRoomTiers.includes(spec.id);
+  if (!alreadyUnlocked) {
+    const before = user.coins || 0;
+    if (before < spec.coinPrice) {
+      return res.status(400).json({
+        success: false,
+        code: 'INSUFFICIENT_COINS',
+        requiredCoins: spec.coinPrice,
+        currentCoins: before,
+        message: `${spec.hindiName} के लिए ${spec.coinPrice} Coins चाहिए (आपके पास: ${before} Coins)।`,
+      });
+    }
+    user.coins = before - spec.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + spec.coinPrice;
+    user.unlockedRoomTiers.push(spec.id);
+    logCoinTransaction(db, user, {
+      type: 'debit',
+      category: 'room_purchase',
+      categoryLabel: 'रूम प्रीमियम अपग्रेड',
+      amount: spec.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `Room #${room.roomAddress} को ${spec.name} में अपग्रेड किया (-${spec.coinPrice} कॉइन्स)`,
+    });
+  }
+  room.roomTier = spec.id;
+  room.isPremiumRoom = spec.id !== 'normal';
+  if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `tier-${Date.now()}`,
+    senderId: 'SYSTEM',
+    sender: 'System',
+    senderRoll: 'STAGE',
+    text: `${spec.badgeIcon} Room upgraded to ${spec.name} (${spec.pkBoostMultiplier}x Charms PK Boost)!`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `${spec.badgeIcon} आपका रूम अब ${spec.name} बन गया है!`,
+    roomPayload: buildRoomDetailPayload(room, user.userId),
+    user,
+  });
+});
+
+app.post('/api/game/voice-rooms/:roomId/pk/start', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, title, durationSeconds, redLabel, blueLabel } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress) === String(roomId));
+  if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
+  const dur = Math.min(900, Math.max(60, Number(durationSeconds) || 180));
+  const now = Date.now();
+  const pkBattle = {
+    active: true,
+    title: String(title || 'ESP PLAY Live PK Battle').trim(),
+    redLabel: String(redLabel || `${room.hostName} Red`).trim(),
+    blueLabel: String(blueLabel || 'Challenger Blue').trim(),
+    redScore: 0,
+    blueScore: 0,
+    startedAt: new Date(now).toISOString(),
+    endsAt: new Date(now + dur * 1000).toISOString(),
+    startedBy: userId || room.hostUserId,
+  };
+  room.pkBattle = pkBattle;
+  if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `pk-start-${now}`,
+    senderId: 'SYSTEM',
+    sender: 'PK Referee',
+    senderRoll: 'PK',
+    text: `⚔️ PK BATTLE LIVE! "${pkBattle.title}" — ${pkBattle.redLabel} VS ${pkBattle.blueLabel}! गिफ्ट या PK वोट से अपनी टीम जिताएं!`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  saveDatabase(db);
+  res.json({ success: true, message: '⚔️ PK बैटल शुरू हो गया!', roomPayload: buildRoomDetailPayload(room, userId) });
+});
+
+app.post('/api/game/voice-rooms/:roomId/pk/vote', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, side, coinsToSpend } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress) === String(roomId));
+  if (!user || !room) return res.status(404).json({ success: false, message: 'User or room not found' });
+  if (!room.pkBattle?.active) return res.status(400).json({ success: false, message: 'कोई सक्रिय PK बैटल नहीं चल रहा।' });
+
+  const spend = Math.max(0, Math.round(Number(coinsToSpend) || 0));
+  if (spend > 0) {
+    const before = user.coins || 0;
+    if (before < spend) {
+      return res.status(400).json({ success: false, code: 'INSUFFICIENT_COINS', message: `PK पावर बूस्ट के लिए ${spend} Coins चाहिए।` });
+    }
+    user.coins = before - spend;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + spend;
+    logCoinTransaction(db, user, {
+      type: 'debit',
+      category: 'gift_sent',
+      categoryLabel: 'PK बैटल पावर वोट',
+      amount: spend,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `Room #${room.roomAddress} PK (${side === 'blue' ? 'Blue' : 'Red'}) में +${spend} कॉइन्स बूस्ट`,
+    });
+  }
+  const tierSpec = getVoiceRoomTierSpec(room.roomTier);
+  const pts = Math.round((spend > 0 ? spend * 2 : 10) * (tierSpec.pkBoostMultiplier || 1));
+  if (side === 'blue') room.pkBattle.blueScore = (room.pkBattle.blueScore || 0) + pts;
+  else room.pkBattle.redScore = (room.pkBattle.redScore || 0) + pts;
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `⚡ ${side === 'blue' ? room.pkBattle.blueLabel : room.pkBattle.redLabel} को +${pts} PK पॉइंट्स मिले!`,
+    roomPayload: buildRoomDetailPayload(room, user.userId),
+    user,
+  });
+});
+
+app.post('/api/game/voice-rooms/:roomId/pk/end', (req, res) => {
+  const { roomId } = req.params;
+  const { userId } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(r => r.id === roomId || String(r.roomAddress) === String(roomId));
+  if (!room || !room.pkBattle) return res.status(404).json({ success: false, message: 'Room or PK not found' });
+  const red = room.pkBattle.redScore || 0;
+  const blue = room.pkBattle.blueScore || 0;
+  const winnerLabel = red === blue ? 'Draw (बराबरी)' : red > blue ? room.pkBattle.redLabel : room.pkBattle.blueLabel;
+  room.pkBattle.active = false;
+  room.pkBattle.winnerSide = red === blue ? 'draw' : red > blue ? 'red' : 'blue';
+  if (!Array.isArray(room.chatMessages)) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `pk-end-${Date.now()}`,
+    senderId: 'SYSTEM',
+    sender: 'PK Referee',
+    senderRoll: 'PK',
+    text: `🏆 PK RESULT: ${winnerLabel} जीता! (Red ${red} - Blue ${blue})`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  saveDatabase(db);
+  res.json({ success: true, message: `🏆 PK समाप्त! विजेता: ${winnerLabel}`, roomPayload: buildRoomDetailPayload(room, userId) });
+});
+
+// B. Relationship Tokens Store & Two-Player Bonds / CP System
+app.post('/api/social/relationships/buy-token', (req, res) => {
+  const { userId, tokenId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  const spec = RELATIONSHIP_TOKENS.find(t => t.id === tokenId);
+  if (!spec) return res.status(404).json({ success: false, message: 'Relationship token not found' });
+
+  const before = user.coins || 0;
+  if (before < spec.coinPrice) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: spec.coinPrice,
+      currentCoins: before,
+      message: `${spec.hindiName} टोकन खरीदने के लिए ${spec.coinPrice} Coins चाहिए (आपके पास: ${before} Coins)।`,
+    });
+  }
+  user.coins = before - spec.coinPrice;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + spec.coinPrice;
+  if (!Array.isArray(user.ownedRelationshipTokens)) user.ownedRelationshipTokens = [];
+  user.ownedRelationshipTokens.push(spec.id);
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'room_purchase',
+    categoryLabel: 'रिलेशनशिप टोकन खरीद',
+    amount: spec.coinPrice,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `${spec.badgeIcon} ${spec.tagName} टोकन खरीदा (-${spec.coinPrice} कॉइन्स)`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `${spec.badgeIcon} ${spec.hindiName} टोकन आपके बैग में आ गया! अब इसे किसी भी प्लेयर पर लगाएं।`,
+    user,
+  });
+});
+
+app.post('/api/social/relationships/request', (req, res) => {
+  const { userId, targetIdentifier, tokenId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const cleanTarget = String(targetIdentifier || '').trim().replace(/^@+/, '').toLowerCase();
+  const target = db.users.find(
+    u =>
+      u.userId.toLowerCase() === String(targetIdentifier || '').trim().toLowerCase() ||
+      u.id === targetIdentifier ||
+      (cleanTarget && normalizeUsername(u.username) === cleanTarget)
+  );
+  if (!user || !target) return res.status(404).json({ success: false, message: 'यूजर या टारगेट प्लेयर नहीं मिला (सही User ID या @username लिखें)।' });
+  if (user.userId === target.userId) return res.status(400).json({ success: false, message: 'आप खुद के साथ रिलेशनशिप टैग नहीं जोड़ सकते।' });
+
+  const spec = RELATIONSHIP_TOKENS.find(t => t.id === tokenId);
+  if (!spec) return res.status(404).json({ success: false, message: 'Invalid relationship token' });
+
+  if (!Array.isArray(user.ownedRelationshipTokens)) user.ownedRelationshipTokens = [];
+  const tokenIdx = user.ownedRelationshipTokens.indexOf(spec.id);
+  if (tokenIdx >= 0) {
+    user.ownedRelationshipTokens.splice(tokenIdx, 1);
+  } else {
+    const before = user.coins || 0;
+    if (before < spec.coinPrice) {
+      return res.status(400).json({
+        success: false,
+        code: 'INSUFFICIENT_COINS',
+        requiredCoins: spec.coinPrice,
+        currentCoins: before,
+        message: `${spec.hindiName} टैग लगाने के लिए ${spec.coinPrice} Coins चाहिए (आपके पास: ${before} Coins)।`,
+      });
+    }
+    user.coins = before - spec.coinPrice;
+    user.totalCoinsSpent = (user.totalCoinsSpent || 0) + spec.coinPrice;
+    logCoinTransaction(db, user, {
+      type: 'debit',
+      category: 'room_purchase',
+      categoryLabel: 'रिलेशनशिप / CP टैग सक्रिय',
+      amount: spec.coinPrice,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${target.fullName} के साथ ${spec.tagName} टैग रिक्वेस्ट (-${spec.coinPrice} कॉइन्स)`,
+    });
+  }
+
+  const bondId = `BOND-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const nowIso = new Date().toISOString();
+  if (!Array.isArray(user.activeRelationships)) user.activeRelationships = [];
+  if (!Array.isArray(target.activeRelationships)) target.activeRelationships = [];
+
+  // Remove any pending/existing bond of same token type with same partner
+  user.activeRelationships = user.activeRelationships.filter(b => b.partnerUserId !== target.userId);
+  target.activeRelationships = target.activeRelationships.filter(b => b.partnerUserId !== user.userId);
+
+  const senderBond: RelationshipBond = {
+    id: bondId,
+    tokenId: spec.id,
+    tagName: spec.tagName,
+    badgeIcon: spec.badgeIcon,
+    partnerUserId: target.userId,
+    partnerName: target.fullName,
+    partnerUsername: target.username || '',
+    partnerAvatar: target.avatar,
+    intimacyPoints: spec.coinPrice,
+    status: 'pending_outgoing',
+    createdAt: nowIso,
+  };
+  const receiverBond: RelationshipBond = {
+    id: bondId,
+    tokenId: spec.id,
+    tagName: spec.tagName,
+    badgeIcon: spec.badgeIcon,
+    partnerUserId: user.userId,
+    partnerName: user.fullName,
+    partnerUsername: user.username || '',
+    partnerAvatar: user.avatar,
+    intimacyPoints: spec.coinPrice,
+    status: 'pending_incoming',
+    createdAt: nowIso,
+  };
+
+  user.activeRelationships.unshift(senderBond);
+  target.activeRelationships.unshift(receiverBond);
+
+  db.notifications.unshift({
+    id: `notif-rel-${Date.now()}`,
+    userId: target.userId,
+    title: `${spec.badgeIcon} नया ${spec.tagName} रिलेशनशिप प्रस्ताव!`,
+    message: `${user.fullName} (@${user.username || user.userId}) ने आपके साथ "${spec.hindiName}" टैग जोड़ने का प्रस्ताव भेजा है। Bonds & CP हब में जाकर Accept करें!`,
+    type: 'system',
+    date: new Date().toLocaleDateString('hi-IN'),
+    read: false,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `${spec.badgeIcon} ${target.fullName} को ${spec.tagName} प्रस्ताव भेज दिया गया! उनके स्वीकार करते ही दोनों की प्रोफाइल पर टैग चमकने लगेगा।`,
+    user,
+  });
+});
+
+app.post('/api/social/relationships/respond', (req, res) => {
+  const { userId, bondId, action } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  const myBond = (user.activeRelationships || []).find(b => b.id === bondId);
+  if (!myBond) return res.status(404).json({ success: false, message: 'Relationship proposal not found' });
+  const partner = db.users.find(u => u.userId === myBond.partnerUserId);
+
+  if (action === 'accept') {
+    myBond.status = 'accepted';
+    if (partner && Array.isArray(partner.activeRelationships)) {
+      const pBond = partner.activeRelationships.find(b => b.id === bondId);
+      if (pBond) pBond.status = 'accepted';
+      db.notifications.unshift({
+        id: `notif-rel-ok-${Date.now()}`,
+        userId: partner.userId,
+        title: `${myBond.badgeIcon} ${myBond.tagName} जोड़ी जुड़ गई!`,
+        message: `${user.fullName} ने आपका ${myBond.tagName} प्रस्ताव स्वीकार कर लिया है!`,
+        type: 'system',
+        date: new Date().toLocaleDateString('hi-IN'),
+        read: false,
+      });
+    }
+    saveDatabase(db);
+    return res.json({ success: true, message: `${myBond.badgeIcon} बधाई हो! ${myBond.partnerName} के साथ ${myBond.tagName} टैग सक्रिय हो गया!`, user });
+  } else {
+    user.activeRelationships = (user.activeRelationships || []).filter(b => b.id !== bondId);
+    if (partner && Array.isArray(partner.activeRelationships)) {
+      partner.activeRelationships = partner.activeRelationships.filter(b => b.id !== bondId);
+      // Refund token to proposer bag when declined
+      if (!Array.isArray(partner.ownedRelationshipTokens)) partner.ownedRelationshipTokens = [];
+      partner.ownedRelationshipTokens.push(myBond.tokenId);
+    }
+    saveDatabase(db);
+    return res.json({ success: true, message: 'प्रस्ताव अस्वीकार कर दिया गया (टोकन वापस कर दिया गया)।', user });
+  }
+});
+
+app.post('/api/social/relationships/remove', (req, res) => {
+  const { userId, bondId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  const myBond = (user.activeRelationships || []).find(b => b.id === bondId);
+  user.activeRelationships = (user.activeRelationships || []).filter(b => b.id !== bondId);
+  if (myBond) {
+    const partner = db.users.find(u => u.userId === myBond.partnerUserId);
+    if (partner && Array.isArray(partner.activeRelationships)) {
+      partner.activeRelationships = partner.activeRelationships.filter(b => b.id !== bondId);
+    }
+  }
+  saveDatabase(db);
+  res.json({ success: true, message: 'रिलेशनशिप टैग हटा दिया गया।', user });
+});
+
+// C. ESP Family System (Create, Join, Invite, Family Coins Donate, Live Family Chat + Gift Effects)
+function getFamilyLevel(coins: number): number {
+  return Math.max(1, Math.floor(coins / 500) + 1);
+}
+
+app.get('/api/families', (_req, res) => {
+  if (!Array.isArray(db.families)) db.families = [];
+  const sorted = [...db.families].sort((a, b) => (b.familyCoins + b.familyCharms) - (a.familyCoins + a.familyCharms));
+  res.json({ success: true, families: sorted });
+});
+
+app.get('/api/families/:familyId', (req, res) => {
+  const { familyId } = req.params;
+  const fam = (db.families || []).find(
+    f => f.id === familyId || f.familyCode.toLowerCase() === familyId.toLowerCase()
+  );
+  if (!fam) return res.status(404).json({ success: false, message: 'Family not found' });
+  res.json({ success: true, family: fam });
+});
+
+app.post('/api/families/create', (req, res) => {
+  const { userId, name, emblem, motto, isOpenJoin } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  if (user.familyId) return res.status(400).json({ success: false, message: 'नई फैमिली बनाने से पहले अपनी वर्तमान फैमिली छोड़ें।' });
+  const cleanName = String(name || '').trim();
+  if (cleanName.length < 3) return res.status(400).json({ success: false, message: 'फैमिली का नाम कम से कम 3 अक्षरों का रखें।' });
+
+  if (!Array.isArray(db.families)) db.families = [];
+  if (db.families.some(f => f.name.toLowerCase() === cleanName.toLowerCase())) {
+    return res.status(400).json({ success: false, message: 'इस नाम की ESP Family पहले से मौजूद है!' });
+  }
+
+  const CREATE_FEE = 200;
+  const before = user.coins || 0;
+  if (before < CREATE_FEE) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      requiredCoins: CREATE_FEE,
+      currentCoins: before,
+      message: `नई ESP Family बनाने के लिए ${CREATE_FEE} Coins चार्टर शुल्क चाहिए (आपके पास: ${before} Coins)।`,
+    });
+  }
+
+  user.coins = before - CREATE_FEE;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + CREATE_FEE;
+  const famId = `FAM-${Date.now()}`;
+  const famCode = String(100000 + db.families.length + Math.floor(Math.random() * 800)).slice(0, 6);
+  const nowIso = new Date().toISOString();
+
+  const newFam: EspFamily = {
+    id: famId,
+    familyCode: famCode,
+    name: cleanName,
+    emblem: FAMILY_EMBLEMS.includes(emblem) ? emblem : '👑',
+    motto: String(motto || 'एक साथ खेलें, एक साथ जीतें — ESP PLAY Family!').trim(),
+    founderUserId: user.userId,
+    founderName: user.fullName,
+    familyCoins: 200,
+    familyCharms: user.charms || 0,
+    familyLevel: 1,
+    level: 1,
+    maxMembers: 50,
+    isOpenJoin: isOpenJoin !== false,
+    members: [
+      {
+        userId: user.userId,
+        fullName: user.fullName,
+        username: user.username || '',
+        avatar: user.avatar,
+        role: 'Founder',
+        contributedCoins: 200,
+        joinedAt: nowIso,
+      },
+    ],
+    chatMessages: [
+      {
+        id: `fmsg-init-${Date.now()}`,
+        familyId: famId,
+        senderId: 'SYSTEM',
+        senderName: 'ESP PLAY Family',
+        text: `🏰 बधाई हो! ${user.fullName} ने "${cleanName}" (Family ID: ${famCode}) की स्थापना की और 200 Family Coins जमा किए!`,
+        createdAt: nowIso,
+      },
+    ],
+    createdAt: nowIso,
+  };
+
+  db.families.unshift(newFam);
+  user.familyId = famId;
+  user.familyRole = 'Founder';
+  user.clanName = cleanName;
+  user.clanRole = 'Leader';
+  user.familyCoinsContributed = (user.familyCoinsContributed || 0) + 200;
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'room_purchase',
+    categoryLabel: 'ESP Family निर्माण',
+    amount: CREATE_FEE,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `"${cleanName}" ESP Family बनाई (-${CREATE_FEE} कॉइन्स)`,
+  });
+
+  saveDatabase(db);
+  res.json({ success: true, message: `🏰 "${cleanName}" फैमिली तैयार हो गई! (ID: ${famCode})`, family: newFam, user });
+});
+
+app.post('/api/families/:familyId/join', (req, res) => {
+  const { familyId } = req.params;
+  const { userId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const fam = (db.families || []).find(f => f.id === familyId || f.familyCode === familyId);
+  if (!user || !fam) return res.status(404).json({ success: false, message: 'User or Family not found' });
+  if (user.familyId && user.familyId !== fam.id) {
+    return res.status(400).json({ success: false, message: 'नई फैमिली जॉइन करने के लिए पहले पुरानी फैमिली छोड़ें।' });
+  }
+  if (!fam.members.some(m => m.userId === user.userId)) {
+    fam.members.push({
+      userId: user.userId,
+      fullName: user.fullName,
+      username: user.username || '',
+      avatar: user.avatar,
+      role: 'Member',
+      contributedCoins: 0,
+      joinedAt: new Date().toISOString(),
+    });
+    fam.chatMessages.push({
+      id: `fjoin-${Date.now()}`,
+      familyId: fam.id,
+      senderId: 'SYSTEM',
+      senderName: 'System',
+      text: `🎉 ${user.fullName} हमारी ${fam.emblem} ${fam.name} फैमिली में शामिल हुए! स्वागत करें!`,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  user.familyId = fam.id;
+  user.familyRole = fam.members.find(m => m.userId === user.userId)?.role || 'Member';
+  user.clanName = fam.name;
+  saveDatabase(db);
+  res.json({ success: true, message: `${fam.emblem} आप "${fam.name}" फैमिली में शामिल हो गए!`, family: fam, user });
+});
+
+app.post('/api/families/:familyId/leave', (req, res) => {
+  const { familyId } = req.params;
+  const { userId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const fam = (db.families || []).find(f => f.id === familyId);
+  if (!user || !fam) return res.status(404).json({ success: false, message: 'User or Family not found' });
+  fam.members = fam.members.filter(m => m.userId !== user.userId);
+  if (fam.members.length === 0) {
+    db.families = (db.families || []).filter(f => f.id !== fam.id);
+  } else if (fam.founderUserId === user.userId) {
+    fam.founderUserId = fam.members[0].userId;
+    fam.founderName = fam.members[0].fullName;
+    fam.members[0].role = 'Founder';
+  }
+  user.familyId = '';
+  user.familyRole = 'Member';
+  user.clanName = 'Royal Warriors ESP';
+  user.clanRole = 'Member';
+  saveDatabase(db);
+  res.json({ success: true, message: 'आपने फैमिली छोड़ दी है।', user });
+});
+
+app.post('/api/families/:familyId/donate', (req, res) => {
+  const { familyId } = req.params;
+  const { userId, amount } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const fam = (db.families || []).find(f => f.id === familyId);
+  if (!user || !fam) return res.status(404).json({ success: false, message: 'User or Family not found' });
+  const donateCoins = Math.max(10, Math.round(Number(amount) || 50));
+  const before = user.coins || 0;
+  if (before < donateCoins) {
+    return res.status(400).json({ success: false, code: 'INSUFFICIENT_COINS', message: `दान करने के लिए ${donateCoins} Coins चाहिए!` });
+  }
+  user.coins = before - donateCoins;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + donateCoins;
+  user.familyCoinsContributed = (user.familyCoinsContributed || 0) + donateCoins;
+  user.gameXp = (user.gameXp || 0) + Math.round(donateCoins * 0.5);
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  fam.familyCoins = (fam.familyCoins || 0) + donateCoins;
+  fam.level = getFamilyLevel(fam.familyCoins);
+
+  const memberRow = fam.members.find(m => m.userId === user.userId);
+  if (memberRow) memberRow.contributedCoins = (memberRow.contributedCoins || 0) + donateCoins;
+
+  fam.chatMessages.push({
+    id: `fdon-${Date.now()}`,
+    familyId: fam.id,
+    senderId: user.userId,
+    senderName: user.fullName,
+    senderAvatar: user.avatar,
+    text: `🪙 ${user.fullName} ने Family Coins खजाने में +${donateCoins} Coins दान किए! (Total: ${fam.familyCoins} 🪙)`,
+    createdAt: new Date().toISOString(),
+  });
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'gift_sent',
+    categoryLabel: 'Family Coins दान',
+    amount: donateCoins,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `${fam.name} Family Coins खजाने में दान (-${donateCoins} कॉइन्स)`,
+  });
+
+  saveDatabase(db);
+  res.json({ success: true, message: `🪙 +${donateCoins} Family Coins दान किए गए!`, family: fam, user });
+});
+
+app.post('/api/families/:familyId/invite', (req, res) => {
+  const { familyId } = req.params;
+  const { userId, targetIdentifier } = req.body || {};
+  const sender = db.users.find(u => u.userId === userId || u.id === userId);
+  const fam = (db.families || []).find(f => f.id === familyId);
+  const cleanTarget = String(targetIdentifier || '').trim().replace(/^@+/, '').toLowerCase();
+  const target = db.users.find(
+    u =>
+      u.userId.toLowerCase() === String(targetIdentifier || '').trim().toLowerCase() ||
+      (cleanTarget && normalizeUsername(u.username) === cleanTarget)
+  );
+  if (!sender || !fam || !target) {
+    return res.status(404).json({ success: false, message: 'प्लेयर नहीं मिला (सही User ID या @username डालें)।' });
+  }
+  db.notifications.unshift({
+    id: `notif-faminv-${Date.now()}`,
+    userId: target.userId,
+    title: `${fam.emblem} "${fam.name}" Family निमंत्रण!`,
+    message: `${sender.fullName} ने आपको ESP Family "${fam.name}" (Code: ${fam.familyCode}) जॉइन करने के लिए आमंत्रित किया है!`,
+    type: 'system',
+    date: new Date().toLocaleDateString('hi-IN'),
+    read: false,
+  });
+  saveDatabase(db);
+  res.json({ success: true, message: `📨 ${target.fullName} को Family जॉइन करने का निमंत्रण भेज दिया गया!` });
+});
+
+app.post('/api/families/:familyId/chat', (req, res) => {
+  const { familyId } = req.params;
+  const { userId, text } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const fam = (db.families || []).find(f => f.id === familyId);
+  if (!user || !fam) return res.status(404).json({ success: false, message: 'User or Family not found' });
+  const cleanText = String(text || '').trim();
+  if (!cleanText) return res.status(400).json({ success: false, message: 'Message cannot be empty' });
+
+  incrementUserTaskProgress(user, 'chat_sent', 1);
+  const memberRole = fam.members.find(m => m.userId === user.userId)?.role || 'Member';
+  fam.chatMessages.push({
+    id: `fc-${Date.now()}`,
+    familyId: fam.id,
+    senderId: user.userId,
+    senderName: user.fullName,
+    senderAvatar: user.avatar,
+    senderRole: memberRole,
+    text: cleanText,
+    createdAt: new Date().toISOString(),
+  });
+  if (fam.chatMessages.length > 200) fam.chatMessages = fam.chatMessages.slice(-200);
+  saveDatabase(db);
+  res.json({ success: true, family: fam, user });
+});
+
+// D. Events Center Endpoints
+app.get('/api/events/:userId', (req, res) => {
+  const { userId } = req.params;
+  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const claimed = new Set(user.claimedEventIds || []);
+  const events = ESP_EVENTS_CATALOG.map(ev => {
+    let progress = 0;
+    if (ev.metricKey === 'totalCoinsSpent') progress = user.totalCoinsSpent || 0;
+    else if (ev.metricKey === 'totalGamesWon') progress = user.totalGamesWon || 0;
+    else if (ev.metricKey === 'relationshipsCount') {
+      progress = (user.activeRelationships || []).filter(b => b.status === 'accepted').length;
+    } else if (ev.metricKey === 'familyCoinsContributed') {
+      progress = user.familyCoinsContributed || 0;
+    }
+    return {
+      ...ev,
+      currentProgress: Math.min(progress, ev.targetValue),
+      isCompleted: progress >= ev.targetValue,
+      isClaimed: claimed.has(ev.id),
+    };
+  });
+  res.json({ success: true, events, user });
+});
+
+app.post('/api/events/claim', (req, res) => {
+  const { userId, eventId } = req.body || {};
+  const user = db.users.find(u => u.userId === userId || u.id === userId);
+  const ev = ESP_EVENTS_CATALOG.find(e => e.id === eventId);
+  if (!user || !ev) return res.status(404).json({ success: false, message: 'User or event not found' });
+  if (!Array.isArray(user.claimedEventIds)) user.claimedEventIds = [];
+  if (user.claimedEventIds.includes(ev.id)) {
+    return res.status(400).json({ success: false, message: 'यह इवेंट रिवॉर्ड पहले ही क्लेम किया जा चुका है!' });
+  }
+  let progress = 0;
+  if (ev.metricKey === 'totalCoinsSpent') progress = user.totalCoinsSpent || 0;
+  else if (ev.metricKey === 'totalGamesWon') progress = user.totalGamesWon || 0;
+  else if (ev.metricKey === 'relationshipsCount') progress = (user.activeRelationships || []).filter(b => b.status === 'accepted').length;
+  else if (ev.metricKey === 'familyCoinsContributed') progress = user.familyCoinsContributed || 0;
+
+  if (progress < ev.targetValue) {
+    return res.status(400).json({ success: false, message: `अभी टारगेट अधूरा है (${progress}/${ev.targetValue})।` });
+  }
+
+  const before = user.coins || 0;
+  user.coins = before + ev.coinReward;
+  user.gameXp = (user.gameXp || 0) + ev.xpReward;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedEventIds.push(ev.id);
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_task',
+    categoryLabel: 'ESP Event इनाम',
+    amount: ev.coinReward,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `${ev.badgeIcon} ${ev.title} पूरा करने पर +${ev.coinReward} कॉइन्स बोनस`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `🎉 ${ev.title} का +${ev.coinReward} Coins & +${ev.xpReward} EXP इनाम मिल गया!`,
+    user,
+  });
+});
+
+// E. Admin Panel Direct User Coin Grant / Adjust by User ID or @username
+app.post('/api/admin/users/adjust-coins', (req, res) => {
+  const { adminPassword, userIdentifier, amount, mode, reason } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const rawId = String(userIdentifier || '').trim();
+  const cleanHandle = normalizeUsername(rawId);
+  const target = db.users.find(
+    u =>
+      u.userId.toLowerCase() === rawId.toLowerCase() ||
+      u.id.toLowerCase() === rawId.toLowerCase() ||
+      (cleanHandle && normalizeUsername(u.username) === cleanHandle)
+  );
+  if (!target) {
+    return res.status(404).json({ success: false, message: `User "${rawId}" नहीं मिला। सही User ID या @username दर्ज करें।` });
+  }
+  const coinDelta = Math.max(1, Math.round(Number(amount) || 0));
+  if (!coinDelta) {
+    return res.status(400).json({ success: false, message: 'कृपया वैध Coin संख्या दर्ज करें (> 0)।' });
+  }
+  const actionMode: 'credit' | 'debit' = mode === 'debit' ? 'debit' : 'credit';
+  const before = target.coins || 0;
+  const after = actionMode === 'credit' ? before + coinDelta : Math.max(0, before - coinDelta);
+  target.coins = after;
+
+  const cleanReason = String(reason || (actionMode === 'credit' ? 'Admin Direct Coin Grant' : 'Admin Coin Adjustment')).trim();
+
+  logCoinTransaction(db, target, {
+    type: actionMode,
+    category: 'coin_recharge',
+    categoryLabel: actionMode === 'credit' ? 'Admin Coin Grant' : 'Admin Coin Debit',
+    amount: coinDelta,
+    balanceBefore: before,
+    balanceAfter: after,
+    description: `${cleanReason} (${actionMode === 'credit' ? '+' : '-'}${coinDelta} कॉइन्स)`,
+  });
+
+  db.notifications.unshift({
+    id: `notif-adm-coin-${Date.now()}`,
+    userId: target.userId,
+    title: actionMode === 'credit' ? `🪙 Admin से +${coinDelta} Coins प्राप्त हुए!` : `🪙 Admin द्वारा ${coinDelta} Coins समायोजित`,
+    message: `${cleanReason} — नया बैलेंस: ${after} Coins`,
+    type: 'system',
+    date: new Date().toLocaleDateString('hi-IN'),
+    read: false,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `✅ ${target.fullName} (${target.userId}) को ${actionMode === 'credit' ? '+' : '-'}${coinDelta} Coins अपडेट! नया बैलेंस: ${after} 🪙`,
+    user: target,
+    balanceBefore: before,
+    balanceAfter: after,
+  });
+});
+
+// F. Admin Panel Create Real Player Account (Individual Password, Username, Level, VIP Effect, Coins, Room ID)
+app.post('/api/admin/users/create', (req, res) => {
+  const {
+    adminPassword,
+    fullName,
+    username,
+    phone,
+    email,
+    password,
+    coins = 0,
+    charms = 0,
+    gameLevel = 1,
+    vipTier = 'none',
+    frameType = 'standard',
+    avatar,
+    bio,
+    clanName,
+    roomNumber,
+    vipRoomLabel,
+  } = req.body || {};
+
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+
+  const cleanFullName = String(fullName || '').trim().replace(/\s+/g, ' ');
+  const cleanPhone = normalizePhoneDigits(phone || '') || String(phone || '').trim();
+  const cleanPassword = String(password || '').trim();
+
+  if (!cleanFullName || !cleanPhone || cleanPassword.length < 3) {
+    return res.status(400).json({
+      success: false,
+      message: 'प्लेयर का नाम, मोबाइल नंबर और कम से कम 3 अक्षर का पासवर्ड अनिवार्य है।',
+    });
+  }
+
+  const normalizedInputUsername = username ? normalizeUsername(username) : '';
+  if (normalizedInputUsername) {
+    if (!isValidUsernameFormat(normalizedInputUsername)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username में केवल a-z और 0-9 (3-24 अक्षर, बिना symbol) लिखें।',
+      });
+    }
+    if (isUsernameTaken(db.users, normalizedInputUsername)) {
+      return res.status(409).json({
+        success: false,
+        message: `@${normalizedInputUsername} पहले से किसी अन्य खिलाड़ी के पास है।`,
+      });
+    }
+  }
+
+  const cleanEmail = email ? String(email).trim().toLowerCase() : `${cleanPhone}@espgaming.club`;
+  const existingPhoneOrEmail = db.users.find(
+    u =>
+      normalizePhoneDigits(u.phone) === cleanPhone ||
+      (cleanEmail && (u.email || '').trim().toLowerCase() === cleanEmail)
+  );
+  if (existingPhoneOrEmail) {
+    return res.status(409).json({
+      success: false,
+      message: `मोबाइल (${cleanPhone}) या ईमेल पहले से पंजीकृत है (${existingPhoneOrEmail.userId})।`,
+    });
+  }
+
+  const newUserId = generateUniqueGamerUserId(cleanFullName);
+  const newGamingId = newUserId;
+  const finalUsername =
+    normalizedInputUsername || generateUniqueDefaultUsername(cleanFullName, newUserId, newGamingId);
+
+  let assignedRoomAddress = generateUniqueRoomId(cleanFullName, db.users, db.customVoiceRooms || []);
+  let assignedVipRoom = false;
+  if (roomNumber) {
+    const cleanDigits = String(roomNumber).replace(/\D/g, '');
+    if (cleanDigits.length >= 3 && cleanDigits.length <= 10) {
+      const conflict = db.users.find(u => String(u.roomAddress || '').replace(/\D/g, '') === cleanDigits);
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          message: `Room ID #${cleanDigits} पहले से ${conflict.fullName} के पास है।`,
+        });
+      }
+      assignedRoomAddress = cleanDigits;
+      assignedVipRoom = isVipFancyRoomNumber(cleanDigits);
+    }
+  }
+
+  const levelNum = Math.max(1, Math.min(99, Math.round(Number(gameLevel) || 1)));
+  const xpNum = Math.max(0, (levelNum - 1) * 150);
+  const validVip: 'none' | 'silver' | 'gold' | 'diamond' = ['silver', 'gold', 'diamond'].includes(vipTier)
+    ? vipTier
+    : 'none';
+  const resolvedFrame = String(frameType || (validVip === 'diamond' ? 'royal-dragon-crown' : validVip === 'gold' ? 'vip-gold' : 'standard'));
+  const unlockedFrames = Array.from(new Set(['standard', resolvedFrame]));
+  const initCoins = Math.max(0, Math.round(Number(coins) || 0));
+  const initCharms = Math.max(0, Math.round(Number(charms) || 0));
+
+  const newUser: UserProfile = normalizeUserRecord({
+    id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    userId: newUserId,
+    gamingId: newGamingId,
+    username: finalUsername,
+    fullName: cleanFullName,
+    phone: cleanPhone,
+    email: cleanEmail,
+    fullAddress: 'ESP PLAY Arena',
+    paymentAddress: '',
+    payoutUpiId: '',
+    password: cleanPassword,
+    sponsorId: db.settings.ownerSponsorId,
+    sponsorName: db.settings.ownerName,
+    chosenServiceCode: 'GAME',
+    chosenServiceName: 'ESP GAMING & VOICE CLUB',
+    joiningFee: 0,
+    joiningDate: new Date().toISOString().split('T')[0],
+    paymentUtr: 'ADMIN_CREATED_PLAYER',
+    status: 'active',
+    accountType: 'gamer',
+    balance: 0,
+    totalEarnings: 0,
+    referralEarnings: 0,
+    promoEarnings: 0,
+    totalWithdrawn: 0,
+    coins: initCoins,
+    charms: initCharms,
+    gameLevel: levelNum,
+    gameXp: xpNum,
+    vipTier: validVip,
+    vipTitle: validVip === 'diamond' ? 'Diamond VIP' : validVip === 'gold' ? 'Gold VIP' : validVip === 'silver' ? 'Silver VIP' : '',
+    unlockedFrames,
+    frameType: resolvedFrame,
+    unlockedRooms: ['default_dark'],
+    roomTheme: 'default_dark',
+    roomAddress: assignedRoomAddress,
+    personalRoomId: assignedRoomAddress,
+    isVipRoom: assignedVipRoom,
+    vipRoomLabel: assignedVipRoom ? vipRoomLabel || 'VIP Royal' : '',
+    followedRooms: [],
+    houseName: `House of ${cleanFullName.split(' ')[0]}`,
+    clanName: clanName ? String(clanName).trim() : 'Royal Warriors ESP',
+    clanRole: 'Member',
+    avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(finalUsername)}`,
+    bio: bio ? String(bio).trim() : `Lv.${levelNum} ESP PLAY Challenger`,
+    loginStreak: 1,
+    claimedDays: [],
+    friendsCount: 0,
+    visitorCount: 0,
+    role: 'member',
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString(),
+  });
+
+  db.users.push(newUser);
+  ensurePersonalRoomForUser(db, newUser);
+  saveDatabase(db);
+
+  res.json({
+    success: true,
+    user: newUser,
+    message: `✅ नया खिलाड़ी "${newUser.fullName}" (@${newUser.username} | ID: ${newUser.userId} | Pass: ${cleanPassword} | Lv.${levelNum}) बन गया!`,
+  });
+});
+
+// G. Voice Room Red Packet & Blue Packet Rain + Room Atmosphere Effect
+app.post('/api/game/voice-rooms/:roomId/set-effect', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, effect } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(
+    r => r.id.toLowerCase() === roomId.toLowerCase() || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()
+  );
+  if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
+
+  const allowedEffects = ['none', 'sparkles', 'petals', 'fireflies', 'snow', 'neon_lasers'];
+  const chosen = allowedEffects.includes(effect) ? effect : 'none';
+  room.roomEffect = chosen as any;
+  if (!room.chatMessages) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `fx-${Date.now()}`,
+    senderId: 'SYSTEM',
+    sender: 'System',
+    senderRoll: 'FX',
+    text: `✨ Room atmosphere effect updated to: ${chosen.toUpperCase()}`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    roomEffect: room.roomEffect,
+    roomPayload: buildRoomDetailPayload(room, userId),
+  });
+});
+
+app.post('/api/game/voice-rooms/:roomId/drop-packet', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, packetType = 'red', totalCoins = 100, maxClaims = 5, message = '' } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(
+    r => r.id.toLowerCase() === roomId.toLowerCase() || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()
+  );
+  const user = db.users.find(
+    u =>
+      (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+      (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
+  );
+  if (!room || !user) {
+    return res.status(404).json({ success: false, message: 'Room or user not found' });
+  }
+
+  const pType: 'red' | 'blue' = packetType === 'blue' ? 'blue' : 'red';
+  const claimsCap = Math.max(2, Math.min(30, Math.round(Number(maxClaims) || 5)));
+  const poolCoins = Math.max(claimsCap, Math.round(Number(totalCoins) || 50));
+
+  if ((user.coins || 0) < poolCoins) {
+    return res.status(400).json({
+      success: false,
+      code: 'INSUFFICIENT_COINS',
+      message: `${pType === 'red' ? 'Red Packet' : 'Blue Packet'} बारिश के लिए ${poolCoins} Coins चाहिए (आपके पास ${user.coins || 0} Coins हैं)।`,
+    });
+  }
+
+  const before = user.coins || 0;
+  user.coins = before - poolCoins;
+  user.totalCoinsSpent = (user.totalCoinsSpent || 0) + poolCoins;
+
+  logCoinTransaction(db, user, {
+    type: 'debit',
+    category: 'packet_drop',
+    categoryLabel: pType === 'red' ? 'Red Packet Rain' : 'Blue Packet Rain',
+    amount: poolCoins,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `${pType === 'red' ? '🧧 लाल पैकेट' : '💠 नीला पैकेट'} बारिश रूम #${room.roomAddress} (${claimsCap} लोगों के लिए)`,
+  });
+
+  if (!Array.isArray(room.activePackets)) room.activePackets = [];
+  const now = Date.now();
+  room.activePackets = room.activePackets.filter(
+    p => p.remainingCoins > 0 && p.claimedBy.length < p.maxClaims && new Date(p.expiresAt).getTime() > now
+  );
+
+  const packet = {
+    id: `pkt-${now}-${Math.random().toString(36).substring(2, 6)}`,
+    roomId: room.id,
+    packetType: pType,
+    senderUserId: user.userId,
+    senderName: user.fullName,
+    senderAvatar: user.avatar,
+    totalCoins: poolCoins,
+    remainingCoins: poolCoins,
+    maxClaims: claimsCap,
+    claimedBy: [],
+    message: String(message || (pType === 'red' ? '🧧 सबके लिए लकी लाल पैकेट बारिश!' : '💠 नीला VIP + EXP पैकेट बारिश!')).trim(),
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
+  };
+  room.activePackets.unshift(packet);
+
+  if (!room.chatMessages) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `pktmsg-${now}`,
+    senderId: user.userId,
+    sender: pType === 'red' ? '🧧 RED PACKET RAIN' : '💠 BLUE PACKET RAIN',
+    senderRoll: user.userId,
+    isGift: true,
+    text: `${pType === 'red' ? '🧧' : '💠'} ${user.fullName} ने रूम में ${poolCoins} Coins (${claimsCap} पैकेट्स) की बारिश की! तुरंत टैप करके लूटें!`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+
+  incrementUserTaskProgress(user, 'gift_sent', 1);
+  saveDatabase(db);
+
+  res.json({
+    success: true,
+    packet,
+    user,
+    roomPayload: buildRoomDetailPayload(room, user.userId),
+    message: `${pType === 'red' ? '🧧 लाल पैकेट' : '💠 नीला पैकेट'} बारिश शुरू हो गई!`,
+  });
+});
+
+app.post('/api/game/voice-rooms/:roomId/claim-packet', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, packetId } = req.body || {};
+  const rooms = getOrCreateRooms(db);
+  const room = rooms.find(
+    r => r.id.toLowerCase() === roomId.toLowerCase() || String(r.roomAddress || '').toLowerCase() === roomId.toLowerCase()
+  );
+  const user = db.users.find(
+    u =>
+      (u.userId && userId && u.userId.toLowerCase() === String(userId).toLowerCase()) ||
+      (u.id && userId && u.id.toLowerCase() === String(userId).toLowerCase())
+  );
+  if (!room || !user) {
+    return res.status(404).json({ success: false, message: 'Room or user not found' });
+  }
+
+  const packets = Array.isArray(room.activePackets) ? room.activePackets : [];
+  const packet = packets.find(p => p.id === packetId);
+  if (!packet) {
+    return res.status(404).json({ success: false, message: 'पैकेट समाप्त हो गया है या उपलब्ध नहीं है।' });
+  }
+  if (packet.claimedBy.some(c => c.userId === user.userId)) {
+    return res.status(400).json({ success: false, message: 'आप इस पैकेट से कॉइन्स पहले ही प्राप्त कर चुके हैं!' });
+  }
+  if (packet.remainingCoins <= 0 || packet.claimedBy.length >= packet.maxClaims) {
+    return res.status(400).json({ success: false, message: 'यह पैकेट पूरी तरह लूटा जा चुका है!' });
+  }
+
+  const remainingSlots = Math.max(1, packet.maxClaims - packet.claimedBy.length);
+  let coinsWon = 1;
+  if (remainingSlots === 1) {
+    coinsWon = packet.remainingCoins;
+  } else {
+    const maxAllowed = Math.max(1, packet.remainingCoins - (remainingSlots - 1));
+    const avgShare = Math.max(1, Math.floor((packet.remainingCoins / remainingSlots) * 1.7));
+    coinsWon = Math.min(maxAllowed, Math.max(1, Math.floor(Math.random() * avgShare) + 1));
+  }
+  const xpWon = packet.packetType === 'blue' ? 12 : 4;
+
+  packet.remainingCoins = Math.max(0, packet.remainingCoins - coinsWon);
+  packet.claimedBy.push({
+    userId: user.userId,
+    fullName: user.fullName,
+    coinsWon,
+    xpWon,
+    claimedAt: new Date().toISOString(),
+  });
+
+  const before = user.coins || 0;
+  user.coins = before + coinsWon;
+  user.gameXp = (user.gameXp || 0) + xpWon;
+  user.gameLevel = Math.max(user.gameLevel || 1, 1 + Math.floor(user.gameXp / 150));
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'packet_claim',
+    categoryLabel: packet.packetType === 'red' ? 'Red Packet Won' : 'Blue Packet Won',
+    amount: coinsWon,
+    balanceBefore: before,
+    balanceAfter: user.coins,
+    description: `${packet.packetType === 'red' ? '🧧' : '💠'} ${packet.senderName} के पैकेट से +${coinsWon} Coins व +${xpWon} EXP मिले!`,
+  });
+
+  if (!room.chatMessages) room.chatMessages = [];
+  room.chatMessages.push({
+    id: `pktclaim-${Date.now()}`,
+    senderId: 'SYSTEM',
+    sender: 'System',
+    senderRoll: 'PACKET',
+    text: `${packet.packetType === 'red' ? '🧧' : '💠'} ${user.fullName} ने पैकेट से +${coinsWon} 🪙${xpWon > 5 ? ` (+${xpWon} EXP)` : ''} जीते!`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  if (room.chatMessages.length > 80) room.chatMessages = room.chatMessages.slice(-80);
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    coinsWon,
+    xpWon,
+    packetType: packet.packetType,
+    packet,
+    user,
+    roomPayload: buildRoomDetailPayload(room, user.userId),
+    message: `🎉 बधाई हो! +${coinsWon} Coins${packet.packetType === 'blue' ? ` व +${xpWon} EXP` : ''} मिले!`,
+  });
+});
+
+// H. Server-Synced 1-on-1 DM Messages, Game Invites & Personal Locked Room Invites
+app.get('/api/dm/thread', (req, res) => {
+  const userId = String(req.query.userId || '').trim();
+  const peerId = String(req.query.peerId || '').trim();
+  if (!userId) {
+    return res.status(400).json({ success: false, message: 'userId required' });
+  }
+  const all = Array.isArray(db.directMessages) ? db.directMessages : [];
+  if (!peerId) {
+    const mine = all.filter(m => m.fromUserId === userId || m.toUserId === userId);
+    return res.json({ success: true, messages: mine.slice(-150) });
+  }
+  const thread = all.filter(
+    m =>
+      (m.fromUserId === userId && m.toUserId === peerId) ||
+      (m.fromUserId === peerId && m.toUserId === userId)
+  );
+  res.json({ success: true, messages: thread.slice(-120) });
+});
+
+app.post('/api/dm/send', (req, res) => {
+  const {
+    fromUserId,
+    toUserId,
+    text,
+    inviteType,
+    gameKey,
+    gameName,
+    roomAddress,
+    roomTitle,
+    passcode,
+  } = req.body || {};
+
+  const sender = db.users.find(u => u.userId === fromUserId || u.id === fromUserId);
+  const recipient = db.users.find(u => u.userId === toUserId || u.id === toUserId);
+  if (!sender || !recipient) {
+    return res.status(404).json({ success: false, message: 'Sender or recipient not found' });
+  }
+  const cleanText = String(text || '').trim();
+  if (!cleanText && !inviteType) {
+    return res.status(400).json({ success: false, message: 'Message text required' });
+  }
+
+  if (!Array.isArray(db.directMessages)) db.directMessages = [];
+  const msgRecord = {
+    id: `dm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    fromUserId: sender.userId,
+    fromName: sender.fullName,
+    fromAvatar: sender.avatar,
+    toUserId: recipient.userId,
+    text:
+      cleanText ||
+      (inviteType === 'game'
+        ? `🎮 ${sender.fullName} ने आपको "${gameName || gameKey}" खेलने के लिए आमंत्रित किया है!`
+        : `🔒 ${sender.fullName} ने आपको पर्सनल लॉक रूम #${roomAddress} में आमंत्रित किया है!`),
+    inviteType: inviteType === 'game' || inviteType === 'locked_room' ? inviteType : undefined,
+    gameKey: gameKey ? String(gameKey) : undefined,
+    gameName: gameName ? String(gameName) : undefined,
+    roomAddress: roomAddress ? String(roomAddress) : undefined,
+    roomTitle: roomTitle ? String(roomTitle) : undefined,
+    passcode: passcode ? String(passcode) : undefined,
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    createdAt: new Date().toISOString(),
+  };
+  db.directMessages.push(msgRecord);
+  if (db.directMessages.length > 2000) {
+    db.directMessages = db.directMessages.slice(-2000);
+  }
+
+  incrementUserTaskProgress(sender, 'chat_sent', 1);
+
+  if (inviteType) {
+    db.notifications.unshift({
+      id: `notif-dm-${Date.now()}`,
+      userId: recipient.userId,
+      title:
+        inviteType === 'game'
+          ? `🎮 ${sender.fullName} ने गेम इनवाइट भेजा!`
+          : `🔒 ${sender.fullName} ने लॉक रूम इनवाइट भेजा!`,
+      message: msgRecord.text,
+      type: 'system',
+      date: new Date().toLocaleDateString('hi-IN'),
+      read: false,
+    });
+  }
+
+  saveDatabase(db);
+  const thread = db.directMessages.filter(
+    m =>
+      (m.fromUserId === sender.userId && m.toUserId === recipient.userId) ||
+      (m.fromUserId === recipient.userId && m.toUserId === sender.userId)
+  );
+  res.json({ success: true, message: msgRecord, thread: thread.slice(-120), user: sender });
 });
 
 async function startServer() {

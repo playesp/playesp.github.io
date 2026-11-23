@@ -715,6 +715,20 @@ export const api = {
     return res.json();
   },
 
+  async deleteMoment(momentId: string, userId: string): Promise<{ success: boolean; deletedId?: string; message?: string }> {
+    const res = await apiFetch(`/api/moments/${momentId}?userId=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'मोमेंट डिलीट करने में त्रुटि आई');
+    return data;
+  },
+
   // WhatsApp-style Chatting Club
   async getChatRooms(): Promise<ChatRoom[]> {
     try {
@@ -2297,6 +2311,32 @@ export const api = {
     const data = await res.json();
     if (data.user) this.setStoredUser(data.user);
     return data;
+  },
+
+  // ---------------- Admin Live 12 AM IST Clock & Weekly Rewards Monitor ----------------
+  async getAdminTimeWeeklyStats(adminPassword: string) {
+    const res = await apiFetch('/api/admin/time-weekly-stats', {
+      headers: { 'x-admin-password': adminPassword },
+    });
+    return await res.json();
+  },
+
+  async resyncAdminLiveTime(adminPassword: string) {
+    const res = await apiFetch('/api/admin/resync-time', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+      body: JSON.stringify({ adminPassword }),
+    });
+    return await res.json();
+  },
+
+  async resetUserDailyClaim(adminPassword: string, userIdentifier: string, preserveStreak = true) {
+    const res = await apiFetch('/api/admin/reset-user-daily-claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword },
+      body: JSON.stringify({ adminPassword, userIdentifier, preserveStreak }),
+    });
+    return await res.json();
   },
 };
 

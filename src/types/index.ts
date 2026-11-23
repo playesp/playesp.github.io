@@ -163,7 +163,10 @@ export interface UserProfile {
   coverPhoto?: string; // Custom profile cover photo
   bio?: string;
   gender?: string;
+  birthday?: string;
   location?: string; // City / Region / Country displayed on profile
+  showEspShowOnHome?: boolean;
+  priceTag?: string;
   createdAt: string;
   lastLogin?: string;
 
@@ -410,6 +413,27 @@ export interface MomentComment {
   createdAt: string;
 }
 
+export interface MomentPostStyle {
+  fontFamily?: 'sans' | 'serif' | 'display' | 'cursive' | 'mono' | 'elegant';
+  bgTheme?:
+    | 'classic'
+    | 'royal_blue'
+    | 'sunset_rose'
+    | 'emerald_wave'
+    | 'midnight_gold'
+    | 'peach_pastel'
+    | 'neon_cyber'
+    | 'crimson_love';
+  textColor?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  fontSize?: 'sm' | 'md' | 'lg' | 'xl';
+  textEffect?: 'none' | 'shadow' | 'glow' | 'outline';
+  photoFrame?: 'clean' | 'polaroid' | 'rounded_glow' | 'cinema';
+  feeling?: string;
+  locationText?: string;
+  privacy?: 'public' | 'friends';
+}
+
 export interface Moment {
   id: string;
   userId: string;
@@ -419,6 +443,7 @@ export interface Moment {
   caption: string;
   imageUrl?: string;
   serviceTag?: string;
+  postStyle?: MomentPostStyle;
   createdAt: string;
   likes: string[]; // User IDs who liked
   comments: MomentComment[];
@@ -865,6 +890,9 @@ export interface LiveTimeMeta {
   istTimeLabel: string;
   secondsUntilMidnight: number;
   nextResetAtIso: string;
+  syncSource?: string;
+  clockSkewMs?: number;
+  lastSyncedIso?: string;
 }
 
 export interface DailyGameHubData {

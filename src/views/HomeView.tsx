@@ -165,23 +165,23 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3 pt-1">
               {currentUser ? (
                 <>
                   <button
                     type="button"
                     onClick={() => onSelectTab('dashboard')}
-                    className="px-6 py-3 rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm cursor-pointer transition"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 min-h-[42px] rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm cursor-pointer transition whitespace-nowrap"
                   >
-                    <span>Open My Dashboard ({currentUser.userId})</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span className="truncate">Open My Dashboard ({currentUser.userId})</span>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
                   <button
                     type="button"
                     onClick={() => onSelectTab('gaming-room')}
-                    className="px-6 py-3 rounded-xs bg-white hover:bg-blue-50 text-[#2874f0] font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm cursor-pointer transition"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 min-h-[42px] rounded-xs bg-white hover:bg-blue-50 text-[#2874f0] font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm cursor-pointer transition whitespace-nowrap"
                   >
-                    <Gamepad2 className="w-4 h-4" />
+                    <Gamepad2 className="w-4 h-4 shrink-0" />
                     <span>Play ESP Gaming Time</span>
                   </button>
                 </>
@@ -190,27 +190,27 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onSelectTab('register')}
-                    className="px-6 py-3 rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm cursor-pointer transition"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 min-h-[42px] rounded-xs bg-[#fb641b] hover:bg-[#e8550f] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm cursor-pointer transition whitespace-nowrap"
                   >
-                    <Briefcase className="w-4 h-4" />
+                    <Briefcase className="w-4 h-4 shrink-0" />
                     <span>Join Business Plan (₹10+)</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
                   <button
                     type="button"
                     onClick={() => onSelectTab('register')}
-                    className="px-5 py-3 rounded-xs bg-white hover:bg-blue-50 text-[#2874f0] font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm cursor-pointer transition"
+                    className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 min-h-[42px] rounded-xs bg-white hover:bg-blue-50 text-[#2874f0] font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm cursor-pointer transition whitespace-nowrap"
                   >
-                    <Gamepad2 className="w-4 h-4" />
-                    <span>Free Gamer Pass (0 Coins Start)</span>
+                    <Gamepad2 className="w-4 h-4 shrink-0" />
+                    <span>Free Gamer Pass (0 Coins)</span>
                   </button>
                   {onOpenLogin && (
                     <button
                       type="button"
                       onClick={onOpenLogin}
-                      className="px-4 py-3 rounded-xs border border-white/40 hover:bg-white/10 text-white font-semibold text-xs sm:text-sm inline-flex items-center gap-1.5 cursor-pointer transition"
+                      className="w-full sm:w-auto px-4 py-2.5 sm:py-3 min-h-[42px] rounded-xs border border-white/40 hover:bg-white/10 text-white font-semibold text-xs sm:text-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition whitespace-nowrap"
                     >
-                      <LogIn className="w-4 h-4" />
+                      <LogIn className="w-4 h-4 shrink-0" />
                       <span>Member Login</span>
                     </button>
                   )}

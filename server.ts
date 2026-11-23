@@ -577,8 +577,92 @@ export const DEFAULT_WEPLAY_BOTS: WePlayBot[] = [
 
 const SYNTHETIC_USER_IDS = new Set(['SHARMA-JI-VIP', 'ESP-SHARMA-JI-VIP', 'ESP-GUEST-01', 'TEST-ESP-USER']);
 
+let authoritativeTimeOffsetMs = 0;
+let authoritativeTimeSource = 'Server System Clock (IST UTC+05:30)';
+let authoritativeLastSyncedIso = new Date().toISOString();
+
+function getVerifiedNowMs(): number {
+  return Date.now() + authoritativeTimeOffsetMs;
+}
+
+function getVerifiedLiveIstTimeMeta() {
+  return {
+    ...getLiveIstTimeMeta(getVerifiedNowMs()),
+    syncSource: authoritativeTimeSource,
+    clockSkewMs: authoritativeTimeOffsetMs,
+    lastSyncedIso: authoritativeLastSyncedIso,
+  };
+}
+
+async function syncAuthoritativeTimeOffset(): Promise<void> {
+  // 1. Primary: WorldTimeAPI Asia/Kolkata JSON
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2200);
+    const t0 = Date.now();
+    const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata', {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data: any = await res.json();
+      const t1 = Date.now();
+      const externalMs =
+        typeof data?.unixtime === 'number'
+          ? data.unixtime * 1000
+          : data?.datetime
+          ? Date.parse(data.datetime)
+          : NaN;
+      if (Number.isFinite(externalMs) && externalMs > 1700000000000) {
+        const midpoint = Math.round((t0 + t1) / 2);
+        authoritativeTimeOffsetMs = externalMs - midpoint;
+        authoritativeTimeSource = 'Live WorldTime IST API (Asia/Kolkata)';
+        authoritativeLastSyncedIso = new Date(externalMs).toISOString();
+        return;
+      }
+    }
+  } catch {
+    // Fallback to HTTP Date header check
+  }
+
+  // 2. Fallback: Live HTTP Date Header (NTP-backed Edge CDN)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2200);
+    const t0 = Date.now();
+    const res = await fetch('https://www.google.com/generate_204', {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const dateHdr = res.headers.get('date');
+    const t1 = Date.now();
+    if (dateHdr) {
+      const parsedMs = Date.parse(dateHdr);
+      if (Number.isFinite(parsedMs) && parsedMs > 1700000000000) {
+        const midpoint = Math.round((t0 + t1) / 2);
+        authoritativeTimeOffsetMs = parsedMs - midpoint;
+        authoritativeTimeSource = 'Live Network UTC Clock (IST Sync)';
+        authoritativeLastSyncedIso = new Date(parsedMs).toISOString();
+        return;
+      }
+    }
+  } catch {
+    // Keep existing server clock safely when offline
+  }
+
+  authoritativeTimeSource = 'Server System Clock (IST UTC+05:30)';
+  authoritativeLastSyncedIso = new Date(getVerifiedNowMs()).toISOString();
+}
+
+// Non-blocking startup sync + periodic 15-minute clock re-calibration
+syncAuthoritativeTimeOffset().catch(() => {});
+setInterval(() => {
+  syncAuthoritativeTimeOffset().catch(() => {});
+}, 15 * 60 * 1000);
+
 function getTodayDateString(): string {
-  return getIstDateString();
+  return getIstDateString(getVerifiedNowMs());
 }
 
 function ensureDailyTaskState(user: UserProfile) {
@@ -2127,6 +2211,10 @@ app.put('/api/user/:userId', (req, res) => {
     bio, 
     gender, 
     location,
+    birthday,
+    showEspShowOnHome,
+    priceTag,
+    vipTitle,
     fullAddress, 
     paymentAddress, 
     payoutUpiId, 
@@ -2245,6 +2333,22 @@ app.put('/api/user/:userId', (req, res) => {
       newValue: String(location).trim().slice(0, 80),
     });
     user.location = String(location).trim().slice(0, 80);
+  }
+
+  if (birthday !== undefined && birthday !== user.birthday) {
+    user.birthday = String(birthday).trim().slice(0, 32);
+  }
+
+  if (showEspShowOnHome !== undefined) {
+    user.showEspShowOnHome = Boolean(showEspShowOnHome);
+  }
+
+  if (priceTag !== undefined) {
+    user.priceTag = String(priceTag).trim().slice(0, 40);
+  }
+
+  if (vipTitle !== undefined) {
+    user.vipTitle = String(vipTitle).trim().slice(0, 40);
   }
 
   if (fullAddress !== undefined && fullAddress !== user.fullAddress) {
@@ -2925,10 +3029,23 @@ app.get('/api/moments', (_req, res) => {
 
 app.post('/api/moments', (req, res) => {
   try {
-    const { userId, userName, userRollNumber, userAvatar, caption, imageUrl, serviceTag } = req.body;
-    if (!caption && !imageUrl) {
-      return res.status(400).json({ success: false, message: 'Caption or image is required' });
+    const { userId, userName, userRollNumber, userAvatar, caption, imageUrl, serviceTag, postStyle } = req.body;
+    if ((!caption || !String(caption).trim()) && !imageUrl) {
+      return res.status(400).json({ success: false, message: 'कृपया टेक्स्ट लिखें या फोटो अपलोड करें' });
     }
+
+    const sanitizedStyle = postStyle && typeof postStyle === 'object' ? {
+      fontFamily: String(postStyle.fontFamily || 'sans'),
+      bgTheme: String(postStyle.bgTheme || 'classic'),
+      textColor: postStyle.textColor ? String(postStyle.textColor).slice(0, 24) : '',
+      textAlign: ['left', 'center', 'right'].includes(postStyle.textAlign) ? postStyle.textAlign : 'left',
+      fontSize: ['sm', 'md', 'lg', 'xl'].includes(postStyle.fontSize) ? postStyle.fontSize : 'sm',
+      textEffect: ['none', 'shadow', 'glow', 'outline'].includes(postStyle.textEffect) ? postStyle.textEffect : 'none',
+      photoFrame: ['clean', 'polaroid', 'rounded_glow', 'cinema'].includes(postStyle.photoFrame) ? postStyle.photoFrame : 'clean',
+      feeling: postStyle.feeling ? String(postStyle.feeling).slice(0, 48) : '',
+      locationText: postStyle.locationText ? String(postStyle.locationText).slice(0, 48) : '',
+      privacy: postStyle.privacy === 'friends' ? 'friends' : 'public',
+    } : undefined;
 
     const newMoment: Moment = {
       id: `moment-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -2936,9 +3053,10 @@ app.post('/api/moments', (req, res) => {
       userName: userName || 'ESP Member',
       userRollNumber: userRollNumber || 'ESP10MEM',
       userAvatar: userAvatar || '',
-      caption: caption || '',
+      caption: String(caption || '').trim(),
       imageUrl: imageUrl || '',
-      serviceTag: serviceTag || 'COMMUNITY MOMENT',
+      serviceTag: serviceTag || 'LIFE MOMENT',
+      ...(sanitizedStyle ? { postStyle: sanitizedStyle as any } : {}),
       createdAt: new Date().toISOString(),
       likes: [],
       comments: [],
@@ -2958,6 +3076,57 @@ app.post('/api/moments', (req, res) => {
     res.json({ success: true, message: 'Moment posted successfully!', moment: newMoment });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Error posting moment' });
+  }
+});
+
+app.delete('/api/moments/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const reqUserId = String(
+      req.body?.userId || req.query?.userId || req.headers['x-user-id'] || ''
+    ).trim();
+    const adminPassword = req.headers['x-admin-password'] as string | undefined;
+
+    if (!db.moments) db.moments = [];
+    const idx = db.moments.findIndex(m => m.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, message: 'Moment not found' });
+    }
+
+    const target = db.moments[idx];
+    const reqUser = reqUserId
+      ? db.users.find(
+          u =>
+            u.userId.toLowerCase() === reqUserId.toLowerCase() ||
+            (u.id && u.id.toLowerCase() === reqUserId.toLowerCase())
+        )
+      : undefined;
+
+    const isOwner = Boolean(
+      reqUserId &&
+        (target.userId?.toLowerCase() === reqUserId.toLowerCase() ||
+          target.userRollNumber?.toLowerCase() === reqUserId.toLowerCase() ||
+          (reqUser &&
+            (target.userId?.toLowerCase() === reqUser.userId.toLowerCase() ||
+              (reqUser.id && target.userId?.toLowerCase() === reqUser.id.toLowerCase()))))
+    );
+    const isAdminAuthorized =
+      (adminPassword && verifyAdmin(adminPassword)) ||
+      reqUser?.role === 'admin' ||
+      reqUser?.userId === 'usr-admin';
+
+    if (!isOwner && !isAdminAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: 'आप केवल अपने खुद के पोस्ट किए गए मोमेंट को ही डिलीट कर सकते हैं।',
+      });
+    }
+
+    db.moments.splice(idx, 1);
+    saveDatabase(db);
+    res.json({ success: true, deletedId: id, message: 'Moment deleted successfully!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || 'Error deleting moment' });
   }
 });
 
@@ -3757,7 +3926,7 @@ function buildDailyHubPayload(user: UserProfile) {
   const fullQuiz = getDailyQuizForDate(today);
   const spotlightGame = getSpotlightGameForDate(today);
 
-  const timeMeta = getLiveIstTimeMeta();
+  const timeMeta = getVerifiedLiveIstTimeMeta();
   const lastCheckIn = user.lastDailyCheckInDate || '';
   const claimedToday = lastCheckIn === today;
   const rawStreak = Number(user.loginStreak || 0);
@@ -3841,7 +4010,7 @@ function buildDailyHubPayload(user: UserProfile) {
 
 // Live IST Midnight Clock API
 app.get('/api/time/live', (_req, res) => {
-  res.json({ success: true, timeMeta: getLiveIstTimeMeta() });
+  res.json({ success: true, timeMeta: getVerifiedLiveIstTimeMeta() });
 });
 
 // 3A. GET Daily Fresh Hub (Rotating Knowledge Intel, Daily Quiz, 7-Day Streak, Free Play Cap, Leaderboard)
@@ -6381,7 +6550,16 @@ app.get('/api/community/player-profile/:userId', (req, res) => {
   const isFriend = Boolean(viewer && Array.isArray(viewer.friendsList) && viewer.friendsList.includes(u.userId));
 
   const userMoments = (db.moments || [])
-    .filter(m => m.userId === u.userId || m.userId === u.id || m.userRollNumber === u.userId)
+    .filter(m => {
+      const mUid = (m.userId || '').toLowerCase();
+      const mRoll = (m.userRollNumber || '').toLowerCase();
+      const targetUid = u.userId.toLowerCase();
+      const targetInternalId = (u.id || '').toLowerCase();
+      return (
+        (mUid && (mUid === targetUid || (targetInternalId && mUid === targetInternalId))) ||
+        (mRoll && mRoll === targetUid)
+      );
+    })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const giftEntries = Object.values(u.receivedGifts || {});
@@ -8381,6 +8559,83 @@ app.post('/api/admin/users/adjust-coins', (req, res) => {
     user: target,
     balanceBefore: before,
     balanceAfter: after,
+  });
+});
+
+// E2. Admin Live 12 AM IST Clock & Weekly Rewards Monitor
+app.get('/api/admin/time-weekly-stats', (req, res) => {
+  const adminPassword = (req.headers['x-admin-password'] as string) || (req.query.adminPassword as string) || '';
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const today = getTodayDateString();
+  const timeMeta = getVerifiedLiveIstTimeMeta();
+  const claimedTodayUsers = db.users
+    .filter(u => u.lastDailyCheckInDate === today)
+    .map(u => ({
+      userId: u.userId,
+      fullName: u.fullName,
+      username: u.username,
+      loginStreak: Number(u.loginStreak || 0),
+      lastDailyCheckInDate: u.lastDailyCheckInDate || '',
+      coins: Number(u.coins || 0),
+    }));
+  const activeStreaksCount = db.users.filter(u => Number(u.loginStreak || 0) > 0).length;
+  res.json({
+    success: true,
+    today,
+    timeMeta,
+    schedule: SEVEN_DAY_CHECKIN_REWARDS,
+    claimedTodayCount: claimedTodayUsers.length,
+    activeStreaksCount,
+    claimedTodayUsers: claimedTodayUsers.slice(0, 30),
+  });
+});
+
+app.post('/api/admin/resync-time', async (req, res) => {
+  const adminPassword =
+    (req.body?.adminPassword as string) || (req.headers['x-admin-password'] as string) || '';
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  await syncAuthoritativeTimeOffset();
+  const timeMeta = getVerifiedLiveIstTimeMeta();
+  res.json({
+    success: true,
+    message: `Live API Clock Synced (${timeMeta.istTimeLabel} · ${timeMeta.syncSource})`,
+    timeMeta,
+  });
+});
+
+app.post('/api/admin/reset-user-daily-claim', (req, res) => {
+  const { adminPassword, userIdentifier, preserveStreak } = req.body || {};
+  const pwd = adminPassword || (req.headers['x-admin-password'] as string) || '';
+  if (!verifyAdmin(pwd)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const rawId = String(userIdentifier || '').trim();
+  const cleanHandle = normalizeUsername(rawId);
+  const target = db.users.find(
+    u =>
+      u.userId.toLowerCase() === rawId.toLowerCase() ||
+      u.id.toLowerCase() === rawId.toLowerCase() ||
+      (cleanHandle && normalizeUsername(u.username) === cleanHandle)
+  );
+  if (!target) {
+    return res.status(404).json({ success: false, message: `User "${rawId}" नहीं मिला।` });
+  }
+  const today = getTodayDateString();
+  if (preserveStreak && Number(target.loginStreak || 0) > 0) {
+    target.lastDailyCheckInDate = getYesterdayDateString(today);
+  } else {
+    target.lastDailyCheckInDate = '';
+    target.loginStreak = 0;
+  }
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `✅ ${target.fullName} (${target.userId}) का Weekly Claim लॉक रीसेट हो गया — अब नया Claim Pop-up अनलॉक होगा।`,
+    user: target,
   });
 });
 

@@ -148,8 +148,8 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
       </div>
 
       {/* Category Filter Tabs */}
-      <div className="bg-white border border-slate-200 rounded-sm p-2.5 flex flex-wrap items-center gap-2 shadow-xs">
-        <span className="text-xs font-bold text-[#878787] px-2">Filter:</span>
+      <div className="bg-white border border-slate-200 rounded-sm p-2 flex items-center gap-1.5 sm:gap-2 overflow-x-auto sm:flex-wrap no-scrollbar shadow-xs">
+        <span className="text-[11px] sm:text-xs font-bold text-[#878787] px-1.5 shrink-0">Filter:</span>
         {[
           { id: 'all', label: 'All 10 Services' },
           { id: 'task', label: 'Tasks & 3.3% App' },
@@ -160,7 +160,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
           <button
             key={cat.id}
             onClick={() => setFilter(cat.id)}
-            className={`px-3.5 py-1.5 rounded-xs text-xs font-semibold transition cursor-pointer ${
+            className={`px-3 py-1.5 min-h-[34px] rounded-xs text-[11px] sm:text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
               filter === cat.id
                 ? 'bg-[#2874f0] text-white'
                 : 'bg-[#f1f3f6] text-[#212121] hover:bg-slate-200'

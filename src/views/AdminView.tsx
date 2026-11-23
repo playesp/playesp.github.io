@@ -27,9 +27,10 @@ import {
   Bell,
   MessageSquare,
   Crown,
-  Hash
+  Hash,
+  RefreshCw
 } from 'lucide-react';
-import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem } from '../types/index.ts';
+import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem, LiveTimeMeta } from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
@@ -49,7 +50,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onUpdateSettings,
   onLogoutAdmin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'settings' | 'audits' | 'slider_photos'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'weekly_clock' | 'settings' | 'audits' | 'slider_photos'>('members');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all');
   
   const [stats, setStats] = useState<any>(null);
@@ -186,6 +187,114 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [actionModalSecondary, setActionModalSecondary] = useState('');
   const [actionModalBusy, setActionModalBusy] = useState(false);
 
+  // Admin Live 12 AM IST Clock & Weekly Rewards Monitor State
+  const [adminTimeStats, setAdminTimeStats] = useState<{
+    today: string;
+    timeMeta: LiveTimeMeta;
+    schedule: Array<{ day: number; coins: number; xp: number; label: string }>;
+    claimedTodayCount: number;
+    activeStreaksCount: number;
+    claimedTodayUsers: Array<{
+      userId: string;
+      fullName: string;
+      username?: string;
+      loginStreak: number;
+      lastDailyCheckInDate: string;
+      coins: number;
+    }>;
+  } | null>(null);
+  const [adminClockOffsetMs, setAdminClockOffsetMs] = useState(0);
+  const [adminLiveIstClock, setAdminLiveIstClock] = useState('Syncing...');
+  const [adminResetCountdown, setAdminResetCountdown] = useState('--:--:--');
+  const [resyncingTime, setResyncingTime] = useState(false);
+  const [resetClaimUserInput, setResetClaimUserInput] = useState('');
+  const [resetPreserveStreak, setResetPreserveStreak] = useState(true);
+  const [resettingClaimBusy, setResettingClaimBusy] = useState(false);
+
+  const loadAdminTimeStats = async () => {
+    try {
+      const res = await api.getAdminTimeWeeklyStats(adminPassword);
+      if (res?.success && res.timeMeta) {
+        setAdminTimeStats(res);
+        if (res.timeMeta.serverIso) {
+          const off = new Date(res.timeMeta.serverIso).getTime() - Date.now();
+          if (Number.isFinite(off)) setAdminClockOffsetMs(off);
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    const tick = () => {
+      const nowMs = Date.now() + adminClockOffsetMs;
+      const istObj = new Date(nowMs + 5.5 * 60 * 60 * 1000);
+      const hh = istObj.getUTCHours();
+      const mm = istObj.getUTCMinutes();
+      const ss = istObj.getUTCSeconds();
+      setAdminLiveIstClock(
+        `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} IST`
+      );
+      const secLeft = Math.max(0, 86400 - (hh * 3600 + mm * 60 + ss));
+      const ch = Math.floor(secLeft / 3600);
+      const cm = Math.floor((secLeft % 3600) / 60);
+      const cs = secLeft % 60;
+      setAdminResetCountdown(
+        `${String(ch).padStart(2, '0')}:${String(cm).padStart(2, '0')}:${String(cs).padStart(2, '0')}`
+      );
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [adminClockOffsetMs]);
+
+  const handleResyncAdminTime = async () => {
+    setResyncingTime(true);
+    try {
+      const res = await api.resyncAdminLiveTime(adminPassword);
+      if (res?.success && res.timeMeta) {
+        const off = new Date(res.timeMeta.serverIso).getTime() - Date.now();
+        if (Number.isFinite(off)) setAdminClockOffsetMs(off);
+        showToast(res.message || 'Live API Clock Synced!', 'success');
+        await loadAdminTimeStats();
+      } else {
+        showToast(res?.message || 'Clock sync failed', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Clock sync failed', 'error');
+    } finally {
+      setResyncingTime(false);
+    }
+  };
+
+  const handleResetUserWeeklyClaim = async (targetIdentifier?: string) => {
+    const idToReset = (targetIdentifier ?? resetClaimUserInput).trim();
+    if (!idToReset) {
+      showToast('कृपया User ID या @username दर्ज करें', 'error');
+      return;
+    }
+    setResettingClaimBusy(true);
+    try {
+      const res = await api.resetUserDailyClaim(adminPassword, idToReset, resetPreserveStreak);
+      if (res?.success) {
+        showToast(res.message || 'Weekly Claim Lock Reset!', 'success');
+        try {
+          if (res.user?.userId) {
+            localStorage.removeItem(`esp_weekly_claimed_date_${res.user.userId}`);
+            sessionStorage.removeItem(`esp_weekly_popup_dismissed_${res.user.userId}`);
+          }
+        } catch {}
+        if (!targetIdentifier) setResetClaimUserInput('');
+        await Promise.all([loadAdminTimeStats(), loadAdminData()]);
+      } else {
+        showToast(res?.message || 'Reset failed', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Reset failed', 'error');
+    } finally {
+      setResettingClaimBusy(false);
+    }
+  };
+
   const loadAdminData = async () => {
     setLoading(true);
     try {
@@ -256,6 +365,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
       } catch (err) {
         console.error('Failed to load gift card redemptions', err);
       }
+
+      // Load Live 12 AM IST Clock & Weekly Rewards Stats
+      loadAdminTimeStats();
     } catch {
       showToast('एडमिन सुरक्षा सत्यापन विफल रहा।', 'error');
       onLogoutAdmin();
@@ -1127,6 +1239,21 @@ export const AdminView: React.FC<AdminViewProps> = ({
           }`}
         >
           UPI Gateway &amp; QR Settings
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('weekly_clock');
+            loadAdminTimeStats();
+          }}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'weekly_clock'
+              ? 'bg-[#fb641b] text-white'
+              : 'text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span>⏰ 12 AM Clock &amp; Weekly Rewards</span>
         </button>
 
         <button
@@ -2897,6 +3024,161 @@ export const AdminView: React.FC<AdminViewProps> = ({
               {settingsSaving ? 'Saving Settings...' : 'Save & Publish Gateway Settings'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* ===================== TAB 4B: LIVE 12 AM IST CLOCK & WEEKLY REWARDS MONITOR ===================== */}
+      {activeTab === 'weekly_clock' && (
+        <div className="space-y-4">
+          {/* Live IST API Clock Header Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-md p-5 sm:p-6 text-white border border-slate-700 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-sm bg-emerald-500/20 border border-emerald-400/40 text-[10px] font-black text-emerald-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    LIVE SERVER API TIME
+                  </span>
+                  <span className="text-[11px] text-slate-300 font-semibold">
+                    {adminTimeStats?.timeMeta?.syncSource || 'Server IST UTC+05:30'}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                  <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-300 tabular-nums">
+                    {adminLiveIstClock}
+                  </span>
+                  <span className="text-xs font-mono text-slate-300">
+                    IST Date: <strong className="text-white">{adminTimeStats?.today || 'Today'}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 tabular-nums">
+                  🌙 Exact 12:00:00 AM IST Midnight Reset Countdown:{' '}
+                  <strong className="text-orange-300 font-mono">{adminResetCountdown}</strong>
+                  {typeof adminTimeStats?.timeMeta?.clockSkewMs === 'number' && (
+                    <span className="ml-2 text-[11px] text-slate-400">
+                      (Network Offset: {adminTimeStats.timeMeta.clockSkewMs}ms)
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={resyncingTime}
+                onClick={handleResyncAdminTime}
+                className="px-4 py-2.5 rounded-sm bg-[#fb641b] hover:bg-[#e5530d] text-white text-xs font-black flex items-center gap-2 cursor-pointer shrink-0 shadow transition disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${resyncingTime ? 'animate-spin' : ''}`} />
+                <span>{resyncingTime ? 'Syncing Live Clock...' : 'Sync Live API Time Now'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Weekly Rewards Schedule & Reset Controls Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 7-Day Weekly Rewards Table */}
+            <div className="bg-white rounded-md p-5 border border-slate-200 space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#212121]">
+                  🎁 Active Weekly Rewards Schedule (Day 1–7)
+                </h3>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-sm">
+                  {adminTimeStats?.claimedTodayCount ?? 0} Claimed Today
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {(adminTimeStats?.schedule || []).map((slot) => (
+                  <div
+                    key={slot.day}
+                    className={`p-2.5 rounded-md border text-center ${
+                      slot.day === 7
+                        ? 'col-span-2 bg-orange-50 border-orange-200'
+                        : 'bg-[#f8f9fb] border-slate-200'
+                    }`}
+                  >
+                    <div className="text-[11px] font-bold text-slate-500">Day {slot.day}</div>
+                    <div className="text-sm font-black text-[#fb641b] mt-0.5">
+                      {slot.day === 7 ? `🎁 Mystery (${slot.coins}c)` : `🪙 ${slot.coins}`}
+                    </div>
+                    <div className="text-[10px] font-semibold text-blue-600">+{slot.xp} EXP</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                नियम: एक बार Claim करने के बाद उसी IST तारीख में Pop-up दोबारा नहीं खुलेगा — केवल रात 12:00 AM IST पर नया दिन अनलॉक होगा।
+              </p>
+            </div>
+
+            {/* Reset User Weekly Claim Lock (Admin Testing & Support) */}
+            <div className="bg-white rounded-md p-5 border border-slate-200 space-y-3 shadow-2xs">
+              <h3 className="text-sm font-bold text-[#212121]">
+                🔓 Reset Member Weekly Claim Lock (Support / Test 12 AM Pop-up)
+              </h3>
+              <p className="text-xs text-slate-600">
+                अगर किसी खिलाड़ी का आज का Claim लॉक रीसेट करना हो या नया Weekly Reward Pop-up टेस्ट करना हो, तो यहाँ से तुरंत अनलॉक करें।
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={resetClaimUserInput}
+                  onChange={e => setResetClaimUserInput(e.target.value)}
+                  placeholder="User ID या @username लिखें (e.g. ESP-101)"
+                  className="flex-1 bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] rounded-sm px-3 py-2 text-xs font-mono outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={resettingClaimBusy}
+                  onClick={() => handleResetUserWeeklyClaim()}
+                  className="px-4 py-2 rounded-sm bg-[#2874f0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0 disabled:opacity-60"
+                >
+                  {resettingClaimBusy ? 'Resetting...' : 'Unlock Pop-up'}
+                </button>
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={resetPreserveStreak}
+                  onChange={e => setResetPreserveStreak(e.target.checked)}
+                  className="rounded border-slate-300"
+                />
+                <span>Keep current Day Streak progression (Uncheck = Reset back to Day 1)</span>
+              </label>
+
+              {/* Today's Claimants List */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="text-xs font-bold text-slate-700 mb-2">
+                  आज Claim कर चुके खिलाड़ी ({adminTimeStats?.claimedTodayUsers?.length || 0})
+                </div>
+                {!adminTimeStats?.claimedTodayUsers?.length ? (
+                  <p className="text-xs text-slate-400">आज अभी तक किसी ने Weekly Reward Claim नहीं किया है।</p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {adminTimeStats.claimedTodayUsers.map((c) => (
+                      <div
+                        key={c.userId}
+                        className="flex items-center justify-between px-3 py-1.5 rounded-sm bg-[#f9fafb] border border-slate-200 text-xs"
+                      >
+                        <div className="min-w-0 truncate">
+                          <span className="font-bold text-[#212121]">{c.fullName}</span>{' '}
+                          <span className="font-mono text-[11px] text-slate-500">({c.userId})</span>
+                          <span className="ml-2 text-[10px] font-bold text-orange-600">
+                            Day {((Math.max(1, c.loginStreak) - 1) % 7) + 1}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleResetUserWeeklyClaim(c.userId)}
+                          className="px-2 py-1 rounded-sm bg-white hover:bg-orange-50 border border-orange-200 text-orange-700 text-[10px] font-bold cursor-pointer shrink-0 ml-2"
+                        >
+                          Reset Lock
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

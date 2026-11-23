@@ -25,16 +25,12 @@ import { DashboardView } from './views/DashboardView.tsx';
 import { AdminView } from './views/AdminView.tsx';
 import { GamingRoomView } from './views/GamingRoomView.tsx';
 import { NwiSystemView } from './views/NwiSystemView.tsx';
+import { MePageView } from './views/MePageView.tsx';
 import { DailyTasksAndLoginModal } from './components/games/DailyTasksAndLoginModal.tsx';
+import { LockedFooterNav, type GamingSubTabType } from './components/LockedFooterNav.tsx';
 import { 
-  Home, 
-  Layers, 
-  Camera, 
-  MessageCircle, 
-  User, 
   Sparkles,
   Gamepad2,
-  Award,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -106,6 +102,13 @@ export default function App() {
     }
     return 'overview';
   });
+  const [activeGamingSubTab, setActiveGamingSubTab] = useState<GamingSubTabType>(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) {
+      return 'voice_room';
+    }
+    return 'games';
+  });
+  const [gamingNavPulse, setGamingNavPulse] = useState(0);
   const [initialRegMode, setInitialRegMode] = useState<'business' | 'gamer'>('business');
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -258,8 +261,16 @@ export default function App() {
         if (liveIstDate) {
           weeklyLiveIstDateRef.current = liveIstDate;
         }
-        const canClaim = Boolean(hubData?.checkIn?.canClaimToday);
+
+        const claimedStorageKey = `esp_weekly_claimed_date_${currentUser.userId}`;
         const dismissKey = `esp_weekly_popup_dismissed_${currentUser.userId}`;
+        const claimedLocallyDate = (() => {
+          try {
+            return localStorage.getItem(claimedStorageKey) || '';
+          } catch {
+            return '';
+          }
+        })();
         const dismissedDate = (() => {
           try {
             return sessionStorage.getItem(dismissKey) || '';
@@ -268,7 +279,31 @@ export default function App() {
           }
         })();
 
-        if (canClaim && (!liveIstDate || dismissedDate !== liveIstDate || triggerSource === 'midnight')) {
+        const serverCanClaim = Boolean(hubData?.checkIn?.canClaimToday);
+        const alreadyClaimedUser = Boolean(
+          liveIstDate && currentUser.lastDailyCheckInDate === liveIstDate
+        );
+        const alreadyClaimedLocal = Boolean(
+          liveIstDate && claimedLocallyDate === liveIstDate
+        );
+
+        // Sync local durable lock if server already recorded today's claim
+        if (!serverCanClaim && liveIstDate) {
+          try {
+            localStorage.setItem(claimedStorageKey, liveIstDate);
+          } catch {}
+        }
+
+        const canClaimToday =
+          serverCanClaim && !alreadyClaimedUser && !alreadyClaimedLocal;
+
+        if (!canClaimToday) {
+          setShowWeeklyRewardPopup(false);
+        } else if (
+          triggerSource === 'midnight' ||
+          !liveIstDate ||
+          dismissedDate !== liveIstDate
+        ) {
           setWeeklyPopupReason(triggerSource);
           setShowWeeklyRewardPopup(true);
           if (triggerSource === 'midnight') {
@@ -296,7 +331,7 @@ export default function App() {
 
     checkLiveWeeklyRewardPopup('login');
 
-    // Also poll live server IST clock every 30s so waking from device sleep across 12:00 AM IST pops immediately
+    // Poll live server IST clock every 30s so crossing 12:00:00 AM IST unlocks cleanly
     const liveClockPoll = setInterval(async () => {
       try {
         const timeRes = await api.getLiveServerTime();
@@ -383,7 +418,19 @@ export default function App() {
       return;
     }
     setGamingInitialSubTab('recharge_convert');
+    setActiveGamingSubTab('recharge_convert');
+    setGamingNavPulse(p => p + 1);
     setCurrentTab('gaming-room');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenMeMenu = () => {
+    if (!currentUser) {
+      setLoginDestination('gaming-room');
+      setLoginModalOpen(true);
+      return;
+    }
+    setCurrentTab('me');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -397,13 +444,19 @@ export default function App() {
     }
     if (tab === 'gaming-room') {
       setGamingInitialSubTab('games');
+      setActiveGamingSubTab('games');
+      setGamingNavPulse(p => p + 1);
     } else if (tab === 'gaming-voice') {
       setGamingInitialSubTab('voice_room');
+      setActiveGamingSubTab('voice_room');
+      setGamingNavPulse(p => p + 1);
       setCurrentTab('gaming-room');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     } else if (tab === 'gaming-tasks') {
       setGamingInitialSubTab('rewards_tasks');
+      setActiveGamingSubTab('rewards_tasks');
+      setGamingNavPulse(p => p + 1);
       setCurrentTab('gaming-room');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -417,7 +470,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isCleanGameLobby = currentUser?.accountType === 'gamer' && currentTab === 'gaming-room';
+  const isCleanGameLobby = currentUser?.accountType === 'gamer' && (currentTab === 'gaming-room' || currentTab === 'me');
 
   return (
     <div className="min-h-screen bg-[#f1f3f6] text-[#212121] flex flex-col font-sans selection:bg-[#2874f0] selection:text-white w-full overflow-x-hidden">
@@ -451,8 +504,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content View Container */}
-      <main className={isCleanGameLobby ? 'flex-1 w-full overflow-x-hidden' : 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-24 sm:pb-24 lg:pb-16'}>
+      {/* Main Content View Container (always padded above locked bottom footer) */}
+      <main className={isCleanGameLobby ? 'flex-1 w-full overflow-x-hidden pb-6' : 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-28'}>
         {currentTab === 'home' && (
           <HomeView
             settings={settings}
@@ -557,6 +610,8 @@ export default function App() {
               settings={settings}
               initialSubTab={gamingInitialSubTab}
               initialRoomId={initialRoomCode || undefined}
+              subTabPulse={gamingNavPulse}
+              onSubTabChange={setActiveGamingSubTab}
               isAdmin={isAdmin}
               onOpenAdmin={() => setCurrentTab('admin')}
               onLogout={handleUserLogout}
@@ -568,6 +623,7 @@ export default function App() {
               onOpenWithdrawal={() => setCurrentTab('dashboard')}
               onOpenEarningSetup={() => handleTabChange('dashboard')}
               onOpenServicesSetup={() => handleTabChange('services')}
+              onOpenMomentsFeed={() => handleTabChange('moments')}
             />
           ) : (
             <div className="bg-white border border-slate-200 max-w-lg mx-auto my-10 p-6 sm:p-8 rounded-md text-center space-y-5 shadow-sm">
@@ -654,6 +710,27 @@ export default function App() {
           </div>
         )}
 
+        {currentTab === 'me' && currentUser && (
+          <MePageView
+            user={currentUser}
+            settings={settings}
+            isAdmin={isAdmin}
+            onUpdateUser={updated => {
+              setCurrentUser(updated);
+              api.setStoredUser(updated);
+            }}
+            onSelectTab={handleTabChange}
+            onOpenRecharge={handleOpenBuyCoins}
+            onOpenWeeklyRewards={() => {
+              setWeeklyPopupReason('manual');
+              setShowWeeklyRewardPopup(true);
+            }}
+            onShowIdCard={() => setIdCardModalOpen(true)}
+            onOpenAdmin={() => setCurrentTab('admin')}
+            onLogout={handleUserLogout}
+          />
+        )}
+
         {currentTab === 'admin' && isAdmin && (
           <AdminView
             adminPassword={adminPassword}
@@ -676,122 +753,15 @@ export default function App() {
         )}
       </main>
 
-      {/* Clean Light Mobile Bottom Dock Bar (Hidden inside gaming-room to prevent double dock bars) */}
-      {currentTab !== 'gaming-room' && (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 py-1.5 px-2 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex items-center justify-around">
-          {currentUser?.accountType === 'gamer' ? (
-            <>
-              <button
-                onClick={() => handleTabChange('gaming-room')}
-                className="flex flex-col items-center py-1 px-3 rounded-md transition cursor-pointer bg-[#2874f0] text-white font-bold shadow-xs"
-              >
-                <Gamepad2 className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Games</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('gaming-voice')}
-                className="flex flex-col items-center py-1 px-2 rounded transition cursor-pointer text-[#555555] hover:text-[#2874f0]"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Voice Room</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('chat-club')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'chat-club' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Chat Club</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('moments')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'moments' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <Camera className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Moments</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('dashboard')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'dashboard' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <User className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Earning</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => handleTabChange('home')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'home' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <Home className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Home</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('services')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'services' || currentTab === 'service-detail' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Services</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('gaming-room')}
-                className="flex flex-col items-center py-1 px-3 rounded-md transition cursor-pointer bg-[#fb641b] text-white font-bold shadow-xs"
-              >
-                <Gamepad2 className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Gaming</span>
-              </button>
-
-              <button
-                onClick={() => handleTabChange('moments')}
-                className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                  currentTab === 'moments' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                }`}
-              >
-                <Camera className="w-4 h-4" />
-                <span className="text-[10px] mt-0.5">Moments</span>
-              </button>
-
-              {currentUser ? (
-                <button
-                  onClick={() => handleTabChange('dashboard')}
-                  className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                    currentTab === 'dashboard' ? 'text-[#2874f0] font-bold' : 'text-[#555555] hover:text-[#2874f0]'
-                  }`}
-                >
-                  <User className="w-4 h-4" />
-                  <span className="text-[10px] mt-0.5">Account</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleTabChange('register')}
-                  className={`flex flex-col items-center py-1 px-2 rounded transition cursor-pointer ${
-                    currentTab === 'register' ? 'text-[#fb641b] font-bold' : 'text-[#555555] hover:text-[#fb641b]'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span className="text-[10px] mt-0.5">Join ₹10</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* Global Locked Bottom Navigation Footer (Always visible across every page & device; active icon is enlarged & glowing) */}
+      <LockedFooterNav
+        currentTab={currentTab}
+        gamingSubTab={activeGamingSubTab}
+        currentUser={currentUser}
+        isAdmin={isAdmin}
+        onSelectTab={handleTabChange}
+        onOpenMeMenu={handleOpenMeMenu}
+      />
 
 
       {/* Footer (Hidden inside clean gamer lobby) */}

@@ -1,5 +1,5 @@
 // Daily Rotating Fresh Information, Knowledge Quiz, 7-Day Streak & Coin Power-Up Economy
-// Used consistently by Server APIs, Static Fallback, and WePlay Gaming Lobby UI
+// Used consistently by Server APIs, Static Fallback, and ESP PLAY Gaming Lobby UI
 
 export interface DailyIntelItem {
   id: string;
@@ -40,13 +40,13 @@ export interface CoinUtilityBooster {
 export const FREE_SKILL_PLAY_DAILY_LIMIT = 10;
 
 export const SEVEN_DAY_CHECKIN_REWARDS: DailyCheckInReward[] = [
-  { day: 1, coins: 5, xp: 15, label: 'Day 1 Welcome' },
-  { day: 2, coins: 8, xp: 20, label: 'Day 2 Spark' },
-  { day: 3, coins: 12, xp: 30, label: 'Day 3 Momentum' },
-  { day: 4, coins: 15, xp: 40, label: 'Day 4 Builder' },
-  { day: 5, coins: 20, xp: 50, label: 'Day 5 Challenger' },
-  { day: 6, coins: 25, xp: 65, label: 'Day 6 Pro' },
-  { day: 7, coins: 50, xp: 120, label: 'Day 7 Mega Chest' },
+  { day: 1, coins: 15, xp: 20, label: 'Day 1' },
+  { day: 2, coins: 20, xp: 25, label: 'Day 2' },
+  { day: 3, coins: 25, xp: 35, label: 'Day 3' },
+  { day: 4, coins: 30, xp: 45, label: 'Day 4' },
+  { day: 5, coins: 35, xp: 60, label: 'Day 5' },
+  { day: 6, coins: 40, xp: 80, label: 'Day 6' },
+  { day: 7, coins: 100, xp: 150, label: 'Day 7 Mystery Gift' },
 ];
 
 export const COIN_UTILITY_BOOSTERS: CoinUtilityBooster[] = [

@@ -22,7 +22,7 @@ export const Footer: React.FC<FooterProps> = ({
   )}`;
 
   return (
-    <footer className="bg-[#172337] border-t border-[#2a384e] text-white text-xs w-full overflow-x-hidden">
+    <footer className="bg-[#172337] border-t border-[#2a384e] text-white text-xs w-full overflow-x-hidden pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 mb-8">
           {/* ABOUT */}

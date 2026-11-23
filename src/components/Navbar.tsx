@@ -199,13 +199,13 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 w-full bg-white shadow-sm font-sans">
       {/* ===================== FLIPKART SIGNATURE ROYAL BLUE TOP BAR ===================== */}
       <div className="bg-[#2874f0] text-white">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-6">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-6">
           {/* Left: Flipkart-Style Brand Wordmark + Mobile Toggle */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 -ml-1 rounded text-white hover:bg-white/10 cursor-pointer"
+              className="lg:hidden p-1.5 sm:p-2 -ml-1 rounded text-white hover:bg-white/10 cursor-pointer shrink-0"
               aria-label="Open menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -217,7 +217,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex flex-col items-start text-left cursor-pointer group shrink-0"
             >
               <div className="flex items-center gap-1.5">
-                <span className="font-display text-lg sm:text-xl font-extrabold italic tracking-tight text-white whitespace-nowrap">
+                <span className="font-display text-base min-[380px]:text-lg sm:text-xl font-extrabold italic tracking-tight text-white whitespace-nowrap">
                   {isGamerOnly ? 'ESP Gaming' : 'ESP Platform'}
                 </span>
               </div>
@@ -304,21 +304,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right: Clean Single-Line Nav Actions */}
-          <div className="flex items-center gap-2 sm:gap-5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-4 shrink-0">
             {currentUser ? (
               <div ref={accountRef} className="relative">
                 <button
                   type="button"
                   onClick={() => setAccountMenuOpen(!accountMenuOpen)}
-                  className="bg-white text-[#2874f0] hover:bg-blue-50 px-3 sm:px-4 py-1.5 rounded-xs text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                  className="bg-white text-[#2874f0] hover:bg-blue-50 px-2.5 sm:px-4 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-semibold flex items-center gap-1 sm:gap-1.5 shadow-xs cursor-pointer whitespace-nowrap min-h-[34px]"
                 >
-                  <User className="w-4 h-4 shrink-0" />
-                  <span className="max-w-[96px] sm:max-w-[140px] truncate">{currentUser.fullName.split(' ')[0]}</span>
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="max-w-[78px] min-[380px]:max-w-[96px] sm:max-w-[140px] truncate">{currentUser.fullName.split(' ')[0]}</span>
                   <ChevronDown className="w-3.5 h-3.5 shrink-0" />
                 </button>
 
                 {accountMenuOpen && (
-                  <div className="absolute right-0 mt-1.5 w-68 bg-white border border-slate-200 rounded-sm shadow-xl z-50 text-[#212121] overflow-hidden">
+                  <div className="absolute right-0 mt-1.5 w-[min(17rem,calc(100vw-1.25rem))] bg-white border border-slate-200 rounded-sm shadow-xl z-50 text-[#212121] overflow-hidden">
                     <div className="p-3 bg-[#f5f7fa] border-b border-slate-200 space-y-1">
                       <p className="text-xs font-bold text-[#212121] truncate">{currentUser.fullName}</p>
                       <p className="text-[11px] text-[#878787] font-mono">
@@ -424,18 +424,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-3">
                 <button
                   type="button"
                   onClick={onOpenLogin}
-                  className="bg-white text-[#2874f0] hover:bg-blue-50 px-4 sm:px-7 py-1.5 rounded-xs text-xs sm:text-sm font-semibold shadow-xs cursor-pointer whitespace-nowrap"
+                  className="bg-white text-[#2874f0] hover:bg-blue-50 px-3 sm:px-6 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-bold shadow-xs cursor-pointer whitespace-nowrap min-h-[34px]"
                 >
                   Login
                 </button>
                 <button
                   type="button"
                   onClick={() => onSelectTab('register')}
-                  className="hidden sm:inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#ffe500] hover:text-white transition cursor-pointer whitespace-nowrap"
+                  className="inline-flex items-center gap-1 bg-[#fb641b] hover:bg-[#e8550f] sm:bg-transparent sm:hover:bg-transparent px-2.5 sm:px-1 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-bold text-white sm:text-[#ffe500] sm:hover:text-white transition cursor-pointer whitespace-nowrap min-h-[34px] shadow-xs sm:shadow-none"
                 >
                   <span>Join ₹10+</span>
                 </button>
@@ -758,7 +758,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* ===================== MOBILE DRAWER MENU ===================== */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-white border-b border-slate-200 px-4 pt-3 pb-5 space-y-3 text-[#212121] max-h-[80vh] overflow-y-auto shadow-lg">
+        <div className="lg:hidden bg-white border-b border-slate-200 px-3 sm:px-4 pt-3 pb-5 space-y-3 text-[#212121] max-h-[80dvh] overflow-y-auto shadow-lg">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <span className="text-xs font-bold text-[#878787] uppercase">
               {isGamerOnly ? '🎮 Gaming & Menu' : 'ESP Menu'}

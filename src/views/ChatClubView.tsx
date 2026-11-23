@@ -244,7 +244,7 @@ export const ChatClubView: React.FC<ChatClubViewProps> = ({
       </div>
 
       {/* Main Clean Marketplace Chat Container */}
-      <div className="bg-white border border-slate-200 rounded-md overflow-hidden shadow-xs flex flex-col md:flex-row h-[78vh] min-h-[580px]">
+      <div className="bg-white border border-slate-200 rounded-md overflow-hidden shadow-xs flex flex-col md:flex-row h-[70dvh] min-h-[460px] sm:h-[76dvh]">
         
         {/* Left Column: Channels, Friends & Party Rooms */}
         <div className={`w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col ${

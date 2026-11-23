@@ -1428,6 +1428,10 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       if (email) user.email = String(email).trim();
       if (gender !== undefined) user.gender = String(gender);
       if (location !== undefined) user.location = String(location).trim().slice(0, 80);
+      if (body.birthday !== undefined) user.birthday = String(body.birthday).trim().slice(0, 32);
+      if (body.showEspShowOnHome !== undefined) user.showEspShowOnHome = Boolean(body.showEspShowOnHome);
+      if (body.priceTag !== undefined) user.priceTag = String(body.priceTag).trim().slice(0, 40);
+      if (body.vipTitle !== undefined) user.vipTitle = String(body.vipTitle).trim().slice(0, 40);
       if (fullAddress !== undefined) user.fullAddress = String(fullAddress);
       if (paymentAddress !== undefined) {
         user.paymentAddress = String(paymentAddress);
@@ -1570,9 +1574,10 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       userName: body.userName || 'ESP Member',
       userRollNumber: body.userRollNumber || 'ESP',
       userAvatar: body.userAvatar,
-      caption: body.caption || '',
+      caption: String(body.caption || '').trim(),
       imageUrl: body.imageUrl,
-      serviceTag: body.serviceTag || 'ESP',
+      serviceTag: body.serviceTag || 'LIFE MOMENT',
+      ...(body.postStyle ? { postStyle: body.postStyle } : {}),
       createdAt: new Date().toISOString(),
       likes: [],
       comments: [],
@@ -1583,6 +1588,23 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     if (author) trackStaticTask(author, 'moment_posted', 1);
     saveDb(db);
     return { success: true, moment: m };
+  }
+  if (path.match(/^\/api\/moments\/[^/]+$/) && method === 'DELETE') {
+    const id = path.split('/')[3];
+    const reqUid = String(body.userId || search.get('userId') || '').toLowerCase();
+    const idx = db.moments.findIndex(x => x.id === id);
+    if (idx === -1) return { success: false, message: 'Moment not found' };
+    const target = db.moments[idx];
+    const isOwner = Boolean(
+      reqUid &&
+        (target.userId?.toLowerCase() === reqUid || target.userRollNumber?.toLowerCase() === reqUid)
+    );
+    if (!isOwner && reqUid !== 'usr-admin') {
+      return { success: false, message: 'आप केवल अपना पोस्ट किया गया मोमेंट ही डिलीट कर सकते हैं।' };
+    }
+    db.moments.splice(idx, 1);
+    saveDb(db);
+    return { success: true, deletedId: id, message: 'Moment deleted successfully!' };
   }
   if (path.match(/^\/api\/moments\/[^/]+\/like$/)) {
     const id = path.split('/')[3];
@@ -2008,7 +2030,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     if (!u) return { success: false, message: 'Player not found' };
     const viewer = viewerId ? findUser(db, viewerId) : undefined;
     const isFriend = Boolean(viewer && Array.isArray(viewer.friendsList) && viewer.friendsList.includes(u.userId));
-    const userMoments = (db.moments || []).filter(m => m.userId === u.userId || m.userId === u.id || m.userRollNumber === u.userId);
+    const userMoments = (db.moments || []).filter(m => {
+      const mUid = (m.userId || '').toLowerCase();
+      const mRoll = (m.userRollNumber || '').toLowerCase();
+      const targetUid = u.userId.toLowerCase();
+      const targetInternalId = (u.id || '').toLowerCase();
+      return (
+        (mUid && (mUid === targetUid || (targetInternalId && mUid === targetInternalId))) ||
+        (mRoll && mRoll === targetUid)
+      );
+    });
     const giftEntries = Object.values(u.receivedGifts || {});
     const totalGiftsLit = giftEntries.reduce((sum, g) => sum + (Number(g.count) || 0), 0);
     return {
@@ -2389,7 +2420,15 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   };
 
   if (path === '/api/time/live' && method === 'GET') {
-    return { success: true, timeMeta: getLiveIstTimeMeta() };
+    return {
+      success: true,
+      timeMeta: {
+        ...getLiveIstTimeMeta(),
+        syncSource: 'Browser Edge Clock (IST UTC+05:30)',
+        clockSkewMs: 0,
+        lastSyncedIso: new Date().toISOString(),
+      },
+    };
   }
   if (path.startsWith('/api/game/daily-hub/') && method === 'GET') {
     const uid = decodeURIComponent(path.split('/').pop() || '');
@@ -3527,6 +3566,59 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     saveDb(db);
     const thread = db.directMessages.filter(m => (m.fromUserId === sender.userId && m.toUserId === recipient.userId) || (m.fromUserId === recipient.userId && m.toUserId === sender.userId));
     return { success: true, message: msg, thread, user: sender };
+  }
+  if (path === '/api/admin/time-weekly-stats' && method === 'GET') {
+    const today = todayStr();
+    const claimedTodayUsers = db.users
+      .filter(u => u.lastDailyCheckInDate === today)
+      .map(u => ({
+        userId: u.userId,
+        fullName: u.fullName,
+        username: u.username,
+        loginStreak: Number(u.loginStreak || 0),
+        lastDailyCheckInDate: u.lastDailyCheckInDate || '',
+        coins: Number(u.coins || 0),
+      }));
+    return {
+      success: true,
+      today,
+      timeMeta: {
+        ...getLiveIstTimeMeta(),
+        syncSource: 'Browser Edge Clock (IST UTC+05:30)',
+        clockSkewMs: 0,
+        lastSyncedIso: new Date().toISOString(),
+      },
+      schedule: SEVEN_DAY_CHECKIN_REWARDS,
+      claimedTodayCount: claimedTodayUsers.length,
+      activeStreaksCount: db.users.filter(u => Number(u.loginStreak || 0) > 0).length,
+      claimedTodayUsers: claimedTodayUsers.slice(0, 30),
+    };
+  }
+  if (path === '/api/admin/resync-time' && method === 'POST') {
+    const timeMeta = {
+      ...getLiveIstTimeMeta(),
+      syncSource: 'Browser Edge Clock (IST UTC+05:30)',
+      clockSkewMs: 0,
+      lastSyncedIso: new Date().toISOString(),
+    };
+    return { success: true, message: `Clock Synced (${timeMeta.istTimeLabel})`, timeMeta };
+  }
+  if (path === '/api/admin/reset-user-daily-claim' && method === 'POST') {
+    const target = findUser(db, body.userIdentifier || '');
+    if (!target) return { success: false, message: `User "${body.userIdentifier}" नहीं मिला।` };
+    const today = todayStr();
+    if (body.preserveStreak && Number(target.loginStreak || 0) > 0) {
+      target.lastDailyCheckInDate = getYesterdayDateString(today);
+    } else {
+      target.lastDailyCheckInDate = '';
+      target.loginStreak = 0;
+    }
+    saveDb(db);
+    return {
+      success: true,
+      message: `✅ ${target.fullName} (${target.userId}) का Weekly Claim लॉक रीसेट हो गया!`,
+      user: target,
+    };
   }
 
   return { success: true };

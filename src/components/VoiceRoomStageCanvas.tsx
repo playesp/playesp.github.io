@@ -560,61 +560,61 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
         </div>
 
         {/* Sub-bar: Quick Room Navigation & Personal Room Shortcut */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[10.5px] sm:text-[11px]">
+          <div className="flex items-center sm:flex-wrap gap-1.5 overflow-x-auto sm:overflow-visible no-scrollbar pb-0.5 sm:pb-0">
             {!isMyFixedPersonalRoom && (
               <button
                 type="button"
                 onClick={onJumpToMyPersonalRoom}
-                className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black flex items-center gap-1 shadow-xs cursor-pointer transition"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black flex items-center gap-1 shadow-xs cursor-pointer transition whitespace-nowrap shrink-0"
               >
-                <Crown className="w-3 h-3" />
-                <span>मेरा फिक्स्ड रूम खोलें</span>
+                <Crown className="w-3 h-3 shrink-0" />
+                <span>मेरा फिक्स्ड रूम</span>
               </button>
             )}
             <button
               type="button"
               onClick={onOpenRoomsDirectory}
-              className="px-2.5 py-1 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-md text-white border border-white/15 font-bold flex items-center gap-1 cursor-pointer transition"
+              className="px-2.5 py-1 min-h-[28px] rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-md text-white border border-white/15 font-bold flex items-center gap-1 cursor-pointer transition whitespace-nowrap shrink-0"
             >
-              <Radio className="w-3 h-3 text-cyan-300" />
-              <span>Rooms / Search ID</span>
+              <Radio className="w-3 h-3 text-cyan-300 shrink-0" />
+              <span>Rooms / ID</span>
             </button>
             {isOwner && (
               <button
                 type="button"
                 onClick={() => onOpenDesignModal('design')}
-                className="px-2.5 py-1 rounded-full bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md text-white border border-indigo-300/40 font-bold flex items-center gap-1 cursor-pointer transition"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md text-white border border-indigo-300/40 font-bold flex items-center gap-1 cursor-pointer transition whitespace-nowrap shrink-0"
               >
-                <ImageIcon className="w-3 h-3" />
-                <span>Wallpaper & Setup</span>
+                <ImageIcon className="w-3 h-3 shrink-0" />
+                <span>Wallpaper</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => onOpenDesignModal('invite')}
-              className="px-2.5 py-1 rounded-full bg-emerald-500/85 hover:bg-emerald-500 backdrop-blur-md text-white border border-emerald-300/40 font-bold flex items-center gap-1 cursor-pointer transition"
+              className="px-2.5 py-1 min-h-[28px] rounded-full bg-emerald-500/85 hover:bg-emerald-500 backdrop-blur-md text-white border border-emerald-300/40 font-bold flex items-center gap-1 cursor-pointer transition whitespace-nowrap shrink-0"
             >
-              <UserPlus className="w-3 h-3" />
+              <UserPlus className="w-3 h-3 shrink-0" />
               <span>Invite</span>
             </button>
             {isOwner && onUpgradeRoomTier && currentTierSpec.id !== 'diamond_theater' && (
               <button
                 type="button"
                 onClick={() => setShowTierUpgradeTray((p) => !p)}
-                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black flex items-center gap-1 shadow-xs cursor-pointer transition"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black flex items-center gap-1 shadow-xs cursor-pointer transition whitespace-nowrap shrink-0"
               >
-                <Crown className="w-3 h-3" />
-                <span>Upgrade Room</span>
+                <Crown className="w-3 h-3 shrink-0" />
+                <span>Upgrade</span>
               </button>
             )}
             {onStartPk && !room.pkBattle?.active && (
               <button
                 type="button"
                 onClick={onStartPk}
-                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-500 to-indigo-600 hover:opacity-95 text-white font-black flex items-center gap-1 shadow-xs cursor-pointer transition border border-white/25"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-gradient-to-r from-rose-500 to-indigo-600 hover:opacity-95 text-white font-black flex items-center gap-1 shadow-xs cursor-pointer transition border border-white/25 whitespace-nowrap shrink-0"
               >
-                <Swords className="w-3 h-3" />
+                <Swords className="w-3 h-3 shrink-0" />
                 <span>Start PK</span>
               </button>
             )}
@@ -622,9 +622,9 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <button
                 type="button"
                 onClick={onQuickOpenMiniGame}
-                className="px-2.5 py-1 rounded-full bg-cyan-500/85 hover:bg-cyan-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-cyan-300/40"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-cyan-500/85 hover:bg-cyan-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-cyan-300/40 whitespace-nowrap shrink-0"
               >
-                <Gamepad2 className="w-3 h-3" />
+                <Gamepad2 className="w-3 h-3 shrink-0" />
                 <span>Games</span>
               </button>
             )}
@@ -632,9 +632,9 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <button
                 type="button"
                 onClick={onOpenFamily}
-                className="px-2.5 py-1 rounded-full bg-purple-600/85 hover:bg-purple-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-purple-300/40"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-purple-600/85 hover:bg-purple-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-purple-300/40 whitespace-nowrap shrink-0"
               >
-                <Shield className="w-3 h-3" />
+                <Shield className="w-3 h-3 shrink-0" />
                 <span>Family</span>
               </button>
             )}
@@ -642,9 +642,9 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <button
                 type="button"
                 onClick={onOpenRelationships}
-                className="px-2.5 py-1 rounded-full bg-pink-600/85 hover:bg-pink-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-pink-300/40"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-pink-600/85 hover:bg-pink-500 text-white font-bold flex items-center gap-1 cursor-pointer transition border border-pink-300/40 whitespace-nowrap shrink-0"
               >
-                <Heart className="w-3 h-3" />
+                <Heart className="w-3 h-3 shrink-0" />
                 <span>Bonds/CP</span>
               </button>
             )}
@@ -652,29 +652,29 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
               <button
                 type="button"
                 onClick={onOpenPacketRainModal}
-                className="px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-600 to-cyan-600 hover:brightness-110 text-white font-black flex items-center gap-1 cursor-pointer transition border border-yellow-300/60 shadow-xs"
+                className="px-2.5 py-1 min-h-[28px] rounded-full bg-gradient-to-r from-rose-600 to-cyan-600 hover:brightness-110 text-white font-black flex items-center gap-1 cursor-pointer transition border border-yellow-300/60 shadow-xs whitespace-nowrap shrink-0"
               >
                 <span>🧧</span>
-                <span>Packet Rain</span>
+                <span>Packets</span>
               </button>
             )}
             {onSetRoomEffect && (
               <button
                 type="button"
                 onClick={() => setShowFxPicker((v) => !v)}
-                className={`px-2.5 py-1 rounded-full font-bold flex items-center gap-1 cursor-pointer transition border ${
+                className={`px-2.5 py-1 min-h-[28px] rounded-full font-bold flex items-center gap-1 cursor-pointer transition border whitespace-nowrap shrink-0 ${
                   activeRoomEffect !== 'none'
                     ? 'bg-fuchsia-600 text-white border-fuchsia-300'
                     : 'bg-black/35 hover:bg-black/55 text-white border-white/15'
                 }`}
               >
-                <Sparkles className="w-3 h-3 text-amber-300" />
+                <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
                 <span>Room FX</span>
               </button>
             )}
           </div>
 
-          <div className="px-2.5 py-0.5 rounded-full bg-black/35 backdrop-blur-md border border-white/10 text-[10px] text-white/90 truncate max-w-[260px]">
+          <div className="px-2.5 py-0.5 rounded-full bg-black/35 backdrop-blur-md border border-white/10 text-[10px] text-white/90 truncate max-w-full sm:max-w-[240px] self-start sm:self-auto">
             Topic: {room.topic}
           </div>
         </div>
@@ -1202,15 +1202,15 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
           </div>
         )}
 
-        {/* Bottom Thumb-Zone Action Dock */}
+        {/* Bottom Thumb-Zone Action Dock (Fluid sizing across 320px -> Desktop) */}
         <form
           onSubmit={handleSubmitChat}
-          className="flex items-center gap-1.5 sm:gap-2 pt-1"
+          className="flex items-center gap-1 min-[380px]:gap-1.5 sm:gap-2 pt-1 w-full min-w-0"
         >
           <button
             type="button"
             onClick={onToggleAutoPlayAudio}
-            className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md border shrink-0 cursor-pointer transition ${
+            className={`w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 rounded-full flex items-center justify-center backdrop-blur-md border shrink-0 cursor-pointer transition ${
               autoPlayAudio
                 ? 'bg-black/45 border-white/20 text-white'
                 : 'bg-rose-600/80 border-rose-300 text-white'
@@ -1218,9 +1218,9 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
             title={autoPlayAudio ? 'स्पीकर चालू है' : 'स्पीकर म्यूट है'}
           >
             {autoPlayAudio ? (
-              <Volume2 className="w-4 h-4" />
+              <Volume2 className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
             ) : (
-              <VolumeX className="w-4 h-4" />
+              <VolumeX className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
             )}
           </button>
 
@@ -1233,7 +1233,7 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
                 onTogglePhysicalMute();
               }
             }}
-            className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md border shrink-0 cursor-pointer transition ${
+            className={`w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 rounded-full flex items-center justify-center backdrop-blur-md border shrink-0 cursor-pointer transition ${
               micPermission === 'granted' && !isMicMuted
                 ? 'bg-emerald-500 border-emerald-300 text-white'
                 : 'bg-black/45 border-white/20 text-white'
@@ -1247,9 +1247,9 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
             }
           >
             {isMicMuted ? (
-              <MicOff className="w-4 h-4" />
+              <MicOff className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
             ) : (
-              <Mic className="w-4 h-4" />
+              <Mic className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
             )}
           </button>
 
@@ -1260,7 +1260,7 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
             onMouseUp={onStopWalkieTalkie}
             onTouchStart={onStartWalkieTalkie}
             onTouchEnd={onStopWalkieTalkie}
-            className={`h-9 px-2.5 rounded-full flex items-center gap-1 backdrop-blur-md border shrink-0 cursor-pointer text-[11px] font-bold select-none ${
+            className={`h-8 min-[380px]:h-9 px-2 min-[380px]:px-2.5 rounded-full flex items-center gap-1 backdrop-blur-md border shrink-0 cursor-pointer text-[10px] sm:text-[11px] font-bold select-none ${
               isRecordingVoice
                 ? 'bg-rose-600 border-rose-300 text-white animate-pulse'
                 : 'bg-black/45 border-white/20 text-amber-300 hover:bg-black/60'
@@ -1274,7 +1274,7 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
           </button>
 
           {/* Chat Input */}
-          <div className="flex-1 flex items-center bg-black/45 backdrop-blur-md border border-white/20 rounded-full px-3 h-9 min-w-0">
+          <div className="flex-1 flex items-center bg-black/45 backdrop-blur-md border border-white/20 rounded-full px-2.5 min-[380px]:px-3 h-8 min-[380px]:h-9 min-w-0">
             <input
               type="text"
               value={chatText}
@@ -1285,7 +1285,7 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
             {chatText.trim() && (
               <button
                 type="submit"
-                className="text-cyan-300 hover:text-white ml-1 cursor-pointer"
+                className="text-cyan-300 hover:text-white ml-1 cursor-pointer shrink-0"
                 title="Send"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -1296,28 +1296,28 @@ export const VoiceRoomStageCanvas: React.FC<VoiceRoomStageCanvasProps> = ({
           <button
             type="button"
             onClick={() => setShowEmojiTray(!showEmojiTray)}
-            className="w-9 h-9 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
             title="Quick Phrases"
           >
-            <Smile className="w-4 h-4" />
+            <Smile className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
           </button>
 
           <button
             type="button"
             onClick={onOpenGiftModal}
-            className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 flex items-center justify-center shrink-0 shadow cursor-pointer"
+            className="w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 flex items-center justify-center shrink-0 shadow cursor-pointer"
             title="Send Gift"
           >
-            <Gift className="w-4 h-4" />
+            <Gift className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4" />
           </button>
 
           <button
             type="button"
             onClick={() => onOpenDesignModal(isOwner ? 'design' : 'invite')}
-            className="w-9 h-9 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer"
             title="Wallpaper, Design & Invite"
           >
-            <Sparkles className="w-4 h-4 text-cyan-300" />
+            <Sparkles className="w-3.5 h-3.5 min-[380px]:w-4 min-[380px]:h-4 text-cyan-300" />
           </button>
         </form>
       </div>

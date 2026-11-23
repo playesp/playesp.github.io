@@ -67,6 +67,7 @@ import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { MultiCardShowcase } from '../components/MultiCardShowcase.tsx';
 import { PromotionalPoster } from '../components/PromotionalPoster.tsx';
+import { DailyStreakCounter } from '../components/DailyStreakCounter.tsx';
 import { DailyTasks } from '../components/DailyTasks.tsx';
 import { ReferralGrowthChart } from '../components/ReferralGrowthChart.tsx';
 import { DailyTopEarners } from '../components/DailyTopEarners.tsx';
@@ -818,54 +819,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center md:justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-center md:justify-end gap-1.5 sm:gap-2">
             {user.accountType === 'gamer' && onNavigateToTab && (
               <button
                 type="button"
                 onClick={() => onNavigateToTab('gaming-room')}
-                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
               >
-                <Gamepad2 className="w-4 h-4" />
+                <Gamepad2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span>Back to Game Setup</span>
               </button>
             )}
             <button
               onClick={() => onOpenBuyCoins?.()}
-              className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs"
+              className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
               title="रियल UPI से कॉइन्स खरीदें"
             >
-              <span>🪙 {(user.coins || 0).toLocaleString()} Coins • Buy Coins</span>
+              <span>🪙 {(user.coins || 0).toLocaleString()} • Buy Coins</span>
             </button>
 
             <button
               onClick={handleShareReferralLink}
-              className="bg-[#fb641b] hover:bg-[#e5530d] text-white px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs"
+              className="bg-[#fb641b] hover:bg-[#e5530d] text-white px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
             >
-              <Share2 className="w-3.5 h-3.5" />
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span>Share Link</span>
             </button>
 
             <button
               onClick={() => setProfileSheetOpen({ open: true, mode: 'view' })}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
               title="कवर फोटो, यूनिक @Username और सोशल प्रोफाइल खोलें"
             >
-              <UserIcon className="w-3.5 h-3.5 text-[#ffe500]" />
+              <UserIcon className="w-3.5 h-3.5 text-[#ffe500] shrink-0" />
               <span>ESP PLAY Profile</span>
             </button>
 
             <button
               onClick={() => onNavigateToTab?.('gaming-room')}
-              className="bg-white text-[#2874f0] hover:bg-blue-50 px-3 py-2 rounded-sm text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs"
+              className="bg-white text-[#2874f0] hover:bg-blue-50 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
             >
-              <span>🎮 ESP GAMING TIME</span>
+              <span>🎮 GAMING TIME</span>
             </button>
 
             <button
               onClick={() => setActiveTab('idcard')}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Award className="w-3.5 h-3.5 text-[#ffe500]" />
+              <Award className="w-3.5 h-3.5 text-[#ffe500] shrink-0" />
               <span>My ID Card</span>
             </button>
 
@@ -873,19 +874,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               href={whatsappInviteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="bg-[#388e3c] hover:bg-emerald-700 text-white px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+              className="bg-[#388e3c] hover:bg-emerald-700 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Share2 className="w-3.5 h-3.5" />
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span>WhatsApp</span>
             </a>
 
             <button
               onClick={handleCloudSync}
               disabled={isSyncing}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-3 py-2 rounded-sm text-xs font-bold flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer disabled:opacity-60 whitespace-nowrap"
               title="Google से Firestore Cloud पर डेटा सिंक करें"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-[#ffe500] ${isSyncing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-[#ffe500] shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing...' : 'Cloud Sync'}</span>
             </button>
           </div>
@@ -1081,7 +1082,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Tabs Navigation */}
-      <div className="bg-white border border-slate-200 rounded-md p-2 flex overflow-x-auto gap-1.5 text-xs font-bold no-scrollbar shadow-2xs">
+      <div className="bg-white border border-slate-200 rounded-md p-1.5 sm:p-2 flex overflow-x-auto gap-1.5 text-[11px] sm:text-xs font-bold no-scrollbar shadow-2xs">
         {[
           { id: 'overview', label: 'Overview' },
           { id: 'idcard', label: 'My Verified ID Card' },
@@ -1098,7 +1099,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-3.5 py-2 rounded transition cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-2 min-h-[36px] rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === tab.id
                 ? 'bg-[#2874f0] text-white font-extrabold shadow-2xs'
                 : 'text-slate-600 hover:text-[#212121] hover:bg-slate-100'
@@ -1225,6 +1226,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="lg:col-span-2 space-y-5">
+            {/* Visual Daily Streak Counter (Consecutive Days + 7-Day Mystery Gift Progress) */}
+            <DailyStreakCounter
+              user={user}
+              onUpdateUser={onUpdateUser}
+              onOpenGames={() => onNavigateToTab?.('gaming-room')}
+            />
+
             {/* Real Server-Verified Tasks & Challenges (+5 Coins & EXP on completion) */}
             <DailyTasks
               user={user}

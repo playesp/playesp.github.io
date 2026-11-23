@@ -3,11 +3,6 @@ import confetti from 'canvas-confetti';
 import {
   DoorOpen,
   Star,
-  Gamepad2,
-  Radio,
-  MessageCircle,
-  Compass,
-  User,
   Sparkles,
   Shield,
   Zap,
@@ -91,7 +86,9 @@ const GameGridCard: React.FC<{
         onClick();
       }}
       className={`relative w-full rounded-2xl bg-gradient-to-r ${gradient} shadow-sm hover:shadow-md active:scale-[0.98] transition-all duration-200 overflow-hidden flex items-center justify-between text-left cursor-pointer group ${
-        isFullWidth ? 'h-[92px] sm:h-[104px] px-5' : 'h-[86px] sm:h-[94px] px-3.5'
+        isFullWidth
+          ? 'h-[82px] min-[380px]:h-[92px] sm:h-[106px] px-4 sm:px-5'
+          : 'h-[78px] min-[380px]:h-[86px] sm:h-[96px] px-2.5 min-[380px]:px-3.5'
       }`}
     >
       {/* Top glossy sheen */}
@@ -100,28 +97,30 @@ const GameGridCard: React.FC<{
       {/* Optional top-left corner tag (Popular / New) */}
       {cornerTag && (
         <span
-          className={`absolute top-0 left-0 px-2.5 py-0.5 rounded-br-xl text-[10px] font-black tracking-wide shadow-xs z-20 ${cornerTagClass}`}
+          className={`absolute top-0 left-0 px-2 sm:px-2.5 py-0.5 rounded-br-xl text-[9px] min-[380px]:text-[10px] font-black tracking-wide shadow-xs z-20 whitespace-nowrap ${cornerTagClass}`}
         >
           {cornerTag}
         </span>
       )}
 
-      <div className={`relative z-10 max-w-[66%] ${cornerTag ? 'pt-2.5' : ''}`}>
+      <div className={`relative z-10 min-w-0 max-w-[68%] pr-1 ${cornerTag ? 'pt-2.5' : ''}`}>
         <h3
           className={`font-black text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] leading-tight ${
-            isFullWidth ? 'text-lg sm:text-xl' : 'text-sm sm:text-base'
+            isFullWidth
+              ? 'text-[clamp(1.05rem,3.6vw,1.35rem)]'
+              : 'text-[clamp(0.8125rem,2.9vw,1.02rem)]'
           }`}
         >
           {title}
         </h3>
         {subLabel && (
-          <div className="mt-1 inline-block px-2 py-0.5 rounded bg-black/25 text-[10px] font-bold text-white/95 tabular-nums">
+          <div className="mt-1 inline-block px-1.5 sm:px-2 py-0.5 rounded bg-black/25 text-[9.5px] sm:text-[10px] font-bold text-white/95 tabular-nums whitespace-nowrap">
             {subLabel}
           </div>
         )}
       </div>
 
-      <div className="relative z-10 shrink-0 transform group-hover:scale-110 transition duration-200">
+      <div className="relative z-10 shrink-0 transform scale-90 min-[380px]:scale-100 group-hover:scale-110 transition duration-200">
         {characterVisual}
       </div>
     </button>
@@ -194,6 +193,12 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
     loadDailyState();
   }, [loadDailyState, user.coins, user.totalGamesPlayed, user.lastDailyCheckInDate, user.dailyQuizDate]);
 
+  useEffect(() => {
+    const handleOpenMe = () => setShowMeMenuModal(true);
+    window.addEventListener('esp-open-me-menu', handleOpenMe);
+    return () => window.removeEventListener('esp-open-me-menu', handleOpenMe);
+  }, []);
+
   const showTimedBanner = (type: 'success' | 'error', text: string) => {
     setActionBanner({ type, text });
     setTimeout(() => {
@@ -253,10 +258,10 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
   const streakShieldsCount = hub?.checkIn.streakShields ?? user.streakShields ?? 0;
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-b from-[#eff7ff] via-[#f8fbff] to-[#ffffff] text-slate-900 pb-24 pt-2 px-3 sm:px-5 max-w-2xl mx-auto select-none font-sans relative">
+    <div className="w-full min-h-screen bg-gradient-to-b from-[#eff7ff] via-[#f8fbff] to-[#ffffff] text-slate-900 pb-28 pt-2 px-2.5 min-[380px]:px-3.5 sm:px-5 max-w-2xl lg:max-w-3xl mx-auto select-none font-sans relative">
       {/* 1. EXACT SCREENSHOT HEADER ROW: Avatar + Coin Pill on Left | Bonds & Events on Right */}
-      <div className="flex items-center justify-between py-2">
-        <div className="flex items-center space-x-3">
+      <div className="flex items-center justify-between gap-2 py-2">
+        <div className="flex items-center gap-2 min-[380px]:gap-3 min-w-0">
           <button
             type="button"
             onClick={onOpenProfile || onOpenAvatarCustomizer}
@@ -264,7 +269,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
             title={user.username ? `@${user.username}` : user.fullName}
           >
             <div
-              className={`w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr ${frameItem.glowColor} shadow-sm flex items-center justify-center`}
+              className={`w-10 h-10 min-[380px]:w-11 min-[380px]:h-11 sm:w-12 sm:h-12 rounded-full p-[2px] bg-gradient-to-tr ${frameItem.glowColor} shadow-sm flex items-center justify-center`}
             >
               <div className="w-full h-full rounded-full overflow-hidden bg-white border border-white">
                 <img
@@ -284,12 +289,12 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
           <button
             type="button"
             onClick={onOpenRecharge}
-            className="flex items-center space-x-1.5 bg-white border border-slate-200 hover:border-amber-400 rounded-full px-3 py-1 shadow-xs transition cursor-pointer group"
+            className="flex items-center space-x-1.5 bg-white border border-slate-200 hover:border-amber-400 rounded-full px-2.5 min-[380px]:px-3 py-1 sm:py-1.5 shadow-xs transition cursor-pointer group shrink-0"
           >
             <span className="w-4 h-4 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 flex items-center justify-center text-[10px]">
               🪙
             </span>
-            <span className="font-black text-xs text-slate-900 tabular-nums">
+            <span className="font-black text-xs sm:text-sm text-slate-900 tabular-nums">
               {(user.coins ?? 0).toLocaleString()}
             </span>
             <span className="text-amber-500 font-black text-sm leading-none group-hover:scale-125 transition">
@@ -299,18 +304,18 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
         </div>
 
         {/* Right 2 Quick Icons: Bonds + Events */}
-        <div className="flex items-center space-x-4 pr-1">
+        <div className="flex items-center gap-3 min-[380px]:gap-4 pr-0.5 shrink-0">
           <button
             type="button"
             onClick={onOpenRelationships || onOpenFamily || onOpenMyHome}
             className="flex flex-col items-center cursor-pointer transition hover:scale-105 relative"
             title="Bonds & ESP Family"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-100 to-indigo-100 border border-indigo-200 flex items-center justify-center shadow-xs text-lg">
+            <div className="w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-sky-100 to-indigo-100 border border-indigo-200 flex items-center justify-center shadow-xs text-base min-[380px]:text-lg">
               💞
             </div>
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-white" />
-            <span className="text-[10px] font-bold text-slate-600 mt-0.5">Bonds</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 mt-0.5 whitespace-nowrap">Bonds</span>
           </button>
 
           <button
@@ -319,26 +324,26 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
             className="flex flex-col items-center cursor-pointer transition hover:scale-105"
             title="ESP Events Center"
           >
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-xs">
-              <Star className="w-5 h-5 fill-emerald-500 text-emerald-500" />
+            <div className="w-8 h-8 min-[380px]:w-9 min-[380px]:h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-xs">
+              <Star className="w-4 h-4 min-[380px]:w-5 min-[380px]:h-5 fill-emerald-500 text-emerald-500" />
             </div>
-            <span className="text-[10px] font-bold text-slate-600 mt-0.5">Events</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 mt-0.5 whitespace-nowrap">Events</span>
           </button>
         </div>
       </div>
 
       {/* 2. EXACT 3 CIRCULAR QUICK BUTTONS: Ranking | Tasks | Friends */}
-      <div className="grid grid-cols-3 gap-4 py-3 px-4 text-center">
+      <div className="grid grid-cols-3 gap-2 min-[380px]:gap-4 py-2.5 sm:py-3 px-2 min-[380px]:px-4 text-center">
         <button
           type="button"
           onClick={onOpenRanking}
           className="flex flex-col items-center cursor-pointer group transition"
         >
-          <div className="relative w-14 h-14 rounded-full bg-gradient-to-b from-slate-800 via-slate-900 to-black border-2 border-amber-400 shadow-md group-hover:scale-105 transition flex items-center justify-center">
-            <span className="text-2xl">🏆</span>
-            <span className="absolute -top-1.5 -left-1 text-sm">👑</span>
+          <div className="relative w-12 h-12 min-[380px]:w-14 min-[380px]:h-14 sm:w-15 sm:h-15 rounded-full bg-gradient-to-b from-slate-800 via-slate-900 to-black border-2 border-amber-400 shadow-md group-hover:scale-105 transition flex items-center justify-center">
+            <span className="text-xl min-[380px]:text-2xl">🏆</span>
+            <span className="absolute -top-1.5 -left-1 text-xs min-[380px]:text-sm">👑</span>
           </div>
-          <span className="text-xs font-bold text-slate-700 mt-1.5">Ranking</span>
+          <span className="text-[11px] sm:text-xs font-bold text-slate-700 mt-1.5 whitespace-nowrap">Ranking</span>
         </button>
 
         <button
@@ -346,13 +351,13 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
           onClick={onOpenTasks}
           className="flex flex-col items-center cursor-pointer group transition"
         >
-          <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-fuchsia-500 via-pink-500 to-purple-600 border-2 border-white shadow-md group-hover:scale-105 transition flex items-center justify-center">
-            <span className="text-2xl">🎟️</span>
+          <div className="relative w-12 h-12 min-[380px]:w-14 min-[380px]:h-14 sm:w-15 sm:h-15 rounded-full bg-gradient-to-br from-fuchsia-500 via-pink-500 to-purple-600 border-2 border-white shadow-md group-hover:scale-105 transition flex items-center justify-center">
+            <span className="text-xl min-[380px]:text-2xl">🎟️</span>
             {hasPendingTasks && (
               <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-rose-500 border-2 border-white animate-pulse" />
             )}
           </div>
-          <span className="text-xs font-bold text-slate-700 mt-1.5">Tasks</span>
+          <span className="text-[11px] sm:text-xs font-bold text-slate-700 mt-1.5 whitespace-nowrap">Tasks</span>
         </button>
 
         <button
@@ -360,20 +365,20 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
           onClick={onOpenFriends}
           className="flex flex-col items-center cursor-pointer group transition"
         >
-          <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 via-amber-400 to-orange-500 border-2 border-white shadow-md group-hover:scale-105 transition flex items-center justify-center">
-            <span className="text-2xl">🧑‍🤝‍🧑</span>
+          <div className="relative w-12 h-12 min-[380px]:w-14 min-[380px]:h-14 sm:w-15 sm:h-15 rounded-full bg-gradient-to-br from-orange-400 via-amber-400 to-orange-500 border-2 border-white shadow-md group-hover:scale-105 transition flex items-center justify-center">
+            <span className="text-xl min-[380px]:text-2xl">🧑‍🤝‍🧑</span>
           </div>
-          <span className="text-xs font-bold text-slate-700 mt-1.5">Friends</span>
+          <span className="text-[11px] sm:text-xs font-bold text-slate-700 mt-1.5 whitespace-nowrap">Friends</span>
         </button>
       </div>
 
       {/* 3. GAMES SECTION HEADER: "Games" + "Game Rooms" */}
       <div className="flex items-center justify-between pt-2 pb-2.5 px-1">
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight">Games</h2>
+        <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Games</h2>
         <button
           type="button"
           onClick={onOpenVoiceRoom}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 hover:border-[#2874f0] text-xs font-bold text-slate-700 hover:text-[#2874f0] shadow-xs transition cursor-pointer whitespace-nowrap"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 hover:border-[#2874f0] text-[11px] sm:text-xs font-bold text-slate-700 hover:text-[#2874f0] shadow-xs transition cursor-pointer whitespace-nowrap min-h-[34px]"
         >
           <DoorOpen className="w-4 h-4" />
           <span>Game Rooms</span>
@@ -501,61 +506,12 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
         </div>
       </div>
 
-      {/* 5. EXACT 5-ICON BOTTOM DOCK: Games | Rooms | Chats | Events | Me */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 py-2 px-4 shadow-[0_-4px_18px_rgba(0,0,0,0.06)] flex items-center justify-around max-w-2xl mx-auto">
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="flex flex-col items-center cursor-pointer text-[#0ea5e9] transition"
-        >
-          <Gamepad2 className="w-5 h-5" />
-          <span className="text-[10px] font-black mt-0.5">Games</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenVoiceRoom}
-          className="flex flex-col items-center cursor-pointer text-slate-500 hover:text-slate-900 transition"
-        >
-          <Radio className="w-5 h-5" />
-          <span className="text-[10px] font-bold mt-0.5">Rooms</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenChats || onOpenFriends}
-          className="relative flex flex-col items-center cursor-pointer text-slate-500 hover:text-slate-900 transition"
-        >
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-[10px] font-bold mt-0.5">Chats</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenEvents || onOpenWeeklyRewards || onOpenTasks}
-          className="flex flex-col items-center cursor-pointer text-slate-500 hover:text-slate-900 transition"
-        >
-          <Compass className="w-5 h-5" />
-          <span className="text-[10px] font-bold mt-0.5">Events</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowMeMenuModal(true)}
-          className="relative flex flex-col items-center cursor-pointer text-slate-500 hover:text-[#2874f0] transition"
-        >
-          <User className="w-5 h-5" />
-          {hasPendingTasks && (
-            <span className="absolute -top-0.5 right-0 w-2 h-2 rounded-full bg-rose-500 border border-white" />
-          )}
-          <span className="text-[10px] font-bold mt-0.5">Me</span>
-        </button>
-      </div>
+      {/* Bottom navigation is provided globally by LockedFooterNav so footer stays locked across every page */}
 
       {/* 6. "ME" DRAWER MODAL (All Profile, VIP, Gift Wall, Daily Quiz, Coin Boosters, Optional Earning Setup & Logout) */}
       {showMeMenuModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
-          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90dvh] flex flex-col">
             <div className="bg-gradient-to-r from-slate-900 to-[#1e3a8a] text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img
@@ -914,7 +870,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
       {/* 7. DAILY FRESH KNOWLEDGE, QUIZ & COIN BOOSTERS MODAL (Accessible cleanly from Me Menu) */}
       {showDailyIntelModal && hub && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90dvh] flex flex-col">
             <div className="bg-gradient-to-r from-[#2874f0] to-[#1e40af] text-white p-4 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black">आज का नया ज्ञान, क्विज़ &amp; Coin Boosters</h3>

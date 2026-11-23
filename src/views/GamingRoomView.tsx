@@ -125,6 +125,9 @@ interface GamingRoomViewProps {
   onLogout?: () => void;
   initialSubTab?: 'overview' | 'ludo' | 'dice_arena' | 'card_luck' | 'gift_store' | 'vip_frames' | 'leaderboard' | 'recharge_convert' | 'voice_room' | 'games' | 'clan_friends' | 'rewards_tasks';
   initialRoomId?: string;
+  subTabPulse?: number;
+  onSubTabChange?: (subTab: 'games' | 'voice_room' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks') => void;
+  onOpenMomentsFeed?: () => void;
 }
 
 const LUXURY_GIFTS: RoomGift[] = [
@@ -159,6 +162,9 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   onLogout,
   initialSubTab = 'overview',
   initialRoomId,
+  subTabPulse = 0,
+  onSubTabChange,
+  onOpenMomentsFeed,
 }) => {
   // Navigation tabs within ESP Gaming Room (Default: 'games', or 'voice_room' when deep-linked)
   const [activeTab, setActiveTab] = useState<'voice_room' | 'games' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks'>(
@@ -280,10 +286,16 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   const [activeBoardGameModal, setActiveBoardGameModal] = useState<'bingo' | 'cards' | 'snake' | null>(null);
 
   useEffect(() => {
-    if (!initialSubTab || initialSubTab === 'overview' || initialSubTab === 'games') {
+    onSubTabChange?.(activeTab);
+  }, [activeTab, onSubTabChange]);
+
+  useEffect(() => {
+    if (!initialSubTab || initialSubTab === 'overview') {
       return;
     }
-    if (initialSubTab === 'recharge_convert') {
+    if (initialSubTab === 'games') {
+      setActiveTab('games');
+    } else if (initialSubTab === 'recharge_convert') {
       setActiveTab('recharge_convert');
     } else if (initialSubTab === 'voice_room') {
       setActiveTab('voice_room');
@@ -307,7 +319,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       setActiveTab('games');
       setActiveInteractiveGame('ludo');
     }
-  }, [initialSubTab]);
+  }, [initialSubTab, subTabPulse]);
 
   // Room Background Wallpaper Theme (Default: Classic Light Marketplace Room)
   const [roomBgTheme, setRoomBgTheme] = useState<AdvanceRoomTheme>(() => {
@@ -1895,7 +1907,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     (roomBgTheme?.id !== 'default_dark' && roomBgTheme?.id !== 'default');
 
   return (
-    <div className={`w-full flex flex-col items-center relative overflow-x-hidden ${activeTab === 'games' ? 'bg-[#f8fbff] text-[#212121] pb-4' : 'bg-[#f1f3f6] text-[#212121] pb-24'}`}>
+    <div className={`w-full flex flex-col items-center relative overflow-x-hidden pb-28 ${activeTab === 'games' ? 'bg-[#f8fbff] text-[#212121]' : 'bg-[#f1f3f6] text-[#212121]'}`}>
       
       {/* ============================================================== */}
       {/* 1. FULL-SCREEN SPECTACULAR LIVE GIFTING VISUAL EFFECTS         */}
@@ -1971,12 +1983,12 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
       {/* Top Gaming Profile Ribbon - Only shown when NOT in ESP PLAY Home Games view */}
       {activeTab !== 'games' && (
-        <div className="w-full bg-white border-b border-slate-200 px-4 py-3 relative z-10 shadow-xs text-[#212121]">
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+        <div className="w-full bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 relative z-10 shadow-xs text-[#212121]">
+          <div className="max-w-6xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
             {/* User Address & Gaming Identity with Equipped Status Frame */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
               <div
-                className="relative cursor-pointer group"
+                className="relative cursor-pointer group shrink-0"
                 onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
                 title="Click to View & Edit ESP PLAY Profile, Cover Photo & Unique @Username"
               >
@@ -1993,58 +2005,58 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 </span>
               </div>
 
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
                     onClick={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
-                    className="font-bold text-[#212121] text-sm tracking-wide cursor-pointer hover:text-[#2874f0] transition"
+                    className="font-bold text-[#212121] text-sm tracking-wide cursor-pointer hover:text-[#2874f0] transition truncate max-w-full"
                   >
                     {user.fullName}
                   </span>
                   {user.username && (
-                    <span className="bg-cyan-50 text-cyan-800 border border-cyan-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
+                    <span className="bg-cyan-50 text-cyan-800 border border-cyan-200 font-mono text-[10px] px-1.5 sm:px-2 py-0.5 rounded-sm font-bold whitespace-nowrap">
                       @{user.username}
                     </span>
                   )}
                   {user.accountType !== 'gamer' && (
-                    <span className="bg-[#f5f8ff] text-[#2874f0] border border-blue-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
+                    <span className="bg-[#f5f8ff] text-[#2874f0] border border-blue-200 font-mono text-[10px] px-1.5 sm:px-2 py-0.5 rounded-sm font-bold whitespace-nowrap">
                       💼 ESP: {user.userId}
                     </span>
                   )}
-                  <span className="bg-amber-50 text-[#fb641b] border border-amber-200 font-mono text-[10px] px-2 py-0.5 rounded-sm font-bold">
+                  <span className="bg-amber-50 text-[#fb641b] border border-amber-200 font-mono text-[10px] px-1.5 sm:px-2 py-0.5 rounded-sm font-bold whitespace-nowrap">
                     🎮 GAME: {user.gamingId || `ESPGT${user.userId.replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '01'}`}
                   </span>
                   {user.vipTitle && (
-                    <span className="text-[9px] px-2 py-0.5 rounded-sm bg-[#ffe500] text-[#212121] font-bold">
+                    <span className="text-[9px] px-1.5 sm:px-2 py-0.5 rounded-sm bg-[#ffe500] text-[#212121] font-bold whitespace-nowrap">
                       {user.vipTitle}
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-[#878787] flex items-center space-x-2 mt-0.5">
+                <div className="text-[10.5px] sm:text-[11px] text-[#878787] flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                   <button
                     type="button"
                     onClick={() => loadMyPersonalRoom(true)}
-                    className="text-[#2874f0] hover:underline font-mono font-bold cursor-pointer"
+                    className="text-[#2874f0] hover:underline font-mono font-bold cursor-pointer whitespace-nowrap"
                     title="अपने फिक्स्ड पर्सनल वॉइस रूम में जाएं"
                   >
                     🏠 {cleanUserRoomFallback}
                   </button>
                   <span>•</span>
-                  <span className="text-[#388e3c] font-semibold">{user.clanName || 'Royal Warriors ESP'}</span>
+                  <span className="text-[#388e3c] font-semibold truncate">{user.clanName || 'Royal Warriors ESP'}</span>
                 </div>
               </div>
             </div>
 
-            {/* Quick Metrics & Feature Triggers */}
-            <div className="flex items-center flex-wrap gap-2">
+            {/* Quick Metrics & Feature Triggers (Always legible across mobile & desktop) */}
+            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setShowDailyMissionsModal(true)}
-                className="px-2.5 py-1.5 rounded-sm text-xs font-bold bg-[#f5f8ff] hover:bg-blue-100 border border-blue-200 text-[#2874f0] flex items-center space-x-1.5 transition cursor-pointer"
+                className="px-2 sm:px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-[#f5f8ff] hover:bg-blue-100 border border-blue-200 text-[#2874f0] flex items-center space-x-1 transition cursor-pointer whitespace-nowrap"
                 title="Open Daily Missions"
               >
                 <span>🎯</span>
-                <span className="hidden sm:inline">Missions</span>
+                <span>Missions</span>
               </button>
 
               <button
@@ -2053,49 +2065,49 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   setActiveTab('clan_friends');
                   setShowTopClansModal(true);
                 }}
-                className="px-2.5 py-1.5 rounded-sm text-xs font-bold bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 flex items-center space-x-1.5 transition cursor-pointer"
+                className="px-2 sm:px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 flex items-center space-x-1 transition cursor-pointer whitespace-nowrap"
                 title="View Top 5 Clans"
               >
                 <span>🛡️</span>
-                <span className="hidden sm:inline">Clans</span>
+                <span>Clans</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAvatarCustomizerModal(true)}
-                className="px-2.5 py-1.5 rounded-sm text-xs font-bold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center space-x-1.5 transition cursor-pointer"
+                className="px-2 sm:px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center space-x-1 transition cursor-pointer whitespace-nowrap"
                 title="Customize Avatar & Frame"
               >
                 <span>🎨</span>
-                <span className="hidden sm:inline">Avatar</span>
+                <span>Avatar</span>
               </button>
 
-              <div className="bg-[#f9fafb] px-3 py-1.5 rounded-sm border border-slate-200 flex items-center space-x-1.5">
-                <span className="text-base">🪙</span>
-                <div>
-                  <div className="text-[9px] text-[#878787] font-semibold">Coins</div>
-                  <div className="text-xs font-bold text-[#212121] tabular-nums">
+              <div className="bg-[#f9fafb] px-2.5 py-1 rounded-md border border-slate-200 flex items-center space-x-1.5 min-h-[34px]">
+                <span className="text-sm sm:text-base">🪙</span>
+                <div className="leading-tight">
+                  <div className="text-[8.5px] text-[#878787] font-semibold">Coins</div>
+                  <div className="text-[11px] sm:text-xs font-bold text-[#212121] tabular-nums">
                     {(user.coins || 0).toLocaleString()}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-[#f9fafb] px-3 py-1.5 rounded-sm border border-slate-200 flex items-center space-x-1.5">
-                <span className="text-base">✨</span>
-                <div>
-                  <div className="text-[9px] text-[#878787] font-semibold">Charms</div>
-                  <div className="text-xs font-bold text-[#fb641b] tabular-nums">
+              <div className="bg-[#f9fafb] px-2.5 py-1 rounded-md border border-slate-200 flex items-center space-x-1.5 min-h-[34px]">
+                <span className="text-sm sm:text-base">✨</span>
+                <div className="leading-tight">
+                  <div className="text-[8.5px] text-[#878787] font-semibold">Charms</div>
+                  <div className="text-[11px] sm:text-xs font-bold text-[#fb641b] tabular-nums">
                     {user.charms || 0}
                   </div>
                 </div>
               </div>
 
               {user.accountType !== 'gamer' && (
-                <div className="bg-emerald-50 px-3 py-1.5 rounded-sm border border-emerald-200 flex items-center space-x-1.5">
-                  <span className="text-base font-bold text-[#388e3c]">₹</span>
-                  <div>
-                    <div className="text-[9px] text-[#388e3c] font-semibold">Cash</div>
-                    <div className="text-xs font-bold text-[#388e3c] tabular-nums">
+                <div className="bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 flex items-center space-x-1.5 min-h-[34px]">
+                  <span className="text-sm sm:text-base font-bold text-[#388e3c]">₹</span>
+                  <div className="leading-tight">
+                    <div className="text-[8.5px] text-[#388e3c] font-semibold">Cash</div>
+                    <div className="text-[11px] sm:text-xs font-bold text-[#388e3c] tabular-nums">
                       ₹{(user.balance || 0).toLocaleString()}
                     </div>
                   </div>
@@ -2104,20 +2116,20 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
               <button
                 onClick={() => setActiveTab('recharge_convert')}
-                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3 py-1.5 rounded-sm text-xs font-bold flex items-center space-x-1 transition cursor-pointer shadow-xs"
+                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center space-x-1 transition cursor-pointer shadow-xs whitespace-nowrap"
               >
-                <PlusCircle className="w-3.5 h-3.5" />
+                <PlusCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>Recharge</span>
               </button>
 
               {/* Native Full Screen Toggle */}
               <button
                 onClick={toggleFullScreen}
-                className="px-3 py-1.5 rounded-sm text-xs font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white transition cursor-pointer shadow-xs flex items-center space-x-1.5"
+                className="px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white transition cursor-pointer shadow-xs flex items-center space-x-1 whitespace-nowrap"
                 title={isFullscreen ? 'नॉर्मल स्क्रीन करें' : 'फ़ुल स्क्रीन (Full Screen) करें'}
               >
-                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 shrink-0" />}
+                <span>{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
               </button>
             </div>
           </div>
@@ -2126,76 +2138,76 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
       {/* Main Navigation Subtabs - Only shown when NOT in ESP PLAY Home Games view */}
       {activeTab !== 'games' && (
-        <div className="w-full max-w-6xl px-4 mt-4">
+        <div className="w-full max-w-6xl px-2.5 sm:px-4 mt-3 sm:mt-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <button
               onClick={() => setActiveTab('games')}
-              className="py-3 px-3 rounded-md font-bold text-xs flex items-center justify-center space-x-2 transition-all bg-[#fb641b] hover:bg-[#e8550f] text-white shadow-xs cursor-pointer"
+              className="col-span-2 md:col-span-1 py-2.5 px-3 min-h-[46px] rounded-lg font-bold text-xs flex items-center justify-center space-x-2 transition-all bg-[#fb641b] hover:bg-[#e8550f] text-white shadow-xs cursor-pointer"
             >
-              <Gamepad2 className="w-4 h-4 text-white" />
-              <div className="text-left">
-                <div>ESP PLAY Home</div>
-                <div className="text-[9px] font-normal opacity-90">लॉबी स्क्रीन</div>
+              <Gamepad2 className="w-4 h-4 text-white shrink-0" />
+              <div className="text-left min-w-0">
+                <div className="whitespace-nowrap">ESP PLAY Home</div>
+                <div className="text-[9px] font-normal opacity-90 truncate">लॉबी स्क्रीन</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab('voice_room')}
-              className={`py-3 px-3 rounded-md font-bold text-xs flex items-center justify-center space-x-2 transition-all border cursor-pointer ${
+              className={`py-2.5 px-2.5 sm:px-3 min-h-[46px] rounded-lg font-bold text-[11px] sm:text-xs flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all border cursor-pointer ${
                 activeTab === 'voice_room'
                   ? 'bg-[#2874f0] border-[#2874f0] text-white shadow-xs'
                   : 'bg-white border-slate-200 text-[#212121] hover:bg-[#f5f8ff]'
               }`}
             >
-              <Radio className={`w-4 h-4 ${activeTab === 'voice_room' ? 'text-[#ffe500]' : 'text-[#2874f0]'}`} />
-              <div className="text-left">
-                <div>Voice Room</div>
-                <div className="text-[9px] font-normal opacity-80">लाइव वॉइस स्टेज</div>
+              <Radio className={`w-4 h-4 shrink-0 ${activeTab === 'voice_room' ? 'text-[#ffe500]' : 'text-[#2874f0]'}`} />
+              <div className="text-left min-w-0">
+                <div className="truncate">Voice Room</div>
+                <div className="text-[9px] font-normal opacity-80 truncate">लाइव वॉइस स्टेज</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab('recharge_convert')}
-              className={`py-3 px-3 rounded-md font-bold text-xs flex items-center justify-center space-x-2 transition-all border cursor-pointer ${
+              className={`py-2.5 px-2.5 sm:px-3 min-h-[46px] rounded-lg font-bold text-[11px] sm:text-xs flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all border cursor-pointer ${
                 activeTab === 'recharge_convert'
                   ? 'bg-[#388e3c] border-[#388e3c] text-white shadow-xs'
                   : 'bg-white border-slate-200 text-[#212121] hover:bg-emerald-50'
               }`}
             >
-              <ArrowRightLeft className={`w-4 h-4 ${activeTab === 'recharge_convert' ? 'text-white' : 'text-[#388e3c]'}`} />
-              <div className="text-left">
-                <div>Buy Coins (UPI)</div>
-                <div className="text-[9px] font-normal opacity-80">असली कॉइन्स खरीदें</div>
+              <ArrowRightLeft className={`w-4 h-4 shrink-0 ${activeTab === 'recharge_convert' ? 'text-white' : 'text-[#388e3c]'}`} />
+              <div className="text-left min-w-0">
+                <div className="truncate">Buy Coins (UPI)</div>
+                <div className="text-[9px] font-normal opacity-80 truncate">असली कॉइन्स खरीदें</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab('clan_friends')}
-              className={`py-3 px-3 rounded-md font-bold text-xs flex items-center justify-center space-x-2 transition-all border cursor-pointer ${
+              className={`py-2.5 px-2.5 sm:px-3 min-h-[46px] rounded-lg font-bold text-[11px] sm:text-xs flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all border cursor-pointer ${
                 activeTab === 'clan_friends'
                   ? 'bg-[#2874f0] border-[#2874f0] text-white shadow-xs'
                   : 'bg-white border-slate-200 text-[#212121] hover:bg-[#f5f8ff]'
               }`}
             >
-              <Users className={`w-4 h-4 ${activeTab === 'clan_friends' ? 'text-[#ffe500]' : 'text-purple-600'}`} />
-              <div className="text-left">
-                <div>Family &amp; Friends</div>
-                <div className="text-[9px] font-normal opacity-80">फैमिली, बॉन्ड व दोस्त</div>
+              <Users className={`w-4 h-4 shrink-0 ${activeTab === 'clan_friends' ? 'text-[#ffe500]' : 'text-purple-600'}`} />
+              <div className="text-left min-w-0">
+                <div className="truncate">Family &amp; Friends</div>
+                <div className="text-[9px] font-normal opacity-80 truncate">फैमिली, बॉन्ड व दोस्त</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab('rewards_tasks')}
-              className={`py-3 px-3 rounded-md font-bold text-xs flex items-center justify-center space-x-2 transition-all border cursor-pointer ${
+              className={`py-2.5 px-2.5 sm:px-3 min-h-[46px] rounded-lg font-bold text-[11px] sm:text-xs flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all border cursor-pointer ${
                 activeTab === 'rewards_tasks'
                   ? 'bg-[#2874f0] border-[#2874f0] text-white shadow-xs'
                   : 'bg-white border-slate-200 text-[#212121] hover:bg-amber-50'
               }`}
             >
-              <Calendar className={`w-4 h-4 ${activeTab === 'rewards_tasks' ? 'text-[#ffe500]' : 'text-[#fb641b]'}`} />
-              <div className="text-left">
-                <div>Real Tasks (+5 🪙)</div>
-                <div className="text-[9px] font-normal opacity-80">रियल टास्क व EXP</div>
+              <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'rewards_tasks' ? 'text-[#ffe500]' : 'text-[#fb641b]'}`} />
+              <div className="text-left min-w-0">
+                <div className="truncate">Real Tasks (+5 🪙)</div>
+                <div className="text-[9px] font-normal opacity-80 truncate">रियल टास्क व EXP</div>
               </div>
             </button>
           </div>
@@ -2203,7 +2215,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
       )}
 
       {/* Main Content Area */}
-      <div className="w-full max-w-6xl px-4 mt-4">
+      <div className="w-full max-w-6xl px-2.5 sm:px-4 mt-3 sm:mt-4">
         {/* ============================================================== */}
         {/* TAB 1: ESP PLAY PERSONAL FIXED VOICE ROOM STAGE                */}
         {/* ============================================================== */}
@@ -2324,52 +2336,52 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               </div>
 
               {/* Compact Stage Utilities, Soundboard & Mini-Games Strip */}
-              <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs space-y-3 text-[#212121]">
+              <div className="bg-white rounded-xl p-3 sm:p-3.5 border border-slate-200 shadow-xs space-y-3 text-[#212121]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       onClick={() => setShowCreateRoomModal(true)}
-                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                     >
-                      <PlusCircle className="w-3.5 h-3.5" />
+                      <PlusCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>नया रूम बनाएं</span>
                     </button>
                     <button
                       onClick={() => setShowStageGameOverlay(!showStageGameOverlay)}
-                      className="bg-[#f5f8ff] hover:bg-blue-100 text-[#2874f0] border border-blue-200 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="bg-[#f5f8ff] hover:bg-blue-100 text-[#2874f0] border border-blue-200 px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                     >
-                      <Gamepad2 className="w-3.5 h-3.5" />
+                      <Gamepad2 className="w-3.5 h-3.5 shrink-0" />
                       <span>Stage Games</span>
                     </button>
                     <button
                       onClick={() => setShowWerewolfModal(true)}
-                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold cursor-pointer whitespace-nowrap"
                     >
                       🐺 भेड़िया गेम
                     </button>
                     <button
                       onClick={() => setShowSpyGameModal(true)}
-                      className="bg-emerald-50 hover:bg-emerald-100 text-[#388e3c] border border-emerald-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                      className="bg-emerald-50 hover:bg-emerald-100 text-[#388e3c] border border-emerald-200 px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold cursor-pointer whitespace-nowrap"
                     >
                       🕵️ जासूस कौन?
                     </button>
                     <button
                       onClick={() => setShowTimedChestModal(true)}
-                      className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                      className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold cursor-pointer whitespace-nowrap"
                     >
                       🎁 8 बॉक्सेज
                     </button>
                     <button
                       onClick={() => setShowFortuneSpinModal(true)}
-                      className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-1.5 rounded-sm text-xs font-bold cursor-pointer"
+                      className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold cursor-pointer whitespace-nowrap"
                     >
                       🎡 24H स्पिन
                     </button>
                     <button
                       onClick={() => setShowLeaderboardModal(true)}
-                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-2.5 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="bg-white hover:bg-slate-50 text-[#212121] border border-slate-300 px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                     >
-                      <Trophy className="w-3.5 h-3.5 text-[#fb641b]" />
+                      <Trophy className="w-3.5 h-3.5 text-[#fb641b] shrink-0" />
                       <span>रैंकिंग</span>
                     </button>
                   </div>
@@ -2378,13 +2390,13 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                     <button
                       onClick={testSpeakerAndMic}
                       disabled={isLoopbackTesting}
-                      className="px-2.5 py-1.5 rounded-sm text-[11px] font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer"
+                      className="px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-[11px] font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer whitespace-nowrap"
                     >
                       {isLoopbackTesting ? '🔊 टेस्टिंग...' : '🔊 माइक चेक'}
                     </button>
                     <button
                       onClick={toggleFullScreen}
-                      className="px-2.5 py-1.5 rounded-sm text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#212121] border border-slate-300 cursor-pointer"
+                      className="px-2.5 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#212121] border border-slate-300 cursor-pointer whitespace-nowrap"
                     >
                       {isFullscreen ? 'नॉर्मल' : '⛶ फुल'}
                     </button>
@@ -2487,7 +2499,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
             </div>
 
             {/* Right Col: Live Room Chat Stream with Text-to-Speech */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col h-[540px] text-[#212121]">
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-slate-200 shadow-sm flex flex-col h-[380px] sm:h-[460px] lg:h-[540px] text-[#212121]">
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                 <div className="flex items-center space-x-2">
                   <MessageCircle className="w-4 h-4 text-[#2874f0]" />
@@ -2576,13 +2588,13 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               </div>
 
               {/* Chat Input Bar with Quick Voice Note Hold Button */}
-              <form onSubmit={handleSendChat} className="pt-2 border-t border-slate-200 flex items-center space-x-1.5">
+              <form onSubmit={handleSendChat} className="pt-2 border-t border-slate-200 flex items-center gap-1.5">
                 <input
                   type="text"
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
                   placeholder="Send cheer, question, or talk..."
-                  className="flex-1 bg-white border border-slate-300 rounded-sm px-3 py-2 text-xs text-[#212121] placeholder-slate-400 focus:outline-none focus:border-[#2874f0]"
+                  className="flex-1 min-w-0 bg-white border border-slate-300 rounded-md px-2.5 sm:px-3 py-2 text-xs text-[#212121] placeholder-slate-400 focus:outline-none focus:border-[#2874f0]"
                 />
                 
                 <button
@@ -2591,7 +2603,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                   onMouseUp={stopWalkieTalkie}
                   onTouchStart={startWalkieTalkie}
                   onTouchEnd={stopWalkieTalkie}
-                  className={`p-2 rounded-sm border transition cursor-pointer ${
+                  className={`p-2 rounded-md border transition cursor-pointer shrink-0 ${
                     isRecordingVoice ? 'bg-rose-600 border-rose-600 text-white animate-pulse' : 'bg-[#f1f3f6] border-slate-300 text-[#212121] hover:bg-slate-200'
                   }`}
                   title="दबाकर आवाज़ भेजें (Hold to send voice)"
@@ -2601,7 +2613,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
                 <button
                   type="submit"
-                  className="bg-[#2874f0] hover:bg-[#1c62d6] p-2 rounded-sm text-white cursor-pointer"
+                  className="bg-[#2874f0] hover:bg-[#1c62d6] p-2 rounded-md text-white cursor-pointer shrink-0"
                   title="Send text"
                 >
                   <Send className="w-4 h-4" />
@@ -2610,7 +2622,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAppGiftModal(true)}
-                  className="p-2 rounded-sm bg-[#ffe500] hover:bg-yellow-300 text-[#212121] font-bold shadow-xs transition cursor-pointer"
+                  className="p-2 rounded-md bg-[#ffe500] hover:bg-yellow-300 text-[#212121] font-bold shadow-xs transition cursor-pointer shrink-0"
                   title="ESP PLAY ऐप गिफ्ट्स भेजें"
                 >
                   <Gift className="w-4 h-4" />
@@ -2619,7 +2631,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowDigitalGiftCardsModal(true)}
-                  className="p-2 rounded-sm bg-[#388e3c] hover:bg-emerald-700 text-white font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
+                  className="p-2 rounded-md bg-[#388e3c] hover:bg-emerald-700 text-white font-bold shadow-xs transition cursor-pointer flex items-center gap-1 shrink-0"
                   title="डिजिटल गिफ्ट कार्ड वाउचर स्टोर"
                 >
                   <CreditCardIcon className="w-4 h-4" />
@@ -3612,7 +3624,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         }}
         onOpenMoments={() => {
           setProfileSheetState(prev => ({ ...prev, isOpen: false }));
-          setShowEspChatModal(true);
+          if (onOpenMomentsFeed) {
+            onOpenMomentsFeed();
+          } else {
+            setShowEspChatModal(true);
+          }
         }}
         onVisitVoiceRoom={(roomAddressOrUserId) => {
           setProfileSheetState(prev => ({ ...prev, isOpen: false }));

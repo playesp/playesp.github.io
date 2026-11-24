@@ -58,6 +58,7 @@ interface WePlayHomeLobbyProps {
   onLogout?: () => void;
   isAdmin?: boolean;
   onOpenAdmin?: () => void;
+  onOpenTypingAcademy?: () => void;
 }
 
 const GameGridCard: React.FC<{
@@ -154,6 +155,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
   onLogout,
   isAdmin,
   onOpenAdmin,
+  onOpenTypingAcademy,
 }) => {
   const frameItem = getFrameByVariant(user.frameType || 'standard');
   const vipCfg = getVipConfig(user.vipTier);
@@ -546,6 +548,42 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
             characterVisual={<div className="text-4xl drop-shadow">🐊</div>}
           />
         </div>
+
+        {/* 2-Col Row 7: Word Bomb | Liar's Dice */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <GameGridCard
+            title="Word Bomb"
+            gradient="from-[#e11d48] via-[#be123c] to-[#9f1239]"
+            cornerTag="Active"
+            cornerTagClass="bg-[#ffe500] text-[#212121]"
+            subLabel="Speed Syllables"
+            onClick={() => onOpenGame('word_bomb')}
+            characterVisual={<div className="text-4xl drop-shadow">💣</div>}
+          />
+          <GameGridCard
+            title="Liar's Dice"
+            gradient="from-[#d97706] via-[#b45309] to-[#78350f]"
+            cornerTag="New"
+            cornerTagClass="bg-white text-[#212121]"
+            subLabel="Dice Bluff"
+            onClick={() => onOpenGame('liars_dice')}
+            characterVisual={<div className="text-4xl drop-shadow">🎲</div>}
+          />
+        </div>
+
+        {/* Full Width Featured Skill Module: ESP Typing Academy */}
+        {onOpenTypingAcademy && (
+          <GameGridCard
+            title="ESP Typing Academy"
+            gradient="from-[#0f172a] via-[#1e3a8a] to-[#2874f0]"
+            isFullWidth={true}
+            cornerTag="Skill Lab"
+            cornerTagClass="bg-[#ffe500] text-[#212121]"
+            subLabel="15 Lessons · WPM & Stars"
+            onClick={onOpenTypingAcademy}
+            characterVisual={<div className="text-5xl sm:text-6xl drop-shadow-md">⌨️</div>}
+          />
+        )}
       </div>
 
       {/* Bottom navigation is provided globally by LockedFooterNav so footer stays locked across every page */}

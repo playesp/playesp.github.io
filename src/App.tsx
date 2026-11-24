@@ -15,7 +15,13 @@ import { IdCardModal } from './components/IdCardModal.tsx';
 import { LegalComplianceModal } from './components/LegalComplianceModal.tsx';
 import { PostLoginProfileModal } from './components/PostLoginProfileModal.tsx';
 import { AiChatbot } from './components/AiChatbot.tsx';
-import { KnowIncomeAndUpgradeModal, KnowGamingSystemModal } from './components/SystemPopupModals.tsx';
+import {
+  KnowIncomeAndUpgradeModal,
+  KnowGamingSystemModal,
+  JoinSelectionPopupModal,
+  NewVisitorSelectionPopupModal,
+} from './components/SystemPopupModals.tsx';
+import { EspTypingAcademy } from './components/games/EspTypingAcademy.tsx';
 import { HomeView } from './views/HomeView.tsx';
 import { ServicesView } from './views/ServicesView.tsx';
 import { ServiceDetailView } from './views/ServiceDetailView.tsx';
@@ -128,8 +134,11 @@ export default function App() {
   const [initialRegMode, setInitialRegMode] = useState<'business' | 'gamer'>('business');
   const [referralSponsor, setReferralSponsor] = useState<PublicSponsorPreview | null>(null);
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
+  const [joinSelectionModalOpen, setJoinSelectionModalOpen] = useState<boolean>(false);
+  const [newVisitorModalOpen, setNewVisitorModalOpen] = useState<boolean>(false);
   const [knowIncomeModalOpen, setKnowIncomeModalOpen] = useState<boolean>(false);
   const [knowGamingModalOpen, setKnowGamingModalOpen] = useState<boolean>(false);
+  const [typingAcademyModalOpen, setTypingAcademyModalOpen] = useState<boolean>(false);
   const [adminLoginModalOpen, setAdminLoginModalOpen] = useState(false);
   const [idCardModalOpen, setIdCardModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
@@ -595,26 +604,28 @@ export default function App() {
   };
 
   const isCleanGameLobby = currentUser?.accountType === 'gamer' && (currentTab === 'gaming-room' || currentTab === 'me');
+  const isCleanVisitorHome = !currentUser && currentTab === 'home';
 
   return (
     <div className="min-h-screen bg-[#f1f3f6] text-[#212121] flex flex-col font-sans selection:bg-[#2874f0] selection:text-white w-full overflow-x-hidden">
-      {/* Flipkart-Themed Clean Marketplace Navigation Header (Hidden for gamer users on Gaming Room to keep screenshot-exact clean header) */}
+      {/* Clean Navigation Header */}
       {!isCleanGameLobby && (
         <Navbar
           currentUser={currentUser}
           isAdmin={isAdmin}
           settings={settings}
-          currentTab={currentTab}
-          referralSponsor={referralSponsor}
           onSelectTab={handleTabChange}
           onSelectServiceCode={code => setSelectedServiceCode(code)}
           onOpenLogin={() => setLoginModalOpen(true)}
+          onOpenJoinPopup={() => setJoinSelectionModalOpen(true)}
+          onOpenNewVisitorPopup={() => setNewVisitorModalOpen(true)}
           onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
           onLogout={handleUserLogout}
           onShowIdCard={() => setIdCardModalOpen(true)}
           onOpenLegalModal={() => setLegalModalOpen(true)}
           onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
           onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
+          onOpenTypingAcademy={() => setTypingAcademyModalOpen(true)}
         />
       )}
 
@@ -631,33 +642,38 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content View Container (always padded above locked bottom footer) */}
-      <main className={isCleanGameLobby ? 'flex-1 w-full overflow-x-hidden pb-6' : 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-28'}>
+      {/* Main Content View Container */}
+      <main
+        className={
+          isCleanGameLobby
+            ? 'flex-1 w-full overflow-x-hidden pb-6'
+            : isCleanVisitorHome
+            ? 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-6'
+            : 'flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 overflow-x-hidden pb-28'
+        }
+      >
         {currentTab === 'home' && (
           <HomeView
             settings={settings}
             services={services}
             currentUser={currentUser}
+            isAdmin={isAdmin}
             referralSponsor={referralSponsor}
             isLoginModalOpen={loginModalOpen}
             onSelectTab={handleTabChange}
             onSelectServiceForRegistration={handleSelectServiceForRegistration}
             onOpenLegalModal={() => setLegalModalOpen(true)}
             onSelectServiceCode={setSelectedServiceCode}
-            onUpdateUser={setCurrentUser}
             onOpenLogin={() => {
               setLoginDestination('platform');
               setLoginModalOpen(true);
             }}
+            onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
+            onOpenJoinPopup={() => setJoinSelectionModalOpen(true)}
+            onOpenNewVisitorPopup={() => setNewVisitorModalOpen(true)}
             onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
             onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
-            onRegisterWithMode={(mode, code, fee) => {
-              setInitialRegMode(mode);
-              if (code) setInitialServiceCode(code);
-              if (fee) setInitialFee(fee);
-              setCurrentTab('register');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onOpenTypingAcademy={() => setTypingAcademyModalOpen(true)}
           />
         )}
 
@@ -895,19 +911,20 @@ export default function App() {
         )}
       </main>
 
-      {/* Global Locked Bottom Navigation Footer (Always visible across every page & device; active icon is enlarged & glowing) */}
-      <LockedFooterNav
-        currentTab={currentTab}
-        gamingSubTab={activeGamingSubTab}
-        currentUser={currentUser}
-        isAdmin={isAdmin}
-        onSelectTab={handleTabChange}
-        onOpenMeMenu={handleOpenMeMenu}
-      />
+      {/* Global Locked Bottom Navigation Footer (Shown for logged-in members or sub-views, hidden on clean logged-out home) */}
+      {!isCleanVisitorHome && (
+        <LockedFooterNav
+          currentTab={currentTab}
+          gamingSubTab={activeGamingSubTab}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          onSelectTab={handleTabChange}
+          onOpenMeMenu={handleOpenMeMenu}
+        />
+      )}
 
-
-      {/* Footer (Hidden inside clean gamer lobby) */}
-      {!isCleanGameLobby && (
+      {/* Footer (Hidden on clean game lobby & clean logged-out visitor gateway) */}
+      {!isCleanGameLobby && !isCleanVisitorHome && (
         <Footer
           settings={settings}
           currentUser={currentUser}
@@ -1033,6 +1050,50 @@ export default function App() {
         onEnterGamingRoom={() => handleTabChange('gaming-room')}
         onOpenBuyCoins={handleOpenBuyCoins}
         onOpenMore={() => handleTabChange('services')}
+      />
+
+      <JoinSelectionPopupModal
+        isOpen={joinSelectionModalOpen}
+        onClose={() => setJoinSelectionModalOpen(false)}
+        services={services}
+        referralSponsor={referralSponsor}
+        onProceedRegister={(mode, code, fee, sponsor) => {
+          setInitialRegMode(mode);
+          if (code) setInitialServiceCode(code);
+          if (typeof fee === 'number') setInitialFee(fee);
+          if (sponsor) setInitialSponsorId(sponsor);
+          setCurrentTab('register');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenMoreMenu={() => handleTabChange('services')}
+      />
+
+      <NewVisitorSelectionPopupModal
+        isOpen={newVisitorModalOpen}
+        onClose={() => setNewVisitorModalOpen(false)}
+        settings={settings}
+        services={services}
+        referralSponsor={referralSponsor}
+        onSelectRegister={(mode, code, fee, sponsor) => {
+          setInitialRegMode(mode);
+          if (code) setInitialServiceCode(code);
+          if (typeof fee === 'number') setInitialFee(fee);
+          if (sponsor) setInitialSponsorId(sponsor);
+          setCurrentTab('register');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenTab={handleTabChange}
+        onOpenMoreMenu={() => handleTabChange('services')}
+      />
+
+      <EspTypingAcademy
+        isOpen={typingAcademyModalOpen}
+        onClose={() => setTypingAcademyModalOpen(false)}
+        user={currentUser}
+        onUpdateUser={(updated) => {
+          setCurrentUser(updated);
+          api.setStoredUser(updated);
+        }}
       />
 
       {/* Clean Flipkart Toast Notification System */}

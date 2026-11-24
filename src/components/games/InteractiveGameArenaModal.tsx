@@ -18,6 +18,9 @@ import {
   LudoBoardEngine,
   DrawingGuessEngine,
   HideSeekEngine,
+  TrickstersCafeEngine,
+  WordBombEngine,
+  LiarsDiceEngine,
   type PlayableEngineProps,
 } from './RealPlayableGamesSuite.tsx';
 
@@ -35,7 +38,9 @@ export type GameKey =
   | 'mic_grab'
   | 'pool'
   | 'spin'
-  | 'snake';
+  | 'snake'
+  | 'word_bomb'
+  | 'liars_dice';
 
 export interface GameMetadata {
   key: GameKey;
@@ -202,6 +207,28 @@ export const GAMES_METADATA: Record<GameKey, GameMetadata> = {
     icon: '🐍',
     minBet: 10,
     winCoins: 35,
+    maxPlayers: 4,
+  },
+  word_bomb: {
+    key: 'word_bomb',
+    name: 'Word Bomb',
+    hindiName: 'वर्ड बॉम्ब (टिकिंग सिलेबल रेस)',
+    badge: 'Speed Word',
+    gradient: 'from-[#e11d48] to-[#9f1239]',
+    icon: '💣',
+    minBet: 15,
+    winCoins: 45,
+    maxPlayers: 6,
+  },
+  liars_dice: {
+    key: 'liars_dice',
+    name: "Liar's Dice",
+    hindiName: "लायर्स डाइस (पासा ब्लफ)",
+    badge: 'Dice Bluff',
+    gradient: 'from-[#b45309] to-[#78350f]',
+    icon: '🎲',
+    minBet: 25,
+    winCoins: 65,
     maxPlayers: 4,
   },
 };
@@ -373,8 +400,13 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
   const renderGameEngine = () => {
     switch (gameKey) {
       case 'liars_party':
-      case 'trickster':
         return <LiarsPartyEngine {...engineProps} />;
+      case 'trickster':
+        return <TrickstersCafeEngine {...engineProps} />;
+      case 'word_bomb':
+        return <WordBombEngine {...engineProps} />;
+      case 'liars_dice':
+        return <LiarsDiceEngine {...engineProps} />;
       case 'crazy_alpaca':
         return <CrazyAlpacaEngine {...engineProps} />;
       case 'pool':
@@ -393,7 +425,7 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/65 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-[#212121] max-h-[94vh]">
+      <div className="esp-popup-card relative max-w-xl bg-white border border-slate-200 overflow-hidden flex flex-col text-[#212121]">
         {/* Header */}
         <div className={`p-4 bg-gradient-to-r ${game.gradient} border-b border-white/20 flex items-center justify-between text-white`}>
           <div className="flex items-center space-x-2.5">
@@ -464,7 +496,7 @@ export const InteractiveGameArenaModal: React.FC<InteractiveGameArenaModalProps>
         </div>
 
         {/* Mode Toggle + Real Game Engine */}
-        <div className="p-4 flex-1 overflow-y-auto space-y-3 bg-white">
+        <div className="esp-auto-stage flex-1 overflow-y-auto space-y-3 bg-white">
           {/* Free vs Pro Selector */}
           <div className="grid grid-cols-2 gap-2">
             <button

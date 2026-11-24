@@ -19,8 +19,20 @@ import {
   Grid,
   ChevronRight,
   Lock,
+  Search,
+  Calculator,
+  Crown,
+  Compass,
+  UserCheck,
+  Smartphone,
+  Layers,
 } from 'lucide-react';
-import type { PlatformSettings, ServiceItem, UserProfile } from '../types/index.ts';
+import type {
+  PlatformSettings,
+  ServiceItem,
+  UserProfile,
+  PublicSponsorPreview,
+} from '../types/index.ts';
 import { api } from '../services/api.ts';
 
 interface KnowIncomeAndUpgradeModalProps {
@@ -147,13 +159,11 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
   return (
     <div className="fixed inset-0 z-[95] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
       <div className="esp-popup-card max-w-2xl bg-white border border-slate-200 overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="bg-gradient-to-r from-[#2874f0] via-[#1d5ed6] to-[#0f3f9c] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
-              <Sparkles className="w-3 h-3" />
-              <span>{isGamer ? 'Same-ID Gaming ➔ Earning Upgrade' : 'ESP Earning Platform Guide'}</span>
-            </div>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
+              {isGamer ? 'Same-ID Gaming ➔ Earning Upgrade' : 'ESP Earning Platform Guide'}
+            </span>
             <h2 className="text-fluid-title font-black mt-1 leading-tight">
               {isGamer
                 ? 'एक ही ID से Gaming + Income दोनों शुरू करें!'
@@ -174,9 +184,7 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-[#212121]">
-          {/* Same-ID Lock Guarantee */}
           {user && (
             <div className="rounded-lg bg-emerald-50 border border-emerald-300 p-3 flex items-start gap-2.5">
               <Lock className="w-4 h-4 text-[#388e3c] shrink-0 mt-0.5" />
@@ -192,7 +200,6 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
             </div>
           )}
 
-          {/* 3 Simple Steps */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
             <div className="p-3 rounded-lg bg-[#f5f8ff] border border-blue-200 space-y-1">
               <span className="font-black text-[#2874f0]">1. प्लान चुनें (₹10+)</span>
@@ -208,7 +215,6 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
             </div>
           </div>
 
-          {/* Plan Selector Grid */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-[#212121]">अपना Earning Service Plan चुनें:</span>
@@ -217,7 +223,7 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
                 onClick={() => setShowAllDetails(prev => !prev)}
                 className="btn-3d px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 text-[#2874f0] text-[11px] font-bold cursor-pointer"
               >
-                {showAllDetails ? 'कम विवरण दिखाएं' : '⋯ More Plan Details'}
+                {showAllDetails ? 'कम विवरण दिखाएं' : '⋯ More Plans (All 10)'}
               </button>
             </div>
 
@@ -250,7 +256,6 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
             </div>
           </div>
 
-          {/* Selected Plan Info Box */}
           <div className="rounded-lg border border-blue-200 bg-[#f8fbff] p-3.5 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -294,7 +299,6 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
             </div>
           )}
 
-          {/* Action Section: Logged-in Gamer/Member -> Direct Same-ID Upgrade Form | Visitor -> Join Plan */}
           {user ? (
             <form onSubmit={handleSameIdUpgradeSubmit} className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
               <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -388,7 +392,7 @@ export const KnowIncomeAndUpgradeModal: React.FC<KnowIncomeAndUpgradeModalProps>
                     }}
                     className="btn-3d px-3 py-2.5 rounded-md bg-white border border-slate-300 text-[#2874f0] text-xs font-bold cursor-pointer"
                   >
-                    ⋯ More Options
+                    ⋯ More
                   </button>
                 )}
               </div>
@@ -452,9 +456,8 @@ export const KnowGamingSystemModal: React.FC<KnowGamingSystemModalProps> = ({
       <div className="esp-popup-card max-w-xl bg-white border border-slate-200 overflow-hidden flex flex-col">
         <div className="bg-gradient-to-r from-[#6d28d9] via-[#4f46e5] to-[#2563eb] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
           <div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
-              <Gamepad2 className="w-3 h-3" />
-              <span>ESP PLAY Gaming &amp; Voice Club</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
+              ESP PLAY Gaming &amp; Voice Club
             </span>
             <h2 className="text-fluid-title font-black mt-1">
               आपकी यही ID पहले से Gaming के लिए तैयार है!
@@ -509,8 +512,8 @@ export const KnowGamingSystemModal: React.FC<KnowGamingSystemModalProps> = ({
             <div className="p-3 rounded-lg border border-slate-200 bg-amber-50/70 flex items-start gap-2.5">
               <Trophy className="w-4 h-4 text-[#fb641b] shrink-0 mt-0.5" />
               <div>
-                <p className="font-black text-[#212121]">12+ Interactive Games</p>
-                <p className="text-[11px] text-slate-600">Ludo 3D, Space Werewolf, Bingo, Spin &amp; Card Arena।</p>
+                <p className="font-black text-[#212121]">16+ Active Party &amp; Skill Games</p>
+                <p className="text-[11px] text-slate-600">Word Bomb, Liar's Dice, Trickster's Cafe, Ludo 3D, Pool &amp; ESP Typing।</p>
               </div>
             </div>
             <div className="p-3 rounded-lg border border-slate-200 bg-emerald-50/70 flex items-start gap-2.5">
@@ -577,6 +580,589 @@ export const KnowGamingSystemModal: React.FC<KnowGamingSystemModalProps> = ({
   );
 };
 
+/* ============================================================================ */
+/* REG / JOIN SELECTION-TO-RESULT POPUP                                         */
+/* ============================================================================ */
+interface JoinSelectionPopupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  services: ServiceItem[];
+  referralSponsor?: PublicSponsorPreview | null;
+  onProceedRegister: (mode: 'business' | 'gamer', serviceCode?: string, fee?: number, sponsorId?: string) => void;
+  onOpenMoreMenu?: () => void;
+}
+
+export const JoinSelectionPopupModal: React.FC<JoinSelectionPopupModalProps> = ({
+  isOpen,
+  onClose,
+  services,
+  referralSponsor,
+  onProceedRegister,
+  onOpenMoreMenu,
+}) => {
+  const [joinBranch, setJoinBranch] = useState<'income' | 'gaming'>('income');
+  const [selectedCode, setSelectedCode] = useState<string>('EMO');
+  const [selectedFee, setSelectedFee] = useState<number>(10);
+
+  if (!isOpen) return null;
+
+  const activeService = services.find(s => s.code === selectedCode) || services[0];
+
+  return (
+    <div className="fixed inset-0 z-[95] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
+      <div className="esp-popup-card max-w-2xl bg-white border border-slate-200 overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-[#fb641b] via-[#f97316] to-[#2874f0] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <span className="inline-block px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
+              Reg / Join Selection
+            </span>
+            <h2 className="text-fluid-title font-black mt-1 leading-tight">
+              अपना अकाउंट विकल्प चुनें — रिजल्ट तुरंत देखें
+            </h2>
+            {referralSponsor && (
+              <p className="text-[11px] text-amber-100 mt-0.5 font-semibold">
+                Verified Sponsor: {referralSponsor.sponsorName} ({referralSponsor.sponsorId})
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-3d p-2 rounded-full bg-white/15 hover:bg-white/25 text-white shrink-0 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-[#212121]">
+          {/* Step 1: Primary Branch Choice */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setJoinBranch('income')}
+              className={`btn-3d p-3.5 rounded-xl border text-left cursor-pointer ${
+                joinBranch === 'income'
+                  ? 'bg-[#2874f0] text-white border-[#1553b8]'
+                  : 'bg-slate-50 text-[#212121] border-slate-200 hover:border-[#2874f0]'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <Briefcase className="w-5 h-5" />
+                <span className={`text-[11px] font-black ${joinBranch === 'income' ? 'text-[#ffe500]' : 'text-[#388e3c]'}`}>
+                  ₹10+ Plan
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm font-black mt-2">Earning Member Reg</p>
+              <p className={`text-[10.5px] mt-0.5 ${joinBranch === 'income' ? 'text-blue-100' : 'text-slate-500'}`}>
+                10 प्लान + 50% रेफरल + ID कार्ड
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setJoinBranch('gaming')}
+              className={`btn-3d p-3.5 rounded-xl border text-left cursor-pointer ${
+                joinBranch === 'gaming'
+                  ? 'bg-[#6d28d9] text-white border-[#4c1d95]'
+                  : 'bg-slate-50 text-[#212121] border-slate-200 hover:border-indigo-500'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <Gamepad2 className="w-5 h-5" />
+                <span className={`text-[11px] font-black ${joinBranch === 'gaming' ? 'text-[#ffe500]' : 'text-indigo-700'}`}>
+                  ₹0 Free
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm font-black mt-2">Free Gaming Pass</p>
+              <p className={`text-[10.5px] mt-0.5 ${joinBranch === 'gaming' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                गेम्स, वॉइस रूम व Same-ID अपग्रेड
+              </p>
+            </button>
+          </div>
+
+          {/* Step 2: Dynamic Result Based on Selection */}
+          {joinBranch === 'income' ? (
+            <div className="space-y-3 rounded-xl border border-blue-200 bg-[#f8fbff] p-3.5">
+              <p className="text-xs font-black text-[#2874f0]">
+                अपना Earning Service Plan चुनें (क्लिक करने पर रिजल्ट अपडेट होगा):
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {services.slice(0, 10).map(srv => {
+                  const active = srv.code === selectedCode;
+                  const firstFee = srv.joiningFeeTiers?.[0] || srv.defaultFee || 10;
+                  return (
+                    <button
+                      key={srv.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCode(srv.code);
+                        setSelectedFee(firstFee);
+                      }}
+                      className={`btn-3d p-2 rounded-lg text-left border cursor-pointer ${
+                        active
+                          ? 'bg-[#2874f0] text-white border-[#1553b8]'
+                          : 'bg-white text-[#212121] border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[11px] font-black">
+                        <span>{srv.code}</span>
+                        <span className={active ? 'text-[#ffe500]' : 'text-[#388e3c]'}>₹{firstFee}+</span>
+                      </div>
+                      <p className={`text-[10px] truncate ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                        {srv.referralBonusPercent}% Ref
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeService && (
+                <div className="bg-white rounded-lg border border-blue-100 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-black text-[#212121]">{activeService.name}</h4>
+                      <p className="text-[11px] text-slate-600">{activeService.hindiDescription || activeService.description}</p>
+                    </div>
+                    <span className="text-xs font-black text-[#388e3c] tabular-nums">
+                      Est: {activeService.dailyEarningEst}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(activeService.joiningFeeTiers || [10, 50, 100]).map(fee => (
+                      <button
+                        key={fee}
+                        type="button"
+                        onClick={() => setSelectedFee(fee)}
+                        className={`btn-3d px-3 py-1 rounded text-xs font-black cursor-pointer ${
+                          selectedFee === fee
+                            ? 'bg-[#fb641b] text-white'
+                            : 'bg-slate-100 text-[#212121]'
+                        }`}
+                      >
+                        ₹{fee}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onProceedRegister('business', selectedCode, selectedFee, referralSponsor?.sponsorId);
+                }}
+                className="btn-3d w-full py-3 px-4 rounded-lg bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>{selectedCode} (₹{selectedFee}) रजिस्ट्रेशन फॉर्म खोलें</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5">
+              <div className="flex items-start gap-2.5">
+                <Gamepad2 className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <p className="font-black text-indigo-950 text-sm">
+                    100% Free Gaming Club Pass (₹0 शुल्क)
+                  </p>
+                  <p className="text-slate-700 leading-relaxed">
+                    तुरंत अपनी अनोखी Gaming ID, 8-सीट लाइव वॉइस रूम, लूडो/बिंगो गेम्स और डेली स्ट्रीक कॉइन्स पाएं। भविष्य में जब चाहें इसी ID को ₹10+ अर्निंग प्लान में अपग्रेड करें।
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onProceedRegister('gamer', 'GAMING', 0, referralSponsor?.sponsorId);
+                }}
+                className="btn-3d w-full py-3 px-4 rounded-lg bg-[#6d28d9] hover:bg-[#5b21b6] text-white font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span>Free Gaming Account बनाएं</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {onOpenMoreMenu && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenMoreMenu();
+                }}
+                className="btn-3d px-3 py-1.5 rounded bg-slate-100 text-[#2874f0] text-xs font-bold cursor-pointer"
+              >
+                ⋯ More System Options
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================ */
+/* NEW VISITOR SELECTION-TO-RESULT POPUP                                        */
+/* ============================================================================ */
+interface NewVisitorSelectionPopupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  settings: PlatformSettings;
+  services: ServiceItem[];
+  referralSponsor?: PublicSponsorPreview | null;
+  onSelectRegister: (mode: 'business' | 'gamer', serviceCode?: string, fee?: number, sponsorId?: string) => void;
+  onOpenTab: (tab: string) => void;
+  onOpenMoreMenu: () => void;
+}
+
+type VisitorTopicId = 'income' | 'gaming' | 'swi' | 'nwi' | 'calc' | 'sponsor';
+
+export const NewVisitorSelectionPopupModal: React.FC<NewVisitorSelectionPopupModalProps> = ({
+  isOpen,
+  onClose,
+  settings,
+  services,
+  referralSponsor,
+  onSelectRegister,
+  onOpenTab,
+  onOpenMoreMenu,
+}) => {
+  const [selectedTopic, setSelectedTopic] = useState<VisitorTopicId>(referralSponsor ? 'sponsor' : 'income');
+  const [calcTier, setCalcTier] = useState<number>(100);
+  const [calcRefs, setCalcRefs] = useState<number>(10);
+  const [sponsorInput, setSponsorInput] = useState<string>(referralSponsor?.sponsorId || '');
+  const [sponsorLoading, setSponsorLoading] = useState<boolean>(false);
+  const [verifiedSponsor, setVerifiedSponsor] = useState<PublicSponsorPreview | null>(referralSponsor || null);
+  const [sponsorError, setSponsorError] = useState<string>('');
+
+  useEffect(() => {
+    if (referralSponsor) {
+      setVerifiedSponsor(referralSponsor);
+      setSponsorInput(referralSponsor.sponsorId);
+    }
+  }, [referralSponsor]);
+
+  if (!isOpen) return null;
+
+  const estimatedDirect = calcTier * 0.5 * calcRefs;
+  const estimatedMonthly = estimatedDirect + calcTier * 1.5 * 30;
+
+  const handleLookupSponsor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = sponsorInput.trim().replace(/^@+/, '');
+    if (!clean) return;
+    setSponsorLoading(true);
+    setSponsorError('');
+    try {
+      const res = await api.getPublicSponsorPreview(clean);
+      if (res && res.valid) {
+        setVerifiedSponsor(res);
+      } else {
+        setVerifiedSponsor(null);
+        setSponsorError('यह Sponsor ID / Username रिकॉर्ड में नहीं मिला।');
+      }
+    } catch {
+      setSponsorError('स्पॉन्सर चेक करने में समस्या हुई।');
+    } finally {
+      setSponsorLoading(false);
+    }
+  };
+
+  const topics: Array<{ id: VisitorTopicId; label: string; icon: React.ReactNode }> = [
+    { id: 'income', label: '10 Earning Plans', icon: <Briefcase className="w-3.5 h-3.5" /> },
+    { id: 'gaming', label: 'Free Gaming', icon: <Gamepad2 className="w-3.5 h-3.5" /> },
+    { id: 'swi', label: 'SWI 3.3% App', icon: <Smartphone className="w-3.5 h-3.5" /> },
+    { id: 'nwi', label: 'NWI 3-Level', icon: <Crown className="w-3.5 h-3.5" /> },
+    { id: 'calc', label: 'Calculator', icon: <Calculator className="w-3.5 h-3.5" /> },
+    { id: 'sponsor', label: 'Verify Sponsor', icon: <UserCheck className="w-3.5 h-3.5" /> },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[95] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
+      <div className="esp-popup-card max-w-2xl bg-white border border-slate-200 overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-[#2874f0] to-[#0f3f9c] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
+              <Compass className="w-3 h-3" />
+              <span>New Visitor Guide · Select Option</span>
+            </span>
+            <h2 className="text-fluid-title font-black mt-1 leading-tight">
+              अपना विषय चुनें — तुरंत रिजल्ट पॉपअप में देखें
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-3d p-2 rounded-full bg-white/15 hover:bg-white/25 text-white shrink-0 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-[#212121]">
+          {/* Topic Selector Pills (Interactive Selection Buttons) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {topics.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSelectedTopic(t.id)}
+                className={`btn-3d px-3 py-2.5 rounded-lg text-xs font-black flex items-center gap-2 cursor-pointer ${
+                  selectedTopic === t.id
+                    ? 'bg-[#2874f0] text-white'
+                    : 'bg-slate-100 text-[#212121] hover:bg-blue-50'
+                }`}
+              >
+                {t.icon}
+                <span className="truncate">{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Selection Result Area */}
+          {selectedTopic === 'income' && (
+            <div className="rounded-xl border border-blue-200 bg-[#f8fbff] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-black text-[#212121]">ESP 10 अर्निंग प्लान्स (मात्र ₹10 से शुरू)</h3>
+                <span className="text-xs font-black text-[#388e3c]">40%–70% Referral</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                {services.slice(0, 5).map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onSelectRegister('business', s.code, s.defaultFee, verifiedSponsor?.sponsorId);
+                    }}
+                    className="btn-3d p-2 rounded-lg bg-white border border-slate-200 hover:border-[#2874f0] text-left cursor-pointer"
+                  >
+                    <strong className="text-[#2874f0] block">{s.code}</strong>
+                    <span className="text-[11px] font-bold text-[#388e3c]">₹{s.defaultFee}+ Join</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                नामांकन करते ही आपका Digital ID Card बनता है। ₹50 होते ही सीधे UPI ({settings.adminPayeeName} वेरिफाइड चैनल) से पेआउट मिलता है।
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSelectRegister('business', 'EMO', 10, verifiedSponsor?.sponsorId);
+                  }}
+                  className="btn-3d flex-1 py-2.5 px-4 rounded-lg bg-[#fb641b] text-white font-black text-xs cursor-pointer"
+                >
+                  ₹10+ से अभी Income Join करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenTab('services');
+                  }}
+                  className="btn-3d py-2.5 px-3.5 rounded-lg bg-white border border-slate-300 text-[#2874f0] font-bold text-xs cursor-pointer"
+                >
+                  सभी 10 प्लान देखें
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedTopic === 'gaming' && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 space-y-3">
+              <h3 className="text-sm font-black text-indigo-950">ESP Free Gaming &amp; Voice Club (₹0 Free)</h3>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                बिना किसी शुल्क के वॉइस रूम, लूडो 3D, स्पेस वेयरवोल्फ, बिंगो व डेली स्ट्रीक रिवॉर्ड्स का आनंद लें। जब भी कमाई शुरू करना चाहें, आपकी इसी ID पर Admin वेरिफिकेशन से ₹10+ प्लान सक्रिय हो जाएगा।
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onSelectRegister('gamer', 'GAMING', 0, verifiedSponsor?.sponsorId);
+                }}
+                className="btn-3d w-full py-2.5 px-4 rounded-lg bg-[#6d28d9] text-white font-black text-xs cursor-pointer"
+              >
+                Free Gaming Pass अभी बनाएं
+              </button>
+            </div>
+          )}
+
+          {selectedTopic === 'swi' && (
+            <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-orange-950">SWI — 3.3% स्पेशल रिचार्ज ऐप (₹300)</h3>
+                <span className="text-xs font-black text-[#fb641b]">₹150 Sponsor Bonus</span>
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                SWI ₹300 एक्टिवेट करने व एडमिन सत्यापन के बाद आपके डैशबोर्ड में 3.3% मोबाइल/DTH रिचार्ज ऐप लिंक प्राप्त होता है तथा प्रत्येक SWI रेफरल पर सीधे ₹150 (50%) कमीशन मिलता है।
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onSelectRegister('business', 'SWI', 300, verifiedSponsor?.sponsorId);
+                }}
+                className="btn-3d w-full py-2.5 px-4 rounded-lg bg-[#fb641b] text-white font-black text-xs cursor-pointer"
+              >
+                SWI ₹300 प्लान से जॉइन करें
+              </button>
+            </div>
+          )}
+
+          {selectedTopic === 'nwi' && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-3">
+              <h3 className="text-sm font-black text-emerald-950">NWI — 3-Level नॉन-वर्किंग ऑटो ट्री (₹200+)</h3>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                ऑटो-स्पिलओवर ट्री के तहत Level 1 (10%), Level 2 (15%) और Level 3 (25%) तक वास्तविक डाउनलाइन बोनस प्राप्त करें।
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSelectRegister('business', 'NWI', 200, verifiedSponsor?.sponsorId);
+                  }}
+                  className="btn-3d flex-1 py-2.5 px-4 rounded-lg bg-[#388e3c] text-white font-black text-xs cursor-pointer"
+                >
+                  NWI ₹200+ जॉइन करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenTab('nwi');
+                  }}
+                  className="btn-3d py-2.5 px-3.5 rounded-lg bg-white border border-slate-300 text-emerald-800 font-bold text-xs cursor-pointer"
+                >
+                  NWI पेज देखें
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedTopic === 'calc' && (
+            <div className="rounded-xl border border-blue-200 bg-[#f8fbff] p-4 space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                {[10, 50, 100, 300].map(fee => (
+                  <button
+                    key={fee}
+                    type="button"
+                    onClick={() => setCalcTier(fee)}
+                    className={`btn-3d py-2 rounded text-xs font-black cursor-pointer ${
+                      calcTier === fee ? 'bg-[#2874f0] text-white' : 'bg-white border border-slate-300 text-[#212121]'
+                    }`}
+                  >
+                    ₹{fee}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div className="flex justify-between text-xs font-bold mb-1">
+                  <span>डायरेक्ट रेफरल्स:</span>
+                  <span className="text-[#2874f0] tabular-nums">{calcRefs} Members</span>
+                </div>
+                <input
+                  type="range"
+                  min={2}
+                  max={50}
+                  value={calcRefs}
+                  onChange={e => setCalcRefs(Number(e.target.value))}
+                  className="w-full accent-[#2874f0] cursor-pointer"
+                />
+              </div>
+              <div className="p-3 rounded-lg bg-white border border-blue-100 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-500 block font-semibold">अनुमानित मासिक कमाई</span>
+                  <strong className="text-xl font-black text-[#212121] tabular-nums">
+                    ₹{Math.round(estimatedMonthly).toLocaleString('en-IN')}
+                  </strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSelectRegister('business', 'EMO', calcTier, verifiedSponsor?.sponsorId);
+                  }}
+                  className="btn-3d px-4 py-2 rounded-lg bg-[#fb641b] text-white font-black text-xs cursor-pointer"
+                >
+                  ₹{calcTier} से शुरू करें
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedTopic === 'sponsor' && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+              <form onSubmit={handleLookupSponsor} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={sponsorInput}
+                  onChange={e => setSponsorInput(e.target.value)}
+                  placeholder="Sponsor ID या @username लिखें (उदा. EMO-MOM-MMO)"
+                  className="flex-1 bg-white border border-slate-300 focus:border-[#2874f0] rounded-lg px-3 py-2 text-xs font-mono outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={sponsorLoading}
+                  className="btn-3d px-4 py-2 rounded-lg bg-[#2874f0] text-white font-black text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {sponsorLoading ? 'जांच हो रही है...' : 'Verify Sponsor'}
+                </button>
+              </form>
+              {sponsorError && <p className="text-xs font-bold text-rose-600">{sponsorError}</p>}
+              {verifiedSponsor && (
+                <div className="bg-white rounded-lg border border-emerald-300 p-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-black text-[#388e3c] uppercase">✓ Verified Sponsor</span>
+                    <p className="text-sm font-black text-[#212121]">{verifiedSponsor.sponsorName}</p>
+                    <p className="text-xs font-mono text-[#2874f0]">ID: {verifiedSponsor.sponsorId}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onSelectRegister('business', 'EMO', 10, verifiedSponsor.sponsorId);
+                    }}
+                    className="btn-3d px-4 py-2 rounded-lg bg-[#fb641b] text-white font-black text-xs cursor-pointer"
+                  >
+                    इनके साथ Join करें
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+            <span className="text-slate-500">अन्य सभी टूल्स व हेल्प के लिए System Menu खोलें</span>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenMoreMenu();
+              }}
+              className="btn-3d px-3 py-1.5 rounded bg-slate-100 text-[#2874f0] font-bold cursor-pointer inline-flex items-center gap-1"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>⋯ More / System Menu</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================ */
+/* MORE / SYSTEM MENU POPUP WITH BUILT-IN SEARCH                                */
+/* ============================================================================ */
 export interface MoreOptionItem {
   id: string;
   label: string;
@@ -597,15 +1183,30 @@ interface MoreOptionsPopupModalProps {
 export const MoreOptionsPopupModal: React.FC<MoreOptionsPopupModalProps> = ({
   isOpen,
   onClose,
-  title = 'More Options & Extra Tools',
-  subtitle = 'अतिरिक्त सुविधाएं और सहायता केंद्र यहाँ एक जगह उपलब्ध हैं',
+  title = 'System Menu & More',
+  subtitle = 'सभी सिस्टम टूल्स, प्लान्स व सहायता केंद्र यहाँ उपलब्ध हैं',
   items,
 }) => {
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) setQuery('');
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const clean = query.trim().toLowerCase();
+  const filteredItems = clean
+    ? items.filter(
+        it =>
+          it.label.toLowerCase().includes(clean) ||
+          (it.subLabel || '').toLowerCase().includes(clean)
+      )
+    : items;
 
   return (
     <div className="fixed inset-0 z-[95] bg-slate-950/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
-      <div className="esp-popup-card max-w-lg bg-white border border-slate-200 overflow-hidden flex flex-col rounded-t-2xl sm:rounded-2xl">
+      <div className="esp-popup-card max-w-xl bg-white border border-slate-200 overflow-hidden flex flex-col rounded-t-2xl sm:rounded-2xl">
         <div className="bg-gradient-to-r from-[#2874f0] to-[#1a56db] text-white p-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-[#ffe500] text-[#212121] flex items-center justify-center shrink-0">
@@ -625,8 +1226,22 @@ export const MoreOptionsPopupModal: React.FC<MoreOptionsPopupModalProps> = ({
           </button>
         </div>
 
-        <div className="p-3.5 sm:p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {items.map(item => (
+        {/* Built-in Quick Search inside System Menu Popup (keeps top header ultra clean) */}
+        <div className="px-3.5 sm:px-4 pt-3 pb-1 bg-white">
+          <div className="relative flex items-center">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="सिस्टम मेन्यू खोजें (SWI, NWI, Games, Legal, Helpline...)"
+              className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:border-[#2874f0] focus:bg-white text-xs text-[#212121] outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="p-3.5 sm:p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[65dvh]">
+          {filteredItems.map(item => (
             <button
               key={item.id}
               type="button"
@@ -657,6 +1272,11 @@ export const MoreOptionsPopupModal: React.FC<MoreOptionsPopupModalProps> = ({
               <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
             </button>
           ))}
+          {filteredItems.length === 0 && (
+            <div className="col-span-full py-6 text-center text-xs text-slate-500">
+              कोई विकल्प नहीं मिला — दूसरा शब्द लिखें
+            </div>
+          )}
         </div>
       </div>
     </div>

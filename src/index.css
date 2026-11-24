@@ -137,10 +137,21 @@
 }
 
 .esp-popup-card {
-  width: 100%;
-  max-height: 90dvh;
+  width: min(100%, calc(100vw - 1rem));
+  max-height: 92dvh;
   border-radius: clamp(0.75rem, 2vw, 1.125rem);
   box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.esp-auto-stage {
+  width: 100%;
+  max-width: 100%;
+  padding: clamp(0.65rem, 2vw, 1.25rem);
+}
+
+canvas {
+  max-width: 100%;
+  height: auto;
 }
 
 .btn-responsive {

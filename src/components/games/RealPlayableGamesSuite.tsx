@@ -1318,3 +1318,607 @@ export const HideSeekEngine: React.FC<PlayableEngineProps> = ({
     </div>
   );
 };
+
+/* ============================================================================
+   8. TRICKSTER'S CAFE — Crocodile Dessert Bluff & Trap Table
+   ============================================================================ */
+const CAFE_DISHES = [
+  { id: 'cake', label: '🍰 Sweet Pastry', isTrap: false },
+  { id: 'crown', label: '🍮 Royal Custard', isTrap: false },
+  { id: 'chili', label: '🌶️ Poison Chili Trap', isTrap: true },
+];
+
+export const TrickstersCafeEngine: React.FC<PlayableEngineProps> = ({
+  mode,
+  winCoins,
+  userName,
+  onStartMatch,
+  onFinishMatch,
+}) => {
+  const [started, setStarted] = useState(false);
+  const [phase, setPhase] = useState<'serve' | 'judge'>('serve');
+  const [myHp, setMyHp] = useState(3);
+  const [rivalHp, setRivalHp] = useState(3);
+  const [round, setRound] = useState(1);
+  const [rivalDishTrap, setRivalDishTrap] = useState(false);
+  const [log, setLog] = useState('🐊 Trickster Chef से मिठाई या मिर्च ब्लफ़ खेलें!');
+
+  const startCafe = async () => {
+    const ok = await onStartMatch();
+    if (!ok) return;
+    setMyHp(3);
+    setRivalHp(3);
+    setRound(1);
+    setPhase('serve');
+    setStarted(true);
+    setLog('राउंड 1: Crocodile Chef को कौन-सी डिश परोसें? (मिर्च से झाँसा दें या सुरक्षित केक चुनें!)');
+  };
+
+  const finishCafe = (didWin: boolean, msg: string) => {
+    setStarted(false);
+    onFinishMatch(didWin ? 'win' : 'loss', didWin ? 110 : 35, msg);
+  };
+
+  const handleServeDish = (dish: typeof CAFE_DISHES[number]) => {
+    const rivalCallsTrap = Math.random() < (dish.isTrap ? 0.42 : 0.32);
+    if (rivalCallsTrap) {
+      if (dish.isTrap) {
+        const nextMe = myHp - 1;
+        setMyHp(nextMe);
+        if (nextMe <= 0) {
+          finishCafe(false, '🐊 Chef ने आपकी Poison Chili पकड़ ली! अगली बार चालाकी से सर्व करें।');
+          return;
+        }
+        setLog('💥 Chef ने आपकी Poison Chili पहचान ली (-1 ❤️)! अब Chef की डिश जांचें:');
+      } else {
+        const nextRiv = rivalHp - 1;
+        setRivalHp(nextRiv);
+        if (nextRiv <= 0) {
+          finishCafe(true, `🏆 Chef ने आपकी सुरक्षित मिठाई पर गलत "TRAP!" बोला! (+${mode === 'pro' ? winCoins : 'Free'} Coins)`);
+          return;
+        }
+        setLog('🎉 Chef ने गलत शक किया! उसे -1 ❤️ लगा। अब Chef की ढकी डिश जांचें:');
+      }
+    } else {
+      if (dish.isTrap) {
+        const nextRiv = rivalHp - 1;
+        setRivalHp(nextRiv);
+        if (nextRiv <= 0) {
+          finishCafe(true, '🔥 वाह! Crocodile Chef ने Poison Chili खा ली — आपने Trickster Cafe जीत लिया!');
+          return;
+        }
+        setLog('🌶️ बूम! Chef आपकी Poison Chili खा गया (-1 ❤️)! अब Chef की बारी:');
+      } else {
+        setLog(`✅ Chef ने ${dish.label} मज़े से खाई! अब Chef ने आपके लिए एक डिश रखी है:`);
+      }
+    }
+    setRivalDishTrap(Math.random() < 0.48);
+    setPhase('judge');
+  };
+
+  const handleJudgeChefDish = (action: 'eat' | 'trap') => {
+    let nextMe = myHp;
+    let nextRiv = rivalHp;
+    let note = '';
+
+    if (action === 'eat') {
+      if (rivalDishTrap) {
+        nextMe -= 1;
+        note = '🔥 ओह! ढकी डिश Poison Chili थी (-1 ❤️)!';
+      } else {
+        note = '😋 सुरक्षित! स्वादिष्ट केक खाया!';
+      }
+    } else {
+      if (rivalDishTrap) {
+        nextRiv -= 1;
+        note = '🚨 सही पकड़ा! Chef ने Trap छिपाया था — Chef को -1 ❤️!';
+      } else {
+        nextMe -= 1;
+        note = '😬 अरे, वह असली केक था — गलत शक से -1 ❤️!';
+      }
+    }
+
+    setMyHp(nextMe);
+    setRivalHp(nextRiv);
+
+    if (nextRiv <= 0) {
+      finishCafe(true, `🏆 ${note} आपने Crocodile Chef को हरा दिया!`);
+      return;
+    }
+    if (nextMe <= 0) {
+      finishCafe(false, `${note} आपकी HP खत्म हो गई!`);
+      return;
+    }
+
+    if (round >= 5) {
+      finishCafe(nextMe >= nextRiv, `🍰 5 राउंड समाप्त (${nextMe} vs ${nextRiv}) — ${nextMe >= nextRiv ? 'आपकी जीत!' : 'Chef जीता!'}`);
+      return;
+    }
+
+    setRound(r => r + 1);
+    setPhase('serve');
+    setLog(`${note} राउंड ${round + 1}: अपनी डिश चुनें!`);
+  };
+
+  if (!started) {
+    return (
+      <div className="space-y-3 text-center">
+        <div className="p-4 rounded-xl bg-gradient-to-br from-[#991b1b] to-[#450a0a] text-white space-y-1.5">
+          <div className="text-3xl">🐊🍰🌶️</div>
+          <h4 className="text-sm font-black">Trickster&apos;s Cafe — Bluff Dessert Table</h4>
+          <p className="text-[11px] text-amber-100">
+            Crocodile Chef को मिर्च से झाँसा दें या सुरक्षित केक परोसें — फिर उसकी ढकी प्लेट पर &quot;EAT&quot; या &quot;TRAP!&quot; चुनें!
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startCafe}
+          className="btn-3d w-full py-3 rounded-xl bg-[#fb641b] text-white font-black text-sm cursor-pointer"
+        >
+          ▶ Enter Trickster&apos;s Cafe ({mode === 'pro' ? 'Pro' : 'Free Match'})
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl px-3.5 py-2 text-xs">
+        <span>Chef 🐊: <strong className="text-rose-400">{'❤️'.repeat(Math.max(0, rivalHp))}</strong></span>
+        <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-black">Round {round}/5</span>
+        <span>{userName.split(' ')[0]}: <strong className="text-emerald-400">{'❤️'.repeat(Math.max(0, myHp))}</strong></span>
+      </div>
+
+      <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 text-center">
+        {log}
+      </div>
+
+      {phase === 'serve' ? (
+        <div className="grid grid-cols-3 gap-2">
+          {CAFE_DISHES.map(d => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => handleServeDish(d)}
+              className="btn-3d p-3 rounded-xl bg-white border border-slate-200 hover:border-[#fb641b] text-center space-y-1 cursor-pointer"
+            >
+              <span className="text-2xl block">{d.label.split(' ')[0]}</span>
+              <span className="text-[11px] font-black text-slate-800 block leading-tight">
+                {d.label.split(' ').slice(1).join(' ')}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-3">
+          <div className="text-3xl">🍽️❓</div>
+          <p className="text-xs font-black text-slate-800">Crocodile Chef ने आपके सामने ढकी प्लेट रखी है!</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => handleJudgeChefDish('eat')}
+              className="btn-3d py-2.5 rounded-xl bg-[#388e3c] text-white font-black text-xs cursor-pointer"
+            >
+              😋 खाएं (Safe Sweet)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleJudgeChefDish('trap')}
+              className="btn-3d py-2.5 rounded-xl bg-rose-600 text-white font-black text-xs cursor-pointer"
+            >
+              🚨 TRAP! (Chili Bluff)
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================================
+   9. WORD BOMB — Fast-Paced Ticking Fuse Word Challenge
+   ============================================================================ */
+const BOMB_PROMPTS: Array<{ syl: string; examples: string[] }> = [
+  { syl: 'IN', examples: ['win', 'spin', 'coin', 'king', 'line', 'india', 'mind', 'rain', 'sing', 'bring', 'into', 'fine'] },
+  { syl: 'AR', examples: ['star', 'card', 'smart', 'part', 'park', 'hard', 'start', 'dark', 'mark', 'car', 'far', 'heart'] },
+  { syl: 'ST', examples: ['fast', 'best', 'star', 'test', 'stop', 'stay', 'first', 'last', 'list', 'post', 'west', 'trust'] },
+  { syl: 'ON', examples: ['one', 'done', 'song', 'long', 'moon', 'soon', 'stone', 'tone', 'zone', 'phone', 'money', 'bonus'] },
+  { syl: 'ER', examples: ['player', 'winner', 'water', 'super', 'silver', 'power', 'tiger', 'paper', 'better', 'never', 'after'] },
+  { syl: 'AN', examples: ['plan', 'game', 'land', 'hand', 'band', 'stand', 'can', 'man', 'sand', 'grand', 'dance', 'rank'] },
+  { syl: 'OR', examples: ['gold', 'word', 'work', 'more', 'door', 'score', 'storm', 'born', 'corn', 'world', 'story', 'sport'] },
+  { syl: 'AT', examples: ['chat', 'fast', 'cat', 'bat', 'hat', 'match', 'watch', 'late', 'rate', 'mate', 'water', 'plate'] },
+];
+
+export const WordBombEngine: React.FC<PlayableEngineProps> = ({
+  mode,
+  winCoins,
+  onStartMatch,
+  onFinishMatch,
+}) => {
+  const [started, setStarted] = useState(false);
+  const [promptIdx, setPromptIdx] = useState(0);
+  const [fuse, setFuse] = useState(12);
+  const [wordInput, setWordInput] = useState('');
+  const [usedWords, setUsedWords] = useState<string[]>([]);
+  const [score, setScore] = useState(0);
+  const [myHearts, setMyHearts] = useState(3);
+  const [rivalHearts, setRivalHearts] = useState(2);
+  const [statusMsg, setStatusMsg] = useState('');
+
+  const curPrompt = BOMB_PROMPTS[promptIdx % BOMB_PROMPTS.length];
+
+  const startBomb = async () => {
+    const ok = await onStartMatch();
+    if (!ok) return;
+    setPromptIdx(Math.floor(Math.random() * BOMB_PROMPTS.length));
+    setFuse(12);
+    setWordInput('');
+    setUsedWords([]);
+    setScore(0);
+    setMyHearts(3);
+    setRivalHearts(2);
+    setStatusMsg('💣 टाइम खत्म होने से पहले दिए गए अक्षरों वाला शब्द लिखें!');
+    setStarted(true);
+  };
+
+  useEffect(() => {
+    if (!started) return;
+    const t = window.setInterval(() => {
+      setFuse(prev => {
+        if (prev <= 1) {
+          setMyHearts(h => {
+            const nextH = h - 1;
+            if (nextH <= 0) {
+              setStarted(false);
+              onFinishMatch('loss', score, '💥 समय समाप्त! बम फट गया — अगली बार तेज़ी से टाइप करें!');
+              return 0;
+            }
+            setPromptIdx(p => (p + 1) % BOMB_PROMPTS.length);
+            setStatusMsg('💥 बम फटा (-1 ❤️)! नया अक्षर तैयार है!');
+            return nextH;
+          });
+          return 12;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [started, score, onFinishMatch]);
+
+  const handleWordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!started) return;
+    const clean = wordInput.trim().toLowerCase().replace(/[^a-z]/g, '');
+    if (clean.length < 3) {
+      setStatusMsg('कम से कम 3 अक्षरों का अंग्रेजी शब्द लिखें!');
+      return;
+    }
+    if (!clean.includes(curPrompt.syl.toLowerCase())) {
+      setStatusMsg(`शब्द में "${curPrompt.syl}" होना ज़रूरी है!`);
+      return;
+    }
+    if (usedWords.includes(clean)) {
+      setStatusMsg('यह शब्द पहले इस्तेमाल हो चुका है — नया शब्द लिखें!');
+      return;
+    }
+
+    const nextUsed = [...usedWords, clean];
+    const nextScore = score + clean.length * 10;
+    setUsedWords(nextUsed);
+    setScore(nextScore);
+    setWordInput('');
+
+    // Rival takes turn with a chance to fumble under pressure
+    const rivalFumbles = Math.random() < 0.34;
+    if (rivalFumbles) {
+      const nextRiv = rivalHearts - 1;
+      setRivalHearts(nextRiv);
+      if (nextRiv <= 0) {
+        setStarted(false);
+        onFinishMatch(
+          'win',
+          nextScore + 50,
+          `💣🔥 "${clean.toUpperCase()}" शानदार! राइवल शब्द नहीं ढूंढ पाया — आपने Word Bomb जीता! (+${mode === 'pro' ? winCoins : 'Free'} Coins)`
+        );
+        return;
+      }
+      setStatusMsg(`✅ "${clean.toUpperCase()}" पास हुआ! राइवल चूक गया (-1 ❤️)!`);
+    } else {
+      const sample = curPrompt.examples.find(w => !nextUsed.includes(w)) || curPrompt.examples[0];
+      setStatusMsg(`✅ आपने "${clean.toUpperCase()}" भेजा · राइवल ने "${sample.toUpperCase()}" भेजा! आपकी बारी:`);
+    }
+
+    setPromptIdx(p => (p + 1 + Math.floor(Math.random() * 3)) % BOMB_PROMPTS.length);
+    setFuse(12);
+  };
+
+  if (!started) {
+    return (
+      <div className="space-y-3 text-center">
+        <div className="p-4 rounded-xl bg-gradient-to-br from-[#dc2626] to-[#7f1d1d] text-white space-y-1.5">
+          <div className="text-3xl">💣🔥</div>
+          <h4 className="text-sm font-black">Word Bomb — Live Fuse Challenge</h4>
+          <p className="text-[11px] text-rose-100">
+            स्क्रीन पर दिखने वाले अक्षर (जैसे ST, AR, IN) से जुड़ा कोई भी अंग्रेजी शब्द 12 सेकंड में टाइप करें और बम पास करें!
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startBomb}
+          className="btn-3d w-full py-3 rounded-xl bg-[#fb641b] text-white font-black text-sm cursor-pointer"
+        >
+          ▶ Start Word Bomb ({mode === 'pro' ? 'Pro' : 'Free Match'})
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl px-3.5 py-2 text-xs">
+        <span>Rival: <strong className="text-rose-400">{'❤️'.repeat(Math.max(0, rivalHearts))}</strong></span>
+        <span className="font-black text-[#ffe500] tabular-nums">Score: {score}</span>
+        <span>You: <strong className="text-emerald-400">{'❤️'.repeat(Math.max(0, myHearts))}</strong></span>
+      </div>
+
+      <div className="p-4 rounded-xl bg-slate-950 text-white text-center space-y-2 relative overflow-hidden">
+        <div className="flex items-center justify-center gap-2">
+          <span className={`text-3xl ${fuse <= 4 ? 'animate-bounce' : ''}`}>💣</span>
+          <span className={`text-xl font-black tabular-nums ${fuse <= 4 ? 'text-rose-400' : 'text-[#ffe500]'}`}>
+            {fuse}s
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-300">इस अक्षर वाला शब्द टाइप करें:</p>
+        <div className="inline-block px-6 py-2 rounded-xl bg-[#fb641b] text-white font-black text-2xl tracking-widest shadow-lg">
+          {curPrompt.syl}
+        </div>
+      </div>
+
+      <p className="text-xs font-bold text-center text-slate-700">{statusMsg}</p>
+
+      <form onSubmit={handleWordSubmit} className="flex gap-2">
+        <input
+          type="text"
+          value={wordInput}
+          onChange={e => setWordInput(e.target.value)}
+          placeholder={`"${curPrompt.syl}" वाला शब्द लिखें (उदा. ${curPrompt.examples[0]})`}
+          autoFocus
+          className="flex-1 bg-white border border-slate-300 focus:border-[#2874f0] rounded-xl px-3 py-2.5 text-sm font-bold outline-none"
+        />
+        <button
+          type="submit"
+          className="btn-3d px-4 py-2.5 rounded-xl bg-[#2874f0] text-white font-black text-xs cursor-pointer"
+        >
+          PASS 💣
+        </button>
+      </form>
+    </div>
+  );
+};
+
+/* ============================================================================
+   10. LIAR'S DICE — 5-Dice Cup Roll & Bluff Bidding Arena
+   ============================================================================ */
+const rollDice5 = () => Array.from({ length: 5 }, () => 1 + Math.floor(Math.random() * 6));
+const DIE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+export const LiarsDiceEngine: React.FC<PlayableEngineProps> = ({
+  mode,
+  winCoins,
+  onStartMatch,
+  onFinishMatch,
+}) => {
+  const [started, setStarted] = useState(false);
+  const [myDice, setMyDice] = useState<number[]>([]);
+  const [rivalDice, setRivalDice] = useState<number[]>([]);
+  const [bidCount, setBidCount] = useState(2);
+  const [bidFace, setBidFace] = useState(4);
+  const [currentBid, setCurrentBid] = useState<{ by: 'you' | 'rival'; count: number; face: number } | null>(null);
+  const [myHp, setMyHp] = useState(3);
+  const [rivalHp, setRivalHp] = useState(3);
+  const [log, setLog] = useState('');
+
+  const rollNewCup = () => {
+    setMyDice(rollDice5());
+    setRivalDice(rollDice5());
+    setCurrentBid(null);
+    setBidCount(2);
+    setBidFace(3);
+  };
+
+  const startDice = async () => {
+    const ok = await onStartMatch();
+    if (!ok) return;
+    setMyHp(3);
+    setRivalHp(3);
+    rollNewCup();
+    setLog('🎲 अपने 5 पासे देखें और कुल 10 पासों पर पहली बोली (Bid) लगाएं!');
+    setStarted(true);
+  };
+
+  const countMatching = (diceA: number[], diceB: number[], face: number) =>
+    [...diceA, ...diceB].filter(d => d === face || d === 1).length;
+
+  const endDice = (win: boolean, msg: string) => {
+    setStarted(false);
+    onFinishMatch(win ? 'win' : 'loss', win ? 120 : 40, msg);
+  };
+
+  const handlePlaceBid = () => {
+    if (
+      currentBid &&
+      (bidCount < currentBid.count || (bidCount === currentBid.count && bidFace <= currentBid.face))
+    ) {
+      setLog(`बोली पिछली बोली (${currentBid.count}x ${DIE_FACES[currentBid.face]}) से बड़ी होनी चाहिए!`);
+      return;
+    }
+
+    const yourBid = { by: 'you' as const, count: bidCount, face: bidFace };
+    setCurrentBid(yourBid);
+
+    // Rival calls bluff if bid is high, else raises
+    const totalMatches = countMatching(myDice, rivalDice, bidFace);
+    const shouldCall = bidCount >= 5 || (bidCount >= 4 && Math.random() < 0.55);
+
+    if (shouldCall) {
+      if (totalMatches >= bidCount) {
+        const nextRiv = rivalHp - 1;
+        setRivalHp(nextRiv);
+        if (nextRiv <= 0) {
+          endDice(true, `🎲 राइवल ने चुनौती दी पर कुल ${totalMatches}x मिले! आपने Liar's Dice जीता! (+${mode === 'pro' ? winCoins : 'Free'} Coins)`);
+          return;
+        }
+        rollNewCup();
+        setLog(`✅ सच निकला (${totalMatches}x)! राइवल को -1 ❤️ लगा। नया कप रोल हुआ!`);
+      } else {
+        const nextMe = myHp - 1;
+        setMyHp(nextMe);
+        if (nextMe <= 0) {
+          endDice(false, `💥 राइवल ने ब्लफ पकड़ लिया (${bidCount} बोले, केवल ${totalMatches} निकले)!`);
+          return;
+        }
+        rollNewCup();
+        setLog(`😱 पकड़े गए (${totalMatches}x थे)! आपको -1 ❤️। नया कप रोल हुआ!`);
+      }
+      return;
+    }
+
+    const rCount = bidFace >= 6 ? bidCount + 1 : Math.random() < 0.5 ? bidCount : bidCount + 1;
+    const rFace = rCount > bidCount ? 2 + Math.floor(Math.random() * 4) : Math.min(6, bidFace + 1);
+    setCurrentBid({ by: 'rival', count: rCount, face: rFace });
+    setBidCount(rCount);
+    setBidFace(rFace < 6 ? rFace + 1 : rFace);
+    setLog(`🎲 राइवल ने बोली बढ़ाई: ${rCount}x ${DIE_FACES[rFace]}! बोली बढ़ाएं या CALL BLUFF दबाएं!`);
+  };
+
+  const handleCallBluff = () => {
+    if (!currentBid || currentBid.by !== 'rival') return;
+    const actual = countMatching(myDice, rivalDice, currentBid.face);
+    if (actual < currentBid.count) {
+      const nextRiv = rivalHp - 1;
+      setRivalHp(nextRiv);
+      if (nextRiv <= 0) {
+        endDice(true, `🏆 पकड़ा! राइवल ने ${currentBid.count}x मांगे पर केवल ${actual}x निकले! आपकी जीत!`);
+        return;
+      }
+      rollNewCup();
+      setLog(`🔥 शानदार CALL! केवल ${actual}x थे — राइवल को -1 ❤️! नया कप रोल हुआ!`);
+    } else {
+      const nextMe = myHp - 1;
+      setMyHp(nextMe);
+      if (nextMe <= 0) {
+        endDice(false, `😬 राइवल सच बोल रहा था (${actual}x मौजूद थे)!`);
+        return;
+      }
+      rollNewCup();
+      setLog(`❌ राइवल सच निकला (${actual}x मौजूद थे)! आपको -1 ❤️। नया कप रोल हुआ!`);
+    }
+  };
+
+  if (!started) {
+    return (
+      <div className="space-y-3 text-center">
+        <div className="p-4 rounded-xl bg-gradient-to-br from-[#0f766e] to-[#115e59] text-white space-y-1.5">
+          <div className="text-3xl">🎲🥛</div>
+          <h4 className="text-sm font-black">Liar&apos;s Dice — 5-Dice Cup Bluff</h4>
+          <p className="text-[11px] text-teal-100">
+            10 कुल पासों (5 आपके + 5 राइवल के, ⚀ Wild है) पर बोली लगाएं या राइवल का ब्लफ पकड़ें!
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startDice}
+          className="btn-3d w-full py-3 rounded-xl bg-[#fb641b] text-white font-black text-sm cursor-pointer"
+        >
+          ▶ Shake Dice Cup ({mode === 'pro' ? 'Pro' : 'Free Match'})
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl px-3.5 py-2 text-xs">
+        <span>Rival ❤️: <strong className="text-rose-400">{'❤️'.repeat(Math.max(0, rivalHp))}</strong></span>
+        <span className="text-[11px] text-[#ffe500] font-bold">⚀ = Wild Joker</span>
+        <span>You ❤️: <strong className="text-emerald-400">{'❤️'.repeat(Math.max(0, myHp))}</strong></span>
+      </div>
+
+      <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center space-y-2">
+        <p className="text-[11px] font-bold text-teal-900">आपके कप के 5 गुप्त पासे:</p>
+        <div className="flex items-center justify-center gap-2 text-3xl sm:text-4xl">
+          {myDice.map((d, i) => (
+            <span key={i} className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white border border-teal-300 shadow-xs flex items-center justify-center">
+              {DIE_FACES[d]}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs font-bold text-center text-slate-700">{log}</p>
+
+      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <label className="font-bold block mb-1">कुल संख्या (Count):</label>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setBidCount(c => Math.max(1, c - 1))}
+                className="btn-3d px-3 py-1.5 rounded bg-white border border-slate-300 font-black cursor-pointer"
+              >
+                -
+              </button>
+              <span className="flex-1 text-center font-black text-base tabular-nums">{bidCount}x</span>
+              <button
+                type="button"
+                onClick={() => setBidCount(c => Math.min(10, c + 1))}
+                className="btn-3d px-3 py-1.5 rounded bg-white border border-slate-300 font-black cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold block mb-1">पासा नंबर (Face):</label>
+            <div className="grid grid-cols-5 gap-1">
+              {[2, 3, 4, 5, 6].map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setBidFace(f)}
+                  className={`btn-3d py-1 rounded text-lg leading-none cursor-pointer ${
+                    bidFace === f ? 'bg-[#2874f0] text-white' : 'bg-white border border-slate-300'
+                  }`}
+                >
+                  {DIE_FACES[f]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handlePlaceBid}
+            className="btn-3d flex-1 py-2.5 rounded-xl bg-[#2874f0] text-white font-black text-xs cursor-pointer"
+          >
+            Bid: {bidCount}x {DIE_FACES[bidFace]}
+          </button>
+          {currentBid && currentBid.by === 'rival' && (
+            <button
+              type="button"
+              onClick={handleCallBluff}
+              className="btn-3d px-4 py-2.5 rounded-xl bg-rose-600 text-white font-black text-xs cursor-pointer"
+            >
+              🚨 CALL BLUFF!
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+

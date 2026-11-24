@@ -99,6 +99,7 @@ import { DigitalGiftCardsModal } from '../components/DigitalGiftCardsModal.tsx';
 import { DailyTasks } from '../components/DailyTasks.tsx';
 import { EspChatModal } from '../components/EspChatModal.tsx';
 import { InteractiveGameArenaModal, type GameKey } from '../components/games/InteractiveGameArenaModal.tsx';
+import { EspTypingAcademy } from '../components/games/EspTypingAcademy.tsx';
 import { COIN_RECHARGE_PACKS } from '../config/economy.ts';
 import { CreditCard as CreditCardIcon } from 'lucide-react';
 import { showToast } from '../services/toast.ts';
@@ -287,6 +288,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   // 8D Interactive Game Arena Modal State
   const [activeInteractiveGame, setActiveInteractiveGame] = useState<GameKey | null>(null);
   const [activeBoardGameModal, setActiveBoardGameModal] = useState<'bingo' | 'cards' | 'snake' | null>(null);
+  const [showTypingAcademyModal, setShowTypingAcademyModal] = useState(false);
 
   useEffect(() => {
     onSubTabChange?.(activeTab);
@@ -2698,6 +2700,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               isAdmin={isAdmin}
               onOpenAdmin={onOpenAdmin}
               onLogout={onLogout}
+              onOpenTypingAcademy={() => setShowTypingAcademyModal(true)}
             />
           </div>
         )}
@@ -4781,6 +4784,14 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           }}
         />
       )}
+
+      {/* 25. ESP Typing Academy (15 Lessons, 60s WPM Test, Finger Guide) */}
+      <EspTypingAcademy
+        isOpen={showTypingAcademyModal}
+        onClose={() => setShowTypingAcademyModal(false)}
+        user={user}
+        onUpdateUser={onUpdateUser}
+      />
     </div>
   );
 };

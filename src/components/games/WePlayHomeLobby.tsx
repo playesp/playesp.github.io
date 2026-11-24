@@ -183,7 +183,18 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
       const claimableTask = Boolean(
         tasksData?.tasks?.some((t: any) => t.isCompleted && !t.isClaimed)
       );
-      setHasPendingTasks(canClaimCheckIn || claimableTask);
+      const claimableActChest = Boolean(
+        tasksData?.activenessChests?.some((c: any) => c.isUnlocked && !c.isClaimed)
+      );
+      const claimableGrowth = Boolean(
+        tasksData?.growthTasks?.some((g: any) => g.isCompleted && !g.isClaimed)
+      );
+      const claimableFamily = Boolean(
+        tasksData?.familyTasks?.some((f: any) => f.isCompleted && !f.isClaimed)
+      );
+      setHasPendingTasks(
+        canClaimCheckIn || claimableTask || claimableActChest || claimableGrowth || claimableFamily
+      );
     } catch {
       // keep silent
     }
@@ -349,9 +360,10 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
         <button
           type="button"
           onClick={onOpenTasks}
-          className="flex flex-col items-center cursor-pointer group transition"
+          aria-label="Open Daily, Growth & Family Tasks"
+          className="flex flex-col items-center cursor-pointer group transition min-h-[44px]"
         >
-          <div className="relative w-12 h-12 min-[380px]:w-14 min-[380px]:h-14 sm:w-15 sm:h-15 rounded-full bg-gradient-to-br from-fuchsia-500 via-pink-500 to-purple-600 border-2 border-white shadow-md group-hover:scale-105 transition flex items-center justify-center">
+          <div className="relative w-12 h-12 min-[380px]:w-14 min-[380px]:h-14 sm:w-15 sm:h-15 rounded-full bg-gradient-to-br from-[#68cb55] via-[#57ba47] to-[#3f9c35] border-2 border-white shadow-md group-hover:scale-105 group-active:scale-95 transition flex items-center justify-center">
             <span className="text-xl min-[380px]:text-2xl">🎟️</span>
             {hasPendingTasks && (
               <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-rose-500 border-2 border-white animate-pulse" />

@@ -43,6 +43,16 @@ service cloud.firestore {
       return val is string && val.size() >= 3 && val.size() <= 24 && val.matches('^[a-z0-9]+$');
     }
 
+    function isValidWorkspaceState(ws) {
+      return ws is map &&
+        ws.keys().hasOnly(['lastTab', 'lastGamingSubTab', 'lastDashboardTab', 'lastRoomAddress', 'updatedAt']) &&
+        (!('lastTab' in ws) || isValidString(ws.lastTab, 0, 48)) &&
+        (!('lastGamingSubTab' in ws) || isValidString(ws.lastGamingSubTab, 0, 48)) &&
+        (!('lastDashboardTab' in ws) || isValidString(ws.lastDashboardTab, 0, 48)) &&
+        (!('lastRoomAddress' in ws) || isValidString(ws.lastRoomAddress, 0, 24)) &&
+        (!('updatedAt' in ws) || isValidString(ws.updatedAt, 0, 64));
+    }
+
     function isValidUserProfile(data) {
       return data.keys().hasAll(['userId', 'authUid', 'fullName', 'phone', 'email', 'status', 'role', 'createdAt']) &&
         data.keys().hasOnly([
@@ -53,7 +63,9 @@ service cloud.firestore {
           'referralEarnings', 'totalWithdrawn', 'coins', 'charms',
           'gameLevel', 'gameXp', 'vipTier', 'unlockedFrames', 'frameType',
           'tasksCompletedCount', 'clanName', 'avatar', 'coverPhoto', 'bio',
-          'gender', 'location', 'friendsList', 'role', 'createdAt', 'updatedAt'
+          'gender', 'location', 'friendsList', 'gamingId', 'personalRoomId',
+          'roomAddress', 'todayActiveness', 'loginStreak', 'claimedDays',
+          'lastDailyCheckInDate', 'workspaceState', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.authUid, 1, 128) &&
@@ -94,6 +106,14 @@ service cloud.firestore {
         (!('gender' in data) || isValidString(data.gender, 0, 24)) &&
         (!('location' in data) || isValidString(data.location, 0, 100)) &&
         (!('friendsList' in data) || (data.friendsList is list && data.friendsList.size() <= 500 && (data.friendsList.size() == 0 || data.friendsList[0] is string))) &&
+        (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
+        (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
+        (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('todayActiveness' in data) || (data.todayActiveness is number && data.todayActiveness >= 0)) &&
+        (!('loginStreak' in data) || (data.loginStreak is number && data.loginStreak >= 0)) &&
+        (!('claimedDays' in data) || (data.claimedDays is list && data.claimedDays.size() <= 7)) &&
+        (!('lastDailyCheckInDate' in data) || isValidString(data.lastDailyCheckInDate, 0, 32)) &&
+        (!('workspaceState' in data) || isValidWorkspaceState(data.workspaceState)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -102,8 +122,8 @@ service cloud.firestore {
         data.keys().hasOnly([
           'userId', 'authUid', 'username', 'fullName', 'avatar', 'coverPhoto',
           'bio', 'gender', 'location', 'frameType', 'vipTier',
-          'gameLevel', 'gameXp', 'charms', 'coins', 'clanName', 'friendsCount',
-          'isPublic', 'updatedAt'
+          'gameLevel', 'gameXp', 'charms', 'coins', 'clanName', 'personalRoomId', 'roomAddress',
+          'friendsCount', 'isPublic', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.authUid, 1, 128) &&
@@ -122,6 +142,8 @@ service cloud.firestore {
         (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
         (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
         (!('clanName' in data) || isValidString(data.clanName, 0, 100)) &&
+        (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
+        (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
         (!('friendsCount' in data) || (data.friendsCount is number && data.friendsCount >= 0)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
@@ -285,7 +307,14 @@ service cloud.firestore {
         isAdmin()
       );
       allow update: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) && (
-        isAdmin() ||
+        (
+          isAdmin() &&
+          incoming().userId == existing().userId &&
+          (!('sponsorId' in existing()) || existing().sponsorId == '' || incoming().sponsorId == existing().sponsorId) &&
+          (!('personalRoomId' in existing()) || existing().personalRoomId == '' || incoming().personalRoomId == existing().personalRoomId) &&
+          (!('roomAddress' in existing()) || existing().roomAddress == '' || incoming().roomAddress == existing().roomAddress) &&
+          (!('gamingId' in existing()) || existing().gamingId == '' || incoming().gamingId == existing().gamingId)
+        ) ||
         (
           existing().authUid == request.auth.uid &&
           incoming().authUid == existing().authUid &&
@@ -293,10 +322,15 @@ service cloud.firestore {
           incoming().createdAt == existing().createdAt &&
           incoming().role == existing().role &&
           incoming().status == existing().status &&
+          (!('sponsorId' in existing()) || incoming().sponsorId == existing().sponsorId) &&
+          (!('sponsorName' in existing()) || incoming().sponsorName == existing().sponsorName) &&
+          (!('personalRoomId' in existing()) || existing().personalRoomId == '' || incoming().personalRoomId == existing().personalRoomId) &&
+          (!('roomAddress' in existing()) || existing().roomAddress == '' || incoming().roomAddress == existing().roomAddress) &&
+          (!('gamingId' in existing()) || existing().gamingId == '' || incoming().gamingId == existing().gamingId) &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'username', 'fullName', 'fullAddress', 'paymentAddress', 'payoutUpiId',
             'avatar', 'coverPhoto', 'bio', 'gender', 'location', 'friendsList',
-            'clanName', 'accountType', 'updatedAt'
+            'clanName', 'accountType', 'workspaceState', 'updatedAt'
           ])
         )
       );

@@ -40,9 +40,18 @@ export interface EditAuditRecord {
   newValue: string;
 }
 
+export interface UserWorkspaceState {
+  lastTab?: string;
+  lastGamingSubTab?: string;
+  lastDashboardTab?: string;
+  lastRoomAddress?: string;
+  updatedAt?: string;
+}
+
 export interface UserSession {
   sessionId: string;
   token: string;
+  deviceId?: string;
   deviceType: 'mobile' | 'desktop' | 'tablet' | 'unknown';
   deviceName: string; // e.g. "Android Mobile (Chrome)", "Windows PC (Chrome)", "iPhone (Safari)"
   browser: string;
@@ -50,6 +59,7 @@ export interface UserSession {
   ipAddress?: string;
   loginTime: string;
   lastActive: string;
+  lastTab?: string;
   isCurrent?: boolean;
 }
 
@@ -125,19 +135,25 @@ export interface UserProfile {
   vipTitle?: string;
   vipPurchasedAt?: string;
 
-  // Real Server-Verified Daily Task System
+  // Real Server-Verified Daily Task System (Daily, Activeness Chests, Growth & Family)
   taskProgress?: Record<string, number>; // Tracks verified counts by TaskEventType or date
   taskProgressDate?: string; // YYYY-MM-DD reset tracker for daily tasks
   claimedTaskIds?: string[]; // Task IDs claimed for current date
   tasksCompletedCount?: number; // Cumulative count of completed tasks
   claimedChestMilestones?: string[]; // Unlocked milestone chest IDs for current date
+  todayActiveness?: number; // Daily activeness points (0 - 100+, resets 12:00 AM IST)
+  claimedActivenessChests?: number[]; // Thresholds claimed today: [10, 40, 70, 100]
+  claimedGrowthTaskIds?: string[]; // Permanent one-time Growth achievement task IDs claimed
+  claimedFamilyTaskIds?: string[]; // Daily Family task IDs claimed for current date
   
   // Privacy Settings (Default masked on public views)
   privacySettings?: PrivacySettings;
 
-  // Active Multi-Device Sessions
+  // Active Multi-Device Sessions (Max 4 devices per account)
   activeSessions?: UserSession[];
   terminatedTokens?: string[];
+  maxDevices?: number;
+  workspaceState?: UserWorkspaceState;
 
   // Initial Form Data Backup (Admin audit)
   initialFormData?: {
@@ -208,6 +224,10 @@ export interface UserProfile {
   dailyFreeGamesPlayed?: number;
   coinBoosterUntil?: string; // ISO timestamp for 2x Game Coin & EXP Surge Pass
   streakShields?: number; // Purchased with Coins to protect 7-day check-in streak
+
+  // Referral Link Click Tracking
+  referralClicks?: number;
+  referralClickHistory?: Array<{ date: string; count: number }>;
 }
 
 export interface HomeSliderPhoto {
@@ -964,6 +984,7 @@ export interface RealTaskStatus {
   hindiTitle: string;
   description: string;
   coinReward: number;
+  activenessReward?: number;
   xpReward: number;
   targetCount: number;
   currentProgress: number;
@@ -972,6 +993,43 @@ export interface RealTaskStatus {
   icon: string;
   actionTab: string;
   actionLabel: string;
+}
+
+export interface ActivenessChestStatus {
+  threshold: number;
+  label: string;
+  coinReward: number;
+  xpReward: number;
+  tierColor: 'green' | 'blue' | 'gold' | 'royal';
+  isUnlocked: boolean;
+  isClaimed: boolean;
+}
+
+export interface GrowthTaskStatus {
+  id: string;
+  title: string;
+  description: string;
+  coinReward: number;
+  xpReward: number;
+  currentProgress: number;
+  targetCount: number;
+  isCompleted: boolean;
+  isClaimed: boolean;
+  actionTab: string;
+}
+
+export interface FamilyTaskStatus {
+  id: string;
+  title: string;
+  description: string;
+  coinReward: number;
+  activenessReward: number;
+  xpReward: number;
+  currentProgress: number;
+  targetCount: number;
+  isCompleted: boolean;
+  isClaimed: boolean;
+  actionTab: string;
 }
 
 export interface ProfileAuditRecord {
@@ -1002,3 +1060,35 @@ export interface OnlineActivitySession {
   ipAddress?: string;
   status: 'online' | 'offline';
 }
+
+export interface TopReferrerEntry {
+  rank: number;
+  userId: string;
+  username?: string;
+  fullName: string;
+  avatar?: string;
+  vipTier?: string;
+  gameLevel: number;
+  chosenServiceCode: string;
+  totalReferrals: number;
+  convertedReferrals: number;
+  pendingReferrals: number;
+  totalClicks: number;
+  conversionRate: number;
+  referralEarnings: number;
+}
+
+export interface AdminSession {
+  sessionId: string;
+  token?: string;
+  deviceId?: string;
+  deviceType: 'mobile' | 'desktop' | 'tablet' | 'unknown';
+  deviceName: string;
+  browser: string;
+  os: string;
+  ipAddress?: string;
+  loginTime: string;
+  lastActive: string;
+  isCurrent?: boolean;
+}
+

@@ -14,8 +14,11 @@ import {
   Gamepad2,
   Briefcase,
   ShieldCheck,
+  Monitor,
+  LogOut,
+  RefreshCw,
 } from 'lucide-react';
-import type { UserProfile } from '../types/index.ts';
+import type { UserProfile, UserSession } from '../types/index.ts';
 import { api } from '../services/api.ts';
 
 interface LoginModalProps {
@@ -66,11 +69,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [deviceConflictSessions, setDeviceConflictSessions] = useState<UserSession[] | null>(null);
+  const [deviceConflictMax, setDeviceConflictMax] = useState<number>(4);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedDestination(initialDestination);
       setErrorMsg(null);
+      setDeviceConflictSessions(null);
     }
   }, [isOpen, initialDestination]);
 
@@ -79,6 +85,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const switchMode = (nextMode: ModalMode) => {
     setMode(nextMode);
     setErrorMsg(null);
+    setDeviceConflictSessions(null);
     setFoundAccount(null);
     setResetSuccessMsg(null);
     if (nextMode === 'forget-password' && identifier && !resetIdentifier) {
@@ -86,19 +93,31 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const attemptLogin = async (opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const user = await api.login(identifier.trim(), password);
+      const user = await api.login(identifier.trim(), password, opts);
+      setDeviceConflictSessions(null);
       onLoginSuccess(user, selectedDestination);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'लॉगिन असफल रहा। कृपया अपना आईडी/मोबाइल व पासवर्ड जांचें।');
+      if (err?.code === 'DEVICE_LIMIT_REACHED' && Array.isArray(err.activeSessions)) {
+        setDeviceConflictSessions(err.activeSessions);
+        setDeviceConflictMax(err.maxDevices || 4);
+        setErrorMsg(err.message || 'अधिकतम 4 डिवाइस लॉगिन सीमा पूरी हो चुकी है।');
+      } else {
+        setDeviceConflictSessions(null);
+        setErrorMsg(err.message || 'लॉगिन असफल रहा। कृपया अपना आईडी/मोबाइल व पासवर्ड जांचें।');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await attemptLogin();
   };
 
   const handleForgetIdSubmit = async (e: React.FormEvent) => {
@@ -212,9 +231,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <div className="p-3 rounded-sm bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-2">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span className="leading-snug">{errorMsg}</span>
+                <span className="leading-snug font-medium">{errorMsg}</span>
               </div>
-              {mode === 'login' && (
+              {mode === 'login' && !deviceConflictSessions && (
                 <div className="flex flex-wrap items-center gap-3 pl-6 pt-0.5">
                   <button
                     type="button"
@@ -232,6 +251,55 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {mode === 'login' && deviceConflictSessions && (
+            <div className="p-3.5 rounded-sm bg-amber-50 border border-amber-300 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <Monitor className="w-4 h-4 text-[#fb641b]" />
+                  <span>Active Devices ({deviceConflictSessions.length}/{deviceConflictMax} Max Slots)</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => attemptLogin({ replaceOldestDevice: true })}
+                  className="px-2.5 py-1 rounded-xs text-[11px] font-bold bg-[#fb641b] text-white hover:bg-[#e8550f] transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Replace Oldest</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-snug">
+                नीचे किसी 1 पुराने डिवाइस को लॉगआउट करें — आपका सारा डेटा (Coins, Balance, Level, Room) जैसा था वैसा ही खुलेगा:
+              </p>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                {deviceConflictSessions.map((s, idx) => (
+                  <div
+                    key={s.sessionId}
+                    className="bg-white border border-amber-200 rounded-xs px-2.5 py-2 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-[#212121] truncate">
+                        #{idx + 1} · {s.deviceName}
+                      </p>
+                      <p className="text-[10px] text-[#666666]">
+                        Last active: {new Date(s.lastActive || s.loginTime).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => attemptLogin({ replaceSessionId: s.sessionId })}
+                      className="shrink-0 px-2.5 py-1 rounded-xs bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>Logout & Login</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

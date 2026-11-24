@@ -4,26 +4,37 @@ import {
   X,
   Trophy,
   Check,
-  Lock,
   RefreshCw,
-  Coins,
-  Zap,
   Clock,
   ShieldAlert,
   ArrowLeft,
   ChevronRight,
+  Users,
 } from 'lucide-react';
-import type { UserProfile, RealTaskStatus, DailyGameHubData, LiveTimeMeta } from '../../types/index.ts';
+import type {
+  UserProfile,
+  RealTaskStatus,
+  ActivenessChestStatus,
+  GrowthTaskStatus,
+  FamilyTaskStatus,
+  DailyGameHubData,
+  LiveTimeMeta,
+} from '../../types/index.ts';
 import { api } from '../../services/api.ts';
 import { sound8D } from '../../services/sound8d.ts';
-import { CHEST_MILESTONES, REAL_TASKS_CATALOG } from '../../config/economy.ts';
+import {
+  ACTIVENESS_CHESTS_CATALOG,
+  GROWTH_TASKS_CATALOG,
+  FAMILY_TASKS_CATALOG,
+  REAL_TASKS_CATALOG,
+} from '../../config/economy.ts';
 import { SEVEN_DAY_CHECKIN_REWARDS, getIstDateString } from '../../config/dailyGameIntel.ts';
 
 interface DailyTasksAndLoginModalProps {
   user: UserProfile;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onClose: () => void;
-  initialTab?: 'tasks' | 'login' | 'chests';
+  initialTab?: 'tasks' | 'growth' | 'family' | 'login' | 'chests';
   onNavigateTab?: (actionTab: string) => void;
   onOpenBuyCoins?: () => void;
   autoTriggeredReason?: 'login' | 'midnight' | 'manual';
@@ -190,17 +201,117 @@ const EspPlayMascotTopArtwork: React.FC = () => (
   </div>
 );
 
+/** Compact Inline Reward Icons matching the Daily/Growth Task Rows */
+const TaskCoinBadgeSvg: React.FC = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+    <circle cx="12" cy="12" r="10.5" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.2" />
+    <circle cx="12" cy="12" r="7.5" fill="#f59e0b" />
+    <path
+      d="M12 6.8 L13.4 10.6 L17.2 12 L13.4 13.4 L12 17.2 L10.6 13.4 L6.8 12 L10.6 10.6 Z"
+      fill="#fffbeb"
+    />
+  </svg>
+);
+
+const TaskHeartActivenessSvg: React.FC = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+    <path
+      d="M12 21s-7.5-4.7-9.6-9C.6 8.3 2.7 4 6.7 4c2.1 0 3.9 1.1 5.3 2.8C13.4 5.1 15.2 4 17.3 4c4 0 6.1 4.3 4.3 8-2.1 4.3-9.6 9-9.6 9z"
+      fill="#ef4444"
+    />
+    <path
+      d="M5.5 12h3l1.7-2.8 2.4 5 1.8-2.2H18.5"
+      fill="none"
+      stroke="#ffffff"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const TaskExpHexSvg: React.FC = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+    <polygon
+      points="12,2 21,7 21,17 12,22 3,17 3,7"
+      fill="#38bdf8"
+      stroke="#0284c7"
+      strokeWidth="1.2"
+    />
+    <text
+      x="12"
+      y="14.5"
+      textAnchor="middle"
+      fontSize="6.8"
+      fontWeight="900"
+      fill="#ffffff"
+      fontFamily="sans-serif"
+    >
+      EXP
+    </text>
+  </svg>
+);
+
+/** 4-Tier Treasure Chest SVG for Activeness Track (10, 40, 70, 100) */
+const ActivenessChestSvg: React.FC<{
+  tierColor: 'green' | 'blue' | 'gold' | 'royal';
+  isUnlocked: boolean;
+  isClaimed: boolean;
+}> = ({ tierColor, isUnlocked, isClaimed }) => {
+  const palette = {
+    green: { lid: '#a3e635', body: '#65a30d', trim: '#fde047', clasp: '#fef08a' },
+    blue: { lid: '#bfdbfe', body: '#60a5fa', trim: '#e2e8f0', clasp: '#fde047' },
+    gold: { lid: '#fde047', body: '#eab308', trim: '#fb923c', clasp: '#fffbeb' },
+    royal: { lid: '#a855f7', body: '#7e22ce', trim: '#facc15', clasp: '#fef08a' },
+  }[tierColor];
+
+  return (
+    <svg
+      viewBox="0 0 48 44"
+      className={`w-10 h-9 sm:w-11 sm:h-10 transition-transform ${
+        isUnlocked && !isClaimed ? 'scale-110 drop-shadow-[0_4px_8px_rgba(255,255,255,0.55)]' : 'drop-shadow-sm'
+      } ${isClaimed ? 'opacity-80' : ''}`}
+      aria-hidden="true"
+    >
+      {/* Chest Base */}
+      <rect x="7" y="20" width="34" height="19" rx="4" fill={palette.body} stroke="#ffffff" strokeWidth="1.4" />
+      {/* Gold/Silver Trim Bands */}
+      <rect x="13" y="20" width="4" height="19" fill={palette.trim} opacity="0.92" />
+      <rect x="31" y="20" width="4" height="19" fill={palette.trim} opacity="0.92" />
+      {/* Chest Lid (slightly tilted open when unlocked or claimed) */}
+      <g transform={isClaimed || isUnlocked ? 'translate(0, -2) rotate(-6 24 20)' : ''}>
+        <path
+          d="M6 21 C6 11, 42 11, 42 21 Z"
+          fill={palette.lid}
+          stroke="#ffffff"
+          strokeWidth="1.4"
+        />
+        <rect x="13" y="13" width="4" height="8" rx="1" fill={palette.trim} />
+        <rect x="31" y="13" width="4" height="8" rx="1" fill={palette.trim} />
+      </g>
+      {/* Center Lock Clasp */}
+      <rect x="20.5" y="18" width="7" height="8" rx="2" fill={palette.clasp} stroke="#ca8a04" strokeWidth="1" />
+      <circle cx="24" cy="22" r="1.4" fill="#854d0e" />
+    </svg>
+  );
+};
+
 export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = ({
   user,
   onUpdateUser,
   onClose,
   initialTab = 'login',
   onNavigateTab,
-  onOpenBuyCoins,
   autoTriggeredReason = 'manual',
 }) => {
-  const [activeTab, setActiveTab] = useState<'streak' | 'tasks' | 'chests'>(
-    initialTab === 'chests' ? 'chests' : initialTab === 'tasks' ? 'tasks' : 'streak'
+  const [activeTab, setActiveTab] = useState<'streak' | 'tasks' | 'growth' | 'family'>(
+    initialTab === 'growth'
+      ? 'growth'
+      : initialTab === 'family'
+      ? 'family'
+      : initialTab === 'tasks' || initialTab === 'chests'
+      ? 'tasks'
+      : 'streak'
   );
   const [tasks, setTasks] = useState<RealTaskStatus[]>(() =>
     REAL_TASKS_CATALOG.map((item) => ({
@@ -210,13 +321,35 @@ export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = (
       isClaimed: false,
     }))
   );
+  const [todayActiveness, setTodayActiveness] = useState<number>(Number(user.todayActiveness || 0));
+  const [activenessChests, setActivenessChests] = useState<ActivenessChestStatus[]>(() =>
+    ACTIVENESS_CHESTS_CATALOG.map((c) => ({
+      ...c,
+      isUnlocked: Number(user.todayActiveness || 0) >= c.threshold,
+      isClaimed: (user.claimedActivenessChests || []).includes(c.threshold),
+    }))
+  );
+  const [growthTasks, setGrowthTasks] = useState<GrowthTaskStatus[]>(() =>
+    GROWTH_TASKS_CATALOG.map((g) => ({
+      ...g,
+      currentProgress: 0,
+      isCompleted: false,
+      isClaimed: (user.claimedGrowthTaskIds || []).includes(g.id),
+    }))
+  );
+  const [familyTasks, setFamilyTasks] = useState<FamilyTaskStatus[]>(() =>
+    FAMILY_TASKS_CATALOG.map((f) => ({
+      ...f,
+      currentProgress: 0,
+      isCompleted: false,
+      isClaimed: (user.claimedFamilyTaskIds || []).includes(f.id),
+    }))
+  );
   const [hub, setHub] = useState<DailyGameHubData | null>(null);
   const [timeMeta, setTimeMeta] = useState<LiveTimeMeta | null>(null);
   const [serverOffsetMs, setServerOffsetMs] = useState<number>(0);
   const [liveIstClockLabel, setLiveIstClockLabel] = useState<string>('Syncing IST...');
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const [claimedChests, setClaimedChests] = useState<string[]>([]);
-  const [tasksCompletedCount, setTasksCompletedCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -323,8 +456,18 @@ export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = (
       }
       if (tasksRes?.success && Array.isArray(tasksRes.tasks)) {
         setTasks(tasksRes.tasks);
-        setTasksCompletedCount(tasksRes.tasksCompletedCount || 0);
-        setClaimedChests(tasksRes.claimedChestMilestones || []);
+        if (typeof tasksRes.todayActiveness === 'number') {
+          setTodayActiveness(tasksRes.todayActiveness);
+        }
+        if (Array.isArray(tasksRes.activenessChests)) {
+          setActivenessChests(tasksRes.activenessChests);
+        }
+        if (Array.isArray(tasksRes.growthTasks)) {
+          setGrowthTasks(tasksRes.growthTasks);
+        }
+        if (Array.isArray(tasksRes.familyTasks)) {
+          setFamilyTasks(tasksRes.familyTasks);
+        }
         if (tasksRes.user) onUpdateUser(tasksRes.user);
       }
       if (hubRes) {
@@ -437,45 +580,106 @@ export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = (
         if (res.user) onUpdateUser(res.user);
         await loadAll();
         sound8D.play8DChime(660, 'win');
-        confetti({ particleCount: 80, spread: 65, origin: { y: 0.6 }, zIndex: 9999 });
+        confetti({ particleCount: 75, spread: 65, origin: { y: 0.6 }, zIndex: 9999 });
         setNotice(
-          `🎉 टास्क वेरीफाइड! 🪙 +${res.coinsAwarded || 5} Coins व ⚡ +${res.xpAwarded || task.xpReward} EXP जुड़े!`
+          `Claimed "${task.title}"! +${res.coinsAwarded || task.coinReward} Coins, +${
+            res.activenessEarned || task.activenessReward || 15
+          } Activeness & +${res.xpAwarded || task.xpReward} EXP`
         );
       } else {
-        setNotice(res.message || 'टास्क अभी पूरा नहीं हुआ।');
+        setNotice(res.message || 'Complete this task first.');
       }
     } catch (err: any) {
-      setNotice(err?.message || 'त्रुटि हुई।');
+      setNotice(err?.message || 'Unable to claim reward right now.');
     } finally {
       setBusyId(null);
     }
   };
 
-  const handleClaimChest = async (chestId: string) => {
+  const handleClaimActivenessChest = async (chest: ActivenessChestStatus) => {
     if (busyId) return;
-    setBusyId(chestId);
+    if (!chest.isUnlocked) {
+      setNotice(
+        `Reach ${chest.threshold} Today's Activeness to unlock ${chest.label} (Current: ${todayActiveness}).`
+      );
+      return;
+    }
+    if (chest.isClaimed) return;
+    setBusyId(`act-chest-${chest.threshold}`);
     setNotice(null);
     try {
-      const res = await api.claimTaskMilestoneChest(user.userId, chestId);
+      const res = await api.claimActivenessChest(user.userId, chest.threshold);
       if (res.success) {
         if (res.user) onUpdateUser(res.user);
         await loadAll();
         sound8D.playGiftSound('rocket', 1);
-        confetti({ particleCount: 100, spread: 75, origin: { y: 0.55 }, zIndex: 9999 });
+        confetti({ particleCount: 95, spread: 75, origin: { y: 0.5 }, zIndex: 9999 });
         setNotice(
-          `🎁 चेस्ट खुला! 🪙 +${res.coinsAwarded || 5} Coins व ⚡ +${res.xpAwarded || 0} EXP मिले!`
+          `${chest.label} Opened! +${res.coinsEarned || chest.coinReward} Coins & +${
+            res.xpEarned || chest.xpReward
+          } EXP`
         );
       } else {
-        setNotice(res.message || 'चेस्ट अभी लॉक है।');
+        setNotice(res.message || 'Chest is locked.');
       }
     } catch (err: any) {
-      setNotice(err?.message || 'चेस्ट क्लेम विफल।');
+      setNotice(err?.message || 'Unable to open chest.');
     } finally {
       setBusyId(null);
     }
   };
 
-  const claimedCount = Math.max(tasksCompletedCount, tasks.filter((t) => t.isClaimed).length);
+  const handleClaimGrowth = async (task: GrowthTaskStatus) => {
+    if (!task.isCompleted || task.isClaimed || busyId) return;
+    setBusyId(task.id);
+    setNotice(null);
+    try {
+      const res = await api.claimGrowthTask(user.userId, task.id);
+      if (res.success) {
+        if (res.user) onUpdateUser(res.user);
+        await loadAll();
+        sound8D.play8DChime(680, 'win');
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, zIndex: 9999 });
+        setNotice(
+          `Growth Unlocked "${task.title}": +${res.coinsEarned || task.coinReward} Coins & +${
+            res.xpEarned || task.xpReward
+          } EXP`
+        );
+      } else {
+        setNotice(res.message || 'Complete this milestone first.');
+      }
+    } catch (err: any) {
+      setNotice(err?.message || 'Unable to claim milestone.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleClaimFamily = async (task: FamilyTaskStatus) => {
+    if (!task.isCompleted || task.isClaimed || busyId) return;
+    setBusyId(task.id);
+    setNotice(null);
+    try {
+      const res = await api.claimFamilyTask(user.userId, task.id);
+      if (res.success) {
+        if (res.user) onUpdateUser(res.user);
+        await loadAll();
+        sound8D.play8DChime(660, 'win');
+        confetti({ particleCount: 75, spread: 65, origin: { y: 0.6 }, zIndex: 9999 });
+        setNotice(
+          `Family Task Claimed: +${res.coinsEarned || task.coinReward} Coins & +${
+            res.activenessEarned || task.activenessReward
+          } Activeness!`
+        );
+      } else {
+        setNotice(res.message || 'Complete this family task first.');
+      }
+    } catch (err: any) {
+      setNotice(err?.message || 'Unable to claim family task.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   // Build reliable 7-day schedule even while initial API request is settling
   const fallbackStreak = Math.max(0, Number(user.loginStreak || 0));
@@ -759,142 +963,242 @@ export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = (
     );
   }
 
-  // ==================== TASKS & MILESTONE CHESTS VIEW ====================
+  // ==================== DAILY / GROWTH / FAMILY TASK SYSTEM VIEW ====================
+  const activenessPct = Math.min(100, Math.max(0, todayActiveness));
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
-      <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl text-[#212121] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-gradient-to-r from-[#ff912b] via-[#fc7416] to-[#e85d04] text-white">
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('streak')}
-              className="w-9 h-9 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center shrink-0 transition cursor-pointer"
-              title="Back to Weekly Rewards"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-sm sm:text-base font-black text-white leading-tight truncate">
-                  ESP PLAY Tasks &amp; Chests
-                </h3>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-white/20 text-[9px] font-black text-white">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  12 AM IST
-                </span>
-              </div>
-              <p className="text-[10px] text-orange-50 font-semibold flex items-center gap-1 mt-0.5 tabular-nums flex-wrap">
-                <Clock className="w-3 h-3 shrink-0" />
-                <span>
-                  {liveIstClockLabel} · Reset in {secondsLeft !== null ? formatCountdown(secondsLeft) : 'Syncing...'}
-                </span>
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={loadAll}
-              className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition cursor-pointer"
-              title="Refresh Live Time"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+    <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-xs flex items-stretch sm:items-center justify-center sm:p-4 animate-fadeIn">
+      <div className="w-full sm:max-w-[460px] h-full sm:h-[min(90dvh,780px)] bg-white sm:rounded-[28px] shadow-2xl border-0 sm:border sm:border-slate-200 flex flex-col overflow-hidden text-slate-900">
+        {/* Vibrant Fresh Green Gradient Header (Matches Reference Mobile Task Screen) */}
+        <div className="relative bg-gradient-to-b from-[#5eb953] via-[#7bd363] to-[#9be170] text-white shrink-0">
+          {/* Top Navigation Row: Back Arrow | Daily / Growth / Family Tabs | Weekly Shortcut & Refresh */}
+          <div className="flex items-center justify-between px-2 sm:px-3 pt-2.5 pb-2">
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition cursor-pointer"
-              aria-label="Close"
+              aria-label="Back"
+              className="w-11 h-11 rounded-full hover:bg-white/15 flex items-center justify-center text-white transition cursor-pointer shrink-0"
             >
-              <X className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
             </button>
-          </div>
-        </div>
 
-        <div className="p-4 sm:p-5">
-          {notice && (
-            <div className="mb-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-bold text-center">
-              {notice}
+            <div className="flex items-center justify-center gap-4 sm:gap-6 flex-1 min-w-0">
+              {(
+                [
+                  { id: 'tasks', label: 'Daily' },
+                  { id: 'growth', label: 'Growth' },
+                  { id: 'family', label: 'Family' },
+                ] as const
+              ).map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setNotice(null);
+                      setActiveTab(tab.id);
+                    }}
+                    className={`relative py-2 px-1.5 min-h-[40px] text-sm sm:text-[15px] transition whitespace-nowrap shrink-0 cursor-pointer ${
+                      isActive ? 'font-extrabold text-white' : 'font-semibold text-white/80 hover:text-white'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {isActive && (
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-7 h-[3px] rounded-full bg-white shadow-2xs" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('streak')}
+                title="Weekly Rewards"
+                className="w-10 h-10 rounded-full hover:bg-white/15 flex items-center justify-center text-white transition cursor-pointer"
+              >
+                <Trophy className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={loadAll}
+                title="Refresh Tasks"
+                className="w-10 h-10 rounded-full hover:bg-white/15 flex items-center justify-center text-white transition cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Daily Activeness Chest Track (Shown on Daily Tab) */}
+          {activeTab === 'tasks' && (
+            <div className="px-4 sm:px-5 pt-1 pb-5 space-y-2.5">
+              <div className="flex items-center justify-between text-xs text-white/95 font-semibold tabular-nums">
+                <span>
+                  Today&apos;s Activeness{' '}
+                  <strong className="font-extrabold text-white text-sm">{todayActiveness}</strong>
+                </span>
+                <span className="text-[11px] text-white/90 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  <span>Refresh at 00:00</span>
+                </span>
+              </div>
+
+              {/* 4-Station Activeness Treasure Chest Bar (10 / 40 / 70 / 100) */}
+              <div className="relative pt-1 pb-1">
+                {/* Horizontal Track Bar positioned behind the chest centers */}
+                <div className="absolute left-[12.5%] right-[12.5%] top-[21px] h-1.5 rounded-full bg-[#4ea643]/60 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#fef08a] via-[#fde047] to-[#ffffff] rounded-full transition-all duration-500"
+                    style={{ width: `${activenessPct}%` }}
+                  />
+                </div>
+
+                <div className="relative z-10 grid grid-cols-4 gap-1 text-center">
+                  {activenessChests.map((chest) => {
+                    const ready = chest.isUnlocked && !chest.isClaimed;
+                    return (
+                      <button
+                        key={chest.threshold}
+                        type="button"
+                        disabled={busyId === `act-chest-${chest.threshold}`}
+                        onClick={() => handleClaimActivenessChest(chest)}
+                        title={
+                          chest.isClaimed
+                            ? `${chest.label} Claimed`
+                            : ready
+                            ? `Open ${chest.label} (+${chest.coinReward} Coins)`
+                            : `Need ${chest.threshold} Activeness`
+                        }
+                        className="flex flex-col items-center justify-center group cursor-pointer focus-visible:outline-none"
+                      >
+                        <div className="relative">
+                          <ActivenessChestSvg
+                            tierColor={chest.tierColor}
+                            isUnlocked={chest.isUnlocked}
+                            isClaimed={chest.isClaimed}
+                          />
+                          {ready && (
+                            <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-[#ff7a18] text-white text-[9px] font-black shadow animate-bounce">
+                              Open
+                            </span>
+                          )}
+                          {chest.isClaimed && (
+                            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border border-white text-white flex items-center justify-center shadow">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`mt-1 text-xs font-extrabold tabular-nums ${
+                            chest.isUnlocked ? 'text-white' : 'text-[#245e20]'
+                          }`}
+                        >
+                          {chest.threshold}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* 3-Tab Switcher */}
-          <div className="grid grid-cols-3 gap-1.5 mb-4 bg-[#f1f3f6] p-1 rounded-xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setActiveTab('streak')}
-              className="py-2 px-2 rounded-lg font-black text-xs transition cursor-pointer flex items-center justify-center gap-1 text-[#878787] hover:text-[#212121]"
-            >
-              <Trophy className="w-3.5 h-3.5 text-orange-500" />
-              <span>Weekly</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('tasks')}
-              className={`py-2 px-2 rounded-lg font-black text-xs transition cursor-pointer flex items-center justify-center gap-1 ${
-                activeTab === 'tasks'
-                  ? 'bg-[#fc7416] text-white shadow-xs'
-                  : 'text-[#878787] hover:text-[#212121]'
-              }`}
-            >
-              <span>📋 Tasks (+5c)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('chests')}
-              className={`py-2 px-2 rounded-lg font-black text-xs transition cursor-pointer flex items-center justify-center gap-1 ${
-                activeTab === 'chests'
-                  ? 'bg-[#fc7416] text-white shadow-xs'
-                  : 'text-[#878787] hover:text-[#212121]'
-              }`}
-            >
-              <span>🎁 Chests</span>
-            </button>
-          </div>
+          {/* Family Status Strip (Shown on Family Tab) */}
+          {activeTab === 'family' && (
+            <div className="px-4 sm:px-5 pt-1 pb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-white truncate">
+                    {user.clanName || user.familyId
+                      ? `Family / Clan: ${user.clanName || user.familyId}`
+                      : 'No Family Joined Yet'}
+                  </div>
+                  <div className="text-[11px] text-white/90 tabular-nums">
+                    Today&apos;s Activeness: {todayActiveness} · Complete tasks to level up together
+                  </div>
+                </div>
+              </div>
+              {!(user.clanName || user.familyId) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onNavigateTab?.('family');
+                  }}
+                  className="px-3.5 py-1.5 rounded-full bg-white text-[#3d9435] font-extrabold text-xs shrink-0 cursor-pointer hover:bg-emerald-50 transition"
+                >
+                  Join Now
+                </button>
+              )}
+            </div>
+          )}
 
-          {activeTab === 'tasks' && (
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {tasks.map((task) => (
+          {/* Soft Curved Bottom Edge Transition into White Task List */}
+          <div className="h-3.5 bg-white rounded-t-[20px]" />
+        </div>
+
+        {/* Inline Feedback Notice Banner */}
+        {notice && (
+          <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center shrink-0">
+            {notice}
+          </div>
+        )}
+
+        {/* Scrollable White Task List Body */}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 pb-4 divide-y divide-slate-100">
+          {/* TAB 1: DAILY TASKS */}
+          {activeTab === 'tasks' &&
+            tasks.map((task) => {
+              const showProgress = task.targetCount > 1;
+              return (
                 <div
                   key={task.id}
-                  className="p-3 rounded-lg bg-[#f9fafb] border border-slate-200 flex items-center justify-between hover:border-orange-300 transition"
+                  className="py-3.5 flex items-center justify-between gap-3"
                 >
-                  <div className="flex items-center space-x-3 min-w-0">
-                    <span className="text-2xl">{task.icon}</span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-[#212121] truncate">
-                        {task.hindiTitle}
-                      </p>
-                      <div className="flex items-center space-x-2 mt-0.5 text-[10px]">
-                        <span className="text-[#fb641b] font-mono font-bold">
-                          🪙 +{task.coinReward} Coins
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-[#2874f0] font-mono font-bold">
-                          ⚡ +{task.xpReward} EXP
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-slate-600 font-mono">
-                          {task.currentProgress}/{task.targetCount}
-                        </span>
-                      </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-[15px] font-semibold text-slate-900 leading-snug truncate">
+                      {task.title}
+                      {showProgress ? ` (${task.currentProgress}/${task.targetCount})` : ''}
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                      {task.description}
+                    </p>
+                    <div className="flex items-center gap-3.5 mt-2 text-xs font-bold text-slate-600 tabular-nums">
+                      <span className="inline-flex items-center gap-1">
+                        <TaskCoinBadgeSvg />
+                        <span>x{task.coinReward}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <TaskHeartActivenessSvg />
+                        <span>x{task.activenessReward || 15}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <TaskExpHexSvg />
+                        <span>x{task.xpReward}</span>
+                      </span>
                     </div>
                   </div>
 
-                  <div className="shrink-0 pl-2">
+                  <div className="shrink-0">
                     {task.isClaimed ? (
-                      <span className="px-3 py-1 rounded-md bg-emerald-50 text-[#388e3c] text-[11px] font-bold border border-emerald-200 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> क्लेम हुआ
+                      <span className="inline-flex items-center justify-center gap-1 min-w-[74px] px-3.5 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-bold">
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Done</span>
                       </span>
                     ) : task.isCompleted ? (
                       <button
                         type="button"
                         disabled={busyId === task.id}
                         onClick={() => handleClaimTask(task)}
-                        className="px-3 py-1.5 rounded-md font-black text-xs bg-[#fb641b] hover:bg-[#e8550f] text-white shadow-xs transition cursor-pointer"
+                        className="min-w-[78px] px-4 py-2 min-h-[36px] rounded-full bg-gradient-to-r from-[#ff9f2e] to-[#fb641b] hover:from-[#f98d1a] hover:to-[#e5530d] text-white font-bold text-xs shadow-sm active:scale-95 transition cursor-pointer disabled:opacity-60 whitespace-nowrap"
                       >
-                        {busyId === task.id ? '...' : `क्लेम +${task.coinReward}c`}
+                        {busyId === task.id ? '...' : 'Claim'}
                       </button>
                     ) : (
                       <button
@@ -903,95 +1207,147 @@ export const DailyTasksAndLoginModal: React.FC<DailyTasksAndLoginModalProps> = (
                           onClose();
                           onNavigateTab?.(task.actionTab);
                         }}
-                        className="px-3 py-1 rounded-md bg-[#f5f8ff] text-[#2874f0] text-[11px] font-bold border border-blue-200 hover:bg-blue-50 cursor-pointer"
+                        className="min-w-[74px] px-5 py-2 min-h-[36px] rounded-full bg-[#57ba47] hover:bg-[#49a33b] text-white font-bold text-xs sm:text-[13px] shadow-xs active:scale-95 transition cursor-pointer whitespace-nowrap"
                       >
-                        पूरा करें &rarr;
+                        Go
                       </button>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
 
-          {activeTab === 'chests' && (
-            <div className="space-y-3">
-              <p className="text-xs text-[#878787]">
-                आज के <strong className="text-[#212121]">असली टास्क्स (1, 3, 5, 6)</strong> पूरा करने पर ही चेस्ट अनलॉक होते हैं — रोज़ रात 12:00 बजे नया चक्र!
-              </p>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                {CHEST_MILESTONES.map((chest) => {
-                  const isClaimed = claimedChests.includes(chest.id);
-                  const isReady = !isClaimed && claimedCount >= chest.requiredTasksCompleted;
-                  return (
-                    <div
-                      key={chest.id}
-                      className={`p-3 rounded-lg border flex flex-col justify-between text-center ${
-                        isClaimed
-                          ? 'bg-emerald-50 border-emerald-200'
-                          : isReady
-                          ? 'bg-amber-50 border-amber-300'
-                          : 'bg-[#f9fafb] border-slate-200'
-                      }`}
-                    >
-                      <div className="text-2xl">{chest.icon}</div>
-                      <div className="text-xs font-black text-[#212121] mt-1">
-                        {chest.hindiLabel}
-                      </div>
-                      <div className="flex items-center justify-center gap-2 text-[10px] font-mono font-bold mt-1">
-                        <span className="text-[#fb641b]">🪙 +{chest.coinReward}c</span>
-                        <span className="text-[#2874f0]">⚡ +{chest.xpReward} EXP</span>
-                      </div>
-                      <div className="mt-2">
-                        {isClaimed ? (
-                          <span className="inline-block px-2.5 py-1 rounded-md bg-emerald-100 text-[#388e3c] text-[10px] font-bold">
-                            ✅ Claimed
-                          </span>
-                        ) : isReady ? (
-                          <button
-                            type="button"
-                            disabled={busyId === chest.id}
-                            onClick={() => handleClaimChest(chest.id)}
-                            className="w-full py-1.5 rounded-md bg-[#fb641b] hover:bg-[#e5530d] text-white text-xs font-black cursor-pointer"
-                          >
-                            {busyId === chest.id ? '...' : 'चेस्ट खोलें (+5c)'}
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 font-semibold">
-                            <Lock className="w-3 h-3" /> {claimedCount}/{chest.requiredTasksCompleted} Tasks
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-[#878787]">
-            <span>
-              कॉइन बैलेंस: <strong className="text-[#fb641b]">🪙 {user.coins || 0}</strong>
-            </span>
-            {onOpenBuyCoins ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenBuyCoins();
-                }}
-                className="px-3 py-1.5 rounded-md bg-[#fb641b] hover:bg-[#e5530d] text-white font-black text-xs cursor-pointer flex items-center gap-1"
+          {/* TAB 2: GROWTH MILESTONE TASKS (Matches Phone #3 in Reference) */}
+          {activeTab === 'growth' &&
+            growthTasks.map((task) => (
+              <div
+                key={task.id}
+                className="py-3.5 flex items-center justify-between gap-3"
               >
-                <Coins className="w-3.5 h-3.5" />
-                <span>Buy Coins</span>
-              </button>
-            ) : (
-              <span className="flex items-center gap-1 text-[#2874f0] font-bold">
-                <Zap className="w-3.5 h-3.5" /> EXP: {user.gameXp || 0}
-              </span>
-            )}
-          </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-[15px] font-semibold text-slate-900 leading-snug truncate">
+                    {task.title}
+                    {task.targetCount > 1 ? ` (${task.currentProgress}/${task.targetCount})` : ''}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                    {task.description}
+                  </p>
+                  <div className="flex items-center gap-3.5 mt-2 text-xs font-bold text-slate-600 tabular-nums">
+                    <span className="inline-flex items-center gap-1">
+                      <TaskCoinBadgeSvg />
+                      <span>x{task.coinReward}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <TaskExpHexSvg />
+                      <span>x{task.xpReward}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  {task.isClaimed ? (
+                    <span className="inline-flex items-center justify-center gap-1 min-w-[74px] px-3.5 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-bold">
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Done</span>
+                    </span>
+                  ) : task.isCompleted ? (
+                    <button
+                      type="button"
+                      disabled={busyId === task.id}
+                      onClick={() => handleClaimGrowth(task)}
+                      className="min-w-[78px] px-4 py-2 min-h-[36px] rounded-full bg-gradient-to-r from-[#ff9f2e] to-[#fb641b] hover:from-[#f98d1a] hover:to-[#e5530d] text-white font-bold text-xs shadow-sm active:scale-95 transition cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                    >
+                      {busyId === task.id ? '...' : 'Claim'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onNavigateTab?.(task.actionTab);
+                      }}
+                      className="min-w-[74px] px-5 py-2 min-h-[36px] rounded-full bg-[#57ba47] hover:bg-[#49a33b] text-white font-bold text-xs sm:text-[13px] shadow-xs active:scale-95 transition cursor-pointer whitespace-nowrap"
+                    >
+                      Go
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+          {/* TAB 3: FAMILY TASKS */}
+          {activeTab === 'family' &&
+            familyTasks.map((task) => (
+              <div
+                key={task.id}
+                className="py-3.5 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-[15px] font-semibold text-slate-900 leading-snug truncate">
+                    {task.title}
+                    {task.targetCount > 1 ? ` (${task.currentProgress}/${task.targetCount})` : ''}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                    {task.description}
+                  </p>
+                  <div className="flex items-center gap-3.5 mt-2 text-xs font-bold text-slate-600 tabular-nums">
+                    <span className="inline-flex items-center gap-1">
+                      <TaskCoinBadgeSvg />
+                      <span>x{task.coinReward}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <TaskHeartActivenessSvg />
+                      <span>x{task.activenessReward}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <TaskExpHexSvg />
+                      <span>x{task.xpReward}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  {task.isClaimed ? (
+                    <span className="inline-flex items-center justify-center gap-1 min-w-[74px] px-3.5 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-[#388e3c] text-xs font-bold">
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Done</span>
+                    </span>
+                  ) : task.isCompleted ? (
+                    <button
+                      type="button"
+                      disabled={busyId === task.id}
+                      onClick={() => handleClaimFamily(task)}
+                      className="min-w-[78px] px-4 py-2 min-h-[36px] rounded-full bg-gradient-to-r from-[#ff9f2e] to-[#fb641b] hover:from-[#f98d1a] hover:to-[#e5530d] text-white font-bold text-xs shadow-sm active:scale-95 transition cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                    >
+                      {busyId === task.id ? '...' : 'Claim'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onNavigateTab?.(task.actionTab);
+                      }}
+                      className="min-w-[74px] px-5 py-2 min-h-[36px] rounded-full bg-[#57ba47] hover:bg-[#49a33b] text-white font-bold text-xs sm:text-[13px] shadow-xs active:scale-95 transition cursor-pointer whitespace-nowrap"
+                    >
+                      Go
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+        </div>
+
+        {/* Clean Bottom Status Footer */}
+        <div className="px-4 sm:px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 shrink-0 tabular-nums">
+          <span>
+            Coins: <strong className="text-amber-600 font-extrabold">{(user.coins || 0).toLocaleString()}</strong>
+            <span className="mx-1.5 text-slate-300">·</span>
+            <span>EXP: <strong className="text-[#2874f0] font-extrabold">{user.gameXp || 0}</strong></span>
+          </span>
+          <span className="text-[11px] text-slate-500">
+            {liveIstClockLabel} · Reset {secondsLeft !== null ? formatCountdown(secondsLeft) : '--:--:--'}
+          </span>
         </div>
       </div>
     </div>

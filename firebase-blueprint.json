@@ -42,6 +42,14 @@
         "gender": { "type": "string", "maxLength": 24 },
         "location": { "type": "string", "maxLength": 100 },
         "friendsList": { "type": "array" },
+        "gamingId": { "type": "string", "maxLength": 64 },
+        "personalRoomId": { "type": "string", "maxLength": 24 },
+        "roomAddress": { "type": "string", "maxLength": 24 },
+        "todayActiveness": { "type": "number" },
+        "loginStreak": { "type": "number" },
+        "claimedDays": { "type": "array" },
+        "lastDailyCheckInDate": { "type": "string", "maxLength": 32 },
+        "workspaceState": { "type": "object" },
         "role": { "type": "string", "enum": ["member", "admin"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
@@ -69,6 +77,8 @@
         "charms": { "type": "number" },
         "coins": { "type": "number" },
         "clanName": { "type": "string", "maxLength": 100 },
+        "personalRoomId": { "type": "string", "maxLength": 24 },
+        "roomAddress": { "type": "string", "maxLength": 24 },
         "friendsCount": { "type": "number" },
         "isPublic": { "type": "boolean" },
         "updatedAt": { "type": "string", "maxLength": 64 }

@@ -70,6 +70,8 @@ import { PromotionalPoster } from '../components/PromotionalPoster.tsx';
 import { DailyStreakCounter } from '../components/DailyStreakCounter.tsx';
 import { DailyTasks } from '../components/DailyTasks.tsx';
 import { ReferralGrowthChart } from '../components/ReferralGrowthChart.tsx';
+import { ReferralAnalytics } from '../components/ReferralAnalytics.tsx';
+import { TopReferrersWidget } from '../components/TopReferrersWidget.tsx';
 import { DailyTopEarners } from '../components/DailyTopEarners.tsx';
 import { TransactionHistory } from '../components/TransactionHistory.tsx';
 import { FRAME_CATALOG, VIP_TIERS } from '../config/economy.ts';
@@ -79,9 +81,24 @@ import { UserProfileSheetModal, type RichProfileData } from '../components/UserP
 import { FacebookPhotoCropModal } from '../components/FacebookPhotoCropModal.tsx';
 
 
+export type DashboardTabType =
+  | 'overview'
+  | 'idcard'
+  | 'poster'
+  | 'referrals'
+  | 'nwi_tree'
+  | 'wallet'
+  | 'transactions'
+  | 'coins_ledger'
+  | 'complaints'
+  | 'profile'
+  | 'devices';
+
 interface DashboardViewProps {
   user: UserProfile;
   settings: PlatformSettings;
+  initialSubTab?: DashboardTabType;
+  onSubTabChange?: (tab: DashboardTabType) => void;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onNavigateToTab?: (tab: string) => void;
   onOpenBuyCoins?: () => void;
@@ -90,11 +107,13 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   user,
   settings,
+  initialSubTab,
+  onSubTabChange,
   onUpdateUser,
   onNavigateToTab,
   onOpenBuyCoins,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'idcard' | 'poster' | 'referrals' | 'nwi_tree' | 'wallet' | 'transactions' | 'coins_ledger' | 'complaints' | 'profile' | 'devices'>('overview');
+  const [activeTab, setActiveTab] = useState<DashboardTabType>(initialSubTab || 'overview');
   const [idCardViewMode, setIdCardViewMode] = useState<'primary' | 'multicard'>('primary');
   
   // NWI 3-Level Auto Tree State
@@ -230,6 +249,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
     prevLevelRef.current = currentLvl;
   }, [user.gameLevel]);
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== activeTab) {
+      setActiveTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    onSubTabChange?.(activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     setProfileForm(prev => ({
@@ -1094,7 +1123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           { id: 'coins_ledger', label: 'Coins Audit History' },
           { id: 'complaints', label: `Help & Complaints (${complaints.length})` },
           { id: 'profile', label: 'Profile & Privacy' },
-          { id: 'devices', label: `Devices (${user.activeSessions?.length || 1})` },
+          { id: 'devices', label: `Devices (${user.activeSessions?.length || 1}/4)` },
         ].map(tab => (
           <button
             key={tab.id}
@@ -1250,6 +1279,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Daily Top Earners Leaderboard */}
             <DailyTopEarners currentUser={user} />
+
+            {/* Top 5 Referrers Leaderboard Widget */}
+            <TopReferrersWidget currentUser={user} onShareLink={handleShareReferralLink} />
+
+            {/* Detailed Referral Analytics & Historical Earnings */}
+            <ReferralAnalytics
+              user={user}
+              referrals={displayReferrals}
+              transactions={transactions}
+              referralUrl={referralUrl}
+              onShareLink={handleShareReferralLink}
+            />
 
             {/* Referral Growth Chart */}
             <ReferralGrowthChart referrals={displayReferrals} sponsorUserId={user.userId} />
@@ -1525,6 +1566,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* ===================== TAB 4: REFERRAL TEAM ===================== */}
       {activeTab === 'referrals' && (
         <div className="space-y-5">
+          {/* Detailed Referral Analytics & Historical Earnings */}
+          <ReferralAnalytics
+            user={user}
+            referrals={displayReferrals}
+            transactions={transactions}
+            referralUrl={referralUrl}
+            onShareLink={handleShareReferralLink}
+          />
+
+          {/* Top 5 Referrers Leaderboard Widget */}
+          <TopReferrersWidget currentUser={user} onShareLink={handleShareReferralLink} />
+
           {/* 30-Day Referral Growth Visualization */}
           <ReferralGrowthChart referrals={displayReferrals} sponsorUserId={user.userId} />
 
@@ -2650,31 +2703,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Read-Only Locked Fields (Roll Number & Sponsor ID) */}
+            {/* Read-Only Locked Fields (User ID, Personal Room ID & Sponsor ID) */}
             <div className="bg-[#f5f8ff] p-4 rounded-md border border-blue-200 space-y-3">
-              <div className="flex items-center space-x-2">
-                <Lock className="w-4 h-4 text-[#2874f0]" />
-                <h4 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
-                  सुरक्षित अपरिवर्तनीय विवरण (Strictly Immutable IDs)
-                </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <Lock className="w-4 h-4 text-[#2874f0]" />
+                  <h4 className="text-xs font-bold text-[#212121] uppercase tracking-wider">
+                    सुरक्षित अपरिवर्तनीय विवरण (Strictly Non-Editable &amp; Non-Duplicable IDs)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-bold bg-emerald-50 text-[#388e3c] border border-emerald-200 px-2 py-0.5 rounded-sm">
+                  ZERO DUPLICATE GUARANTEE
+                </span>
               </div>
               <p className="text-[11px] text-slate-600">
-                सुरक्षा एवं वित्तीय ऑडिट नियमों के तहत आपका यूनिट रोल नंबर और स्पॉन्सर आईडी लाइफटाइम स्थायी (Locked) रहते हैं:
+                सुरक्षा एवं यूनिक पहचान नियमों के तहत आपका Personal User ID, Personal Room ID और Sponsor ID लाइफटाइम स्थायी (Locked) रहते हैं — इन्हें न कोई बदल सकता है और न ही किसी अन्य यूज़र को डुप्लीकेट मिल सकते हैं:
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
                   <label className="text-xs font-semibold text-slate-700 block mb-1">
-                    यूनिट रोल नंबर (Roll No / User ID) 🔒
+                    पर्सनल यूज़र आईडी (Personal User ID) 🔒
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={user.userId}
                       disabled
-                      className="w-full bg-white border border-slate-300 rounded px-3.5 py-2 text-xs text-[#2874f0] font-mono font-bold cursor-not-allowed"
+                      readOnly
+                      className="w-full bg-white border border-slate-300 rounded px-3.5 py-2 pr-16 text-xs text-[#2874f0] font-mono font-bold cursor-not-allowed"
                     />
-                    <span className="absolute right-3 top-2 text-[10px] bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-sm border border-amber-200">
+                    <span className="absolute right-2.5 top-2 text-[10px] bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded-sm border border-amber-200">
+                      LOCKED
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    पर्सनल रूम आईडी (Personal Room ID) 🔒
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={`#${user.personalRoomId || user.roomAddress || 'UNIQUE'}`}
+                      disabled
+                      readOnly
+                      className="w-full bg-white border border-slate-300 rounded px-3.5 py-2 pr-16 text-xs text-purple-700 font-mono font-bold cursor-not-allowed"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[10px] bg-purple-50 text-purple-800 font-bold px-1.5 py-0.5 rounded-sm border border-purple-200">
                       LOCKED
                     </span>
                   </div>
@@ -2689,9 +2766,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       type="text"
                       value={user.sponsorId}
                       disabled
-                      className="w-full bg-white border border-slate-300 rounded px-3.5 py-2 text-xs text-[#388e3c] font-mono font-bold cursor-not-allowed"
+                      readOnly
+                      className="w-full bg-white border border-slate-300 rounded px-3.5 py-2 pr-16 text-xs text-[#388e3c] font-mono font-bold cursor-not-allowed"
                     />
-                    <span className="absolute right-3 top-2 text-[10px] bg-emerald-50 text-[#388e3c] font-bold px-1.5 py-0.5 rounded-sm border border-emerald-200">
+                    <span className="absolute right-2.5 top-2 text-[10px] bg-emerald-50 text-[#388e3c] font-bold px-1.5 py-0.5 rounded-sm border border-emerald-200">
                       LOCKED
                     </span>
                   </div>
@@ -3078,14 +3156,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="bg-white rounded-md p-5 sm:p-6 border border-slate-200 space-y-4 shadow-2xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="w-8 h-8 rounded-md bg-[#f5f8ff] text-[#2874f0] flex items-center justify-center border border-blue-200">
                     <Laptop className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-bold text-[#212121]">Multi-Device Login Management</h3>
+                  <h3 className="text-base font-bold text-[#212121]">Multi-Device Login Management (4-Device Sync)</h3>
+                  <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-sm border ${
+                    (user.activeSessions?.length || 1) >= 4
+                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                      : 'bg-emerald-50 text-[#388e3c] border-emerald-200'
+                  }`}>
+                    {user.activeSessions?.length || 1} / 4 Devices Active
+                  </span>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">
-                  आप अपने Roll Number / Mobile और Password से किसी भी मोबाइल, लैपटॉप या कंप्यूटर में एक साथ लॉगिन कर सकते हैं।
+                  आप एक साथ अधिकतम 4 मोबाइल/लैपटॉप/टैबलेट पर लॉगिन रह सकते हैं। किसी भी दूसरे डिवाइस में लॉगिन करने पर आपका पूरा डेटा (Coins, Balance, Room, Last Screen) बिल्कुल वैसा ही मिलेगा — लॉगआउट करने पर कोई भी डेटा डिलीट नहीं होता।
                 </p>
               </div>
 
@@ -3124,30 +3209,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="bg-[#f9fafb] p-3.5 rounded-md border border-slate-200 space-y-1">
                 <div className="flex items-center space-x-1.5 text-[#388e3c] text-xs font-bold">
                   <Smartphone className="w-3.5 h-3.5" />
-                  <span>Multiple Devices Support</span>
+                  <span>4-Device Concurrent Slots</span>
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  घर का फोन, पर्सनल फोन या लैपटॉप—सब जगह एक साथ लॉगिन रखें।
+                  4 अलग-अलग मोबाइल, लैपटॉप या टैबलेट में एक साथ लॉगिन-लॉगआउट करें; 5वां डिवाइस आने पर पुराना स्लॉट चुनने का विकल्प मिलता है।
                 </p>
               </div>
 
               <div className="bg-[#f9fafb] p-3.5 rounded-md border border-slate-200 space-y-1">
                 <div className="flex items-center space-x-1.5 text-[#fb641b] text-xs font-bold">
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Real-time Live Sync</span>
+                  <span>Exact Workspace Resume</span>
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  किसी भी डिवाइस पर प्रोफ़ाइल या पासवर्ड बदलें, सभी डिवाइसेस पर तुरंत अपडेट दिखेगा।
+                  आप जहाँ काम छोड़कर जाएंगे, दूसरे डिवाइस में लॉगिन करते ही वही टैब, कॉइन्स, वॉलेट और रूम ID वापस मिलेगा।
                 </p>
               </div>
 
               <div className="bg-[#f9fafb] p-3.5 rounded-md border border-slate-200 space-y-1">
                 <div className="flex items-center space-x-1.5 text-[#2874f0] text-xs font-bold">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Remote Device Logout</span>
+                  <span>Zero Data Deletion</span>
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  अगर किसी दूसरे के डिवाइस में लॉगिन रह गया, तो यहाँ से 1-क्लिक में लॉगआउट करें।
+                  रिमोट लॉगआउट करने से केवल उस डिवाइस की एंट्री बंद होती है — आपका User ID, Room ID, Coins और डेटा 100% सुरक्षित रहता है।
                 </p>
               </div>
             </div>
@@ -3156,7 +3241,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Active Devices List */}
           <div className="bg-white rounded-md p-5 sm:p-6 border border-slate-200 space-y-4 shadow-2xs">
             <h4 className="text-sm font-bold text-[#212121] flex items-center justify-between">
-              <span>Currently Logged-in Devices ({user.activeSessions?.length || 1})</span>
+              <span>Currently Logged-in Devices ({user.activeSessions?.length || 1} / 4 Max)</span>
               <span className="text-[11px] font-normal text-slate-500">
                 लॉगिन समय एवं अंतिम गतिविधि
               </span>

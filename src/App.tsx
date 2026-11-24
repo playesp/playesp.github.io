@@ -21,7 +21,7 @@ import { ServiceDetailView } from './views/ServiceDetailView.tsx';
 import { MomentsView } from './views/MomentsView.tsx';
 import { ChatClubView } from './views/ChatClubView.tsx';
 import { RegisterView } from './views/RegisterView.tsx';
-import { DashboardView } from './views/DashboardView.tsx';
+import { DashboardView, type DashboardTabType } from './views/DashboardView.tsx';
 import { AdminView } from './views/AdminView.tsx';
 import { GamingRoomView } from './views/GamingRoomView.tsx';
 import { NwiSystemView } from './views/NwiSystemView.tsx';
@@ -59,6 +59,11 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('room') && stored) return 'gaming-room';
+    }
+    const savedTab = stored?.workspaceState?.lastTab;
+    const validUserTabs = new Set(['home', 'services', 'service-detail', 'moments', 'chat-club', 'gaming-room', 'nwi', 'dashboard', 'me']);
+    if (stored && savedTab && validUserTabs.has(savedTab)) {
+      return savedTab;
     }
     if (stored?.accountType === 'gamer') return 'gaming-room';
     return stored ? 'dashboard' : 'home';
@@ -100,13 +105,23 @@ export default function App() {
     if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) {
       return 'voice_room';
     }
-    return 'overview';
+    const saved = api.getStoredUser()?.workspaceState?.lastGamingSubTab;
+    return (saved as any) || 'overview';
   });
   const [activeGamingSubTab, setActiveGamingSubTab] = useState<GamingSubTabType>(() => {
     if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) {
       return 'voice_room';
     }
-    return 'games';
+    const saved = api.getStoredUser()?.workspaceState?.lastGamingSubTab;
+    return (saved as GamingSubTabType) || 'games';
+  });
+  const [dashboardInitialSubTab, setDashboardInitialSubTab] = useState<DashboardTabType>(() => {
+    const saved = api.getStoredUser()?.workspaceState?.lastDashboardTab as DashboardTabType | undefined;
+    const valid: DashboardTabType[] = [
+      'overview', 'idcard', 'poster', 'referrals', 'nwi_tree',
+      'wallet', 'transactions', 'coins_ledger', 'complaints', 'profile', 'devices',
+    ];
+    return saved && valid.includes(saved) ? saved : 'overview';
   });
   const [gamingNavPulse, setGamingNavPulse] = useState(0);
   const [initialRegMode, setInitialRegMode] = useState<'business' | 'gamer'>('business');
@@ -148,6 +163,16 @@ export default function App() {
       if (refParam) {
         const cleanRef = refParam.trim().replace(/^@+/, '');
         setInitialSponsorId(cleanRef);
+        // Track unique session referral link click for conversion rate analytics
+        const clickGuardKey = `esp_ref_click_tracked_${cleanRef.toLowerCase()}`;
+        try {
+          if (!sessionStorage.getItem(clickGuardKey)) {
+            sessionStorage.setItem(clickGuardKey, '1');
+            api.trackReferralClick(cleanRef).catch(() => {});
+          }
+        } catch {
+          api.trackReferralClick(cleanRef).catch(() => {});
+        }
         // Only redirect to register if user is not already logged in
         if (!api.getStoredUser()) {
           setCurrentTab('register');
@@ -183,11 +208,52 @@ export default function App() {
       verifyCurrentSession();
     };
     window.addEventListener('focus', handleFocus);
+    const sessionPoll = setInterval(verifyCurrentSession, 20000);
     return () => {
+      clearInterval(sessionPoll);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('esp-toast', handleToastEvent);
     };
   }, []);
+
+  // Multi-Device Admin session polling (detects remote admin logout from any other admin device)
+  useEffect(() => {
+    if (!isAdmin) return;
+    const checkAdmin = async () => {
+      try {
+        const res = await api.verifyAdminSession();
+        if (res && res.sessionTerminated) {
+          setIsAdmin(false);
+          setAdminPassword('');
+          api.setStoredAdmin(false);
+          setCurrentTab('home');
+          setRemoteLogoutNotice(res.message || 'यह Admin डिवाइस किसी अन्य Admin डिवाइस से रिमोटली लॉगआउट कर दिया गया है।');
+        }
+      } catch {
+        // ignore transient errors
+      }
+    };
+    checkAdmin();
+    const adminPoll = setInterval(checkAdmin, 25000);
+    return () => clearInterval(adminPoll);
+  }, [isAdmin]);
+
+  // Persist user's active screen/tab to server so logging in on another device resumes exact workspace
+  useEffect(() => {
+    if (!currentUser?.userId) return;
+    if (currentTab === 'admin' || currentTab === 'register') return;
+    const timer = setTimeout(() => {
+      const ws = {
+        lastTab: currentTab,
+        lastGamingSubTab: activeGamingSubTab,
+        lastDashboardTab: dashboardInitialSubTab,
+        lastRoomAddress: currentUser.roomAddress || currentUser.personalRoomId || '',
+        updatedAt: new Date().toISOString(),
+      };
+      api.saveWorkspaceState(currentUser.userId, ws);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [currentUser?.userId, currentTab, activeGamingSubTab, dashboardInitialSubTab]);
 
   // Presence & Online Session Heartbeat ("कब से कब तक ऑन रहा" & "कितना दिन गेम खेला" Tracking)
   useEffect(() => {
@@ -362,39 +428,76 @@ export default function App() {
     showToast(`नमस्ते ${user.fullName}, ESP पोर्टल में आपका स्वागत है!`, 'success');
     setCurrentUser(user);
     setRemoteLogoutNotice(null);
+
+    const savedWs = user.workspaceState;
+    const validDashboardTabs: DashboardTabType[] = [
+      'overview', 'idcard', 'poster', 'referrals', 'nwi_tree',
+      'wallet', 'transactions', 'coins_ledger', 'complaints', 'profile', 'devices',
+    ];
+    if (savedWs?.lastDashboardTab && validDashboardTabs.includes(savedWs.lastDashboardTab as DashboardTabType)) {
+      setDashboardInitialSubTab(savedWs.lastDashboardTab as DashboardTabType);
+    } else {
+      setDashboardInitialSubTab('overview');
+    }
+
     const isGamerAccount = user.accountType === 'gamer';
+    const validUserTabs = new Set(['home', 'services', 'service-detail', 'moments', 'chat-club', 'gaming-room', 'nwi', 'dashboard', 'me']);
+
     if (initialRoomCode) {
       setGamingInitialSubTab('voice_room');
+      setActiveGamingSubTab('voice_room');
       setCurrentTab('gaming-room');
-    } else if (isGamerAccount || destination === 'gaming-room') {
+    } else if (destination === 'gaming-room') {
+      const gTab = (savedWs?.lastGamingSubTab as any) || 'games';
+      setGamingInitialSubTab(gTab);
+      setActiveGamingSubTab(gTab);
+      setCurrentTab('gaming-room');
+    } else if (savedWs?.lastTab && validUserTabs.has(savedWs.lastTab)) {
+      if (savedWs.lastGamingSubTab) {
+        setGamingInitialSubTab(savedWs.lastGamingSubTab as any);
+        setActiveGamingSubTab(savedWs.lastGamingSubTab as any);
+      }
+      setCurrentTab(savedWs.lastTab);
+    } else if (isGamerAccount) {
       setGamingInitialSubTab('games');
+      setActiveGamingSubTab('games');
       setCurrentTab('gaming-room');
     } else {
       setCurrentTab('dashboard');
     }
-    if (promptProfileChoice && !isGamerAccount && destination !== 'gaming-room') {
+    if (promptProfileChoice && !isGamerAccount && destination !== 'gaming-room' && !savedWs?.lastTab) {
       setShowPostLoginProfileModal(true);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleUserLogout = () => {
+    const uid = currentUser?.userId;
+    const ws = uid
+      ? {
+          lastTab: currentTab,
+          lastGamingSubTab: activeGamingSubTab,
+          lastDashboardTab: dashboardInitialSubTab,
+          lastRoomAddress: currentUser?.roomAddress || currentUser?.personalRoomId || '',
+        }
+      : undefined;
+    void api.logout(uid, ws);
+    setShowWeeklyRewardPopup(false);
     setCurrentUser(null);
-    api.setStoredUser(null);
     setCurrentTab('home');
   };
 
-  const handleAdminLogin = (password: string) => {
+  const handleAdminLogin = (password: string, adminToken?: string) => {
     setIsAdmin(true);
     setAdminPassword(password);
-    api.setStoredAdmin(true, password);
+    api.setStoredAdmin(true, password, adminToken);
     setCurrentTab('admin');
   };
 
   const handleAdminLogout = () => {
+    void api.adminLogout();
     setIsAdmin(false);
     setAdminPassword('');
-    api.setStoredAdmin(false);
     setCurrentTab('home');
   };
 
@@ -686,6 +789,8 @@ export default function App() {
           <DashboardView
             user={currentUser}
             settings={settings}
+            initialSubTab={dashboardInitialSubTab}
+            onSubTabChange={setDashboardInitialSubTab}
             onUpdateUser={updated => {
               setCurrentUser(updated);
               api.setStoredUser(updated);

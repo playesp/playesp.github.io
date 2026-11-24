@@ -272,6 +272,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
     category?: 'diwali' | 'popular' | 'romance' | 'luxury' | 'mythic' | 'packets';
   } | null>(null);
   const [showDailyTasksModal, setShowDailyTasksModal] = useState(false);
+  const [dailyTasksModalInitialTab, setDailyTasksModalInitialTab] = useState<'tasks' | 'login'>('tasks');
   const [showRoomStoreModal, setShowRoomStoreModal] = useState(false);
   const [showTopClansModal, setShowTopClansModal] = useState(false);
   const [showDailyMissionsModal, setShowDailyMissionsModal] = useState(false);
@@ -2650,11 +2651,17 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               user={user}
               onUpdateUser={onUpdateUser}
               onOpenRanking={() => setShowLeaderboardModal(true)}
-              onOpenTasks={() => setShowDailyTasksModal(true)}
+              onOpenTasks={() => {
+                setDailyTasksModalInitialTab('tasks');
+                setShowDailyTasksModal(true);
+              }}
               onOpenFriends={() => setShowEspChatModal(true)}
               onOpenVoiceRoom={() => setActiveTab('voice_room')}
               onOpenGame={(gameKey) => handleLaunchGameByKey(gameKey)}
-              onOpenWeeklyRewards={() => setShowDailyTasksModal(true)}
+              onOpenWeeklyRewards={() => {
+                setDailyTasksModalInitialTab('login');
+                setShowDailyTasksModal(true);
+              }}
               onOpenRecharge={() => setActiveTab('recharge_convert')}
               onOpenProfile={() => openUserProfileSheet(user.userId, user as Partial<RichProfileData>, 'view')}
               onOpenChats={() => setShowEspChatModal(true)}
@@ -4451,10 +4458,11 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
         />
       )}
 
-      {/* 13. Real Verified Tasks & Milestone Chests Modal */}
+      {/* 13. Real Verified Tasks (Daily / Growth / Family) & Weekly Rewards Modal */}
       {showDailyTasksModal && (
         <DailyTasksAndLoginModal
           user={user}
+          initialTab={dailyTasksModalInitialTab}
           onUpdateUser={onUpdateUser}
           onOpenBuyCoins={() => {
             setShowDailyTasksModal(false);
@@ -4462,10 +4470,25 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
           }}
           onNavigateTab={(actionTab) => {
             setShowDailyTasksModal(false);
-            if (actionTab === 'profile') {
+            if (actionTab.startsWith('game:')) {
+              handleLaunchGameByKey(actionTab.replace('game:', ''));
+            } else if (actionTab === 'profile') {
               setShowAvatarCustomizerModal(true);
             } else if (actionTab === 'voice_room' || actionTab === 'voice-room') {
               setActiveTab('voice_room');
+            } else if (actionTab === 'moments') {
+              onOpenMomentsFeed?.();
+            } else if (actionTab === 'friends' || actionTab === 'chat') {
+              setShowEspChatModal(true);
+            } else if (actionTab === 'relationships') {
+              setShowRelationshipsModal(true);
+            } else if (actionTab === 'gift') {
+              setShowAppGiftModal(true);
+            } else if (actionTab === 'family') {
+              setShowFamilyHubModal(true);
+            } else if (actionTab === 'clans') {
+              setActiveTab('clan_friends');
+              setShowTopClansModal(true);
             } else {
               setActiveTab('games');
             }

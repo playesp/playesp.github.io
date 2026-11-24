@@ -29,6 +29,7 @@ import {
   MessageCircle,
   Loader2,
   UserCheck,
+  Lock,
 } from 'lucide-react';
 import type { UserProfile, PlatformSettings } from '../types/index.ts';
 import { api } from '../services/api.ts';
@@ -84,6 +85,7 @@ export const MePageView: React.FC<MePageViewProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'me' | 'edit-profile'>('me');
   const [copiedId, setCopiedId] = useState(false);
+  const [copiedRoom, setCopiedRoom] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [myMomentsCount, setMyMomentsCount] = useState<number>(0);
 
@@ -143,6 +145,15 @@ export const MePageView: React.FC<MePageViewProps> = ({
     setCopiedId(true);
     showToast(`✅ User ID ${user.userId} कॉपी हो गया!`, 'success');
     setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  const handleCopyRoomId = () => {
+    const roomIdVal = String(user.personalRoomId || user.roomAddress || '').trim();
+    if (!roomIdVal) return;
+    navigator.clipboard.writeText(roomIdVal);
+    setCopiedRoom(true);
+    showToast(`✅ Personal Room ID #${roomIdVal} कॉपी हो गया!`, 'success');
+    setTimeout(() => setCopiedRoom(false), 2000);
   };
 
   const handleCopyInviteLink = (useUsername = false) => {
@@ -316,15 +327,18 @@ export const MePageView: React.FC<MePageViewProps> = ({
             </div>
           </button>
 
-          {/* User ID Row (Click to Copy User ID!) */}
+          {/* User ID Row (Click to Copy User ID - Strictly Locked!) */}
           <button
             type="button"
             onClick={handleCopyUserId}
             className="w-full px-3.5 sm:px-4 py-3 min-h-[48px] flex items-center justify-between gap-2 hover:bg-amber-50/60 cursor-pointer transition text-left"
-            title="Click to copy User ID"
+            title="Click to copy Personal User ID (Non-Editable)"
           >
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <span className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">User ID</span>
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap shrink-0">
+                <Lock className="w-2.5 h-2.5" /> LOCKED
+              </span>
               <span className="text-[9.5px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 whitespace-nowrap shrink-0">
                 Tap to Copy
               </span>
@@ -340,6 +354,47 @@ export const MePageView: React.FC<MePageViewProps> = ({
               )}
             </div>
           </button>
+
+          {/* Personal Room ID Row (Strictly Locked & Unique - Click to Copy!) */}
+          <button
+            type="button"
+            onClick={handleCopyRoomId}
+            className="w-full px-3.5 sm:px-4 py-3 min-h-[48px] flex items-center justify-between gap-2 hover:bg-purple-50/50 cursor-pointer transition text-left"
+            title="Personal Room ID (Non-Editable & Unique)"
+          >
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">Personal Room ID</span>
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 whitespace-nowrap shrink-0">
+                <Lock className="w-2.5 h-2.5" /> LOCKED
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-mono font-bold text-purple-700 shrink-0">
+              <span>#{user.personalRoomId || user.roomAddress || 'UNIQUE'}</span>
+              {copiedRoom ? (
+                <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-sans font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 whitespace-nowrap">
+                  <Check className="w-3 h-3" /> Copied
+                </span>
+              ) : (
+                <Copy className="w-4 h-4 text-slate-400 shrink-0" />
+              )}
+            </div>
+          </button>
+
+          {/* Sponsor ID Row (Strictly Locked & Non-Editable) */}
+          <div
+            className="w-full px-3.5 sm:px-4 py-3 min-h-[48px] flex items-center justify-between gap-2 bg-slate-50/70 text-left"
+            title="Sponsor ID is permanently locked for audit integrity"
+          >
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">Sponsor ID</span>
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shrink-0">
+                <Lock className="w-2.5 h-2.5" /> LOCKED
+              </span>
+            </div>
+            <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 truncate max-w-[145px]">
+              {user.sponsorId || 'ROOT'}
+            </span>
+          </div>
 
           {/* @Username Handle Row */}
           <button

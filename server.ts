@@ -11,6 +11,7 @@ import type {
   PlatformSettings,
   NotificationItem,
   UserSession,
+  AdminSession,
   Moment,
   MomentComment,
   ChatRoom,
@@ -41,6 +42,9 @@ import {
   VIP_TIERS,
   REAL_TASKS_CATALOG,
   CHEST_MILESTONES,
+  ACTIVENESS_CHESTS_CATALOG,
+  GROWTH_TASKS_CATALOG,
+  FAMILY_TASKS_CATALOG,
   ADVANCE_ROOM_THEMES,
   COIN_RECHARGE_PACKS,
   GIFT_CARD_CATALOG,
@@ -76,11 +80,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 // Environment constraint: Dev server must always listen on port 3000
 const PORT = 3000;
+const MAX_DEVICE_SESSIONS = 4;
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-session-token, x-admin-password');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-session-token, x-admin-password, x-admin-token, x-device-id');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
@@ -205,6 +210,8 @@ interface Database {
     createdAt: string;
   }>;
   adminMasterKey: string;
+  adminSessions?: AdminSession[];
+  terminatedAdminTokens?: string[];
 }
 
 
@@ -672,6 +679,9 @@ function ensureDailyTaskState(user: UserProfile) {
     user.taskProgress = {};
     user.claimedTaskIds = [];
     user.claimedChestMilestones = [];
+    user.todayActiveness = 0;
+    user.claimedActivenessChests = [];
+    user.claimedFamilyTaskIds = [];
   }
   if (!user.taskProgress || typeof user.taskProgress !== 'object') {
     user.taskProgress = {};
@@ -681,6 +691,18 @@ function ensureDailyTaskState(user: UserProfile) {
   }
   if (!Array.isArray(user.claimedChestMilestones)) {
     user.claimedChestMilestones = [];
+  }
+  if (user.todayActiveness === undefined) {
+    user.todayActiveness = 0;
+  }
+  if (!Array.isArray(user.claimedActivenessChests)) {
+    user.claimedActivenessChests = [];
+  }
+  if (!Array.isArray(user.claimedGrowthTaskIds)) {
+    user.claimedGrowthTaskIds = [];
+  }
+  if (!Array.isArray(user.claimedFamilyTaskIds)) {
+    user.claimedFamilyTaskIds = [];
   }
   if (user.tasksCompletedCount === undefined) {
     user.tasksCompletedCount = 0;
@@ -703,6 +725,91 @@ function getTasksStatusForUser(user: UserProfile) {
       ...task,
       currentProgress: Math.min(progress, task.targetCount),
       isCompleted,
+      isClaimed,
+    };
+  });
+}
+
+function getActivenessChestsForUser(user: UserProfile) {
+  ensureDailyTaskState(user);
+  const activeness = Number(user.todayActiveness || 0);
+  return ACTIVENESS_CHESTS_CATALOG.map(ch => ({
+    ...ch,
+    isUnlocked: activeness >= ch.threshold,
+    isClaimed: (user.claimedActivenessChests || []).includes(ch.threshold),
+  }));
+}
+
+function getGrowthTasksForUser(user: UserProfile) {
+  ensureDailyTaskState(user);
+  const friendsCount = Math.max(Number(user.friendsList?.length || 0), Number(user.friendsCount || 0));
+  const hasSentGift =
+    Number(user.taskProgress?.gift_sent || 0) >= 1 ||
+    Number(user.totalCoinsSpent || 0) > 0 ||
+    (db.giftHistory || []).some(g => g.senderId === user.userId);
+  const hasReceivedGift =
+    Number(user.charms || 0) > 0 ||
+    Object.keys(user.receivedGifts || {}).length > 0 ||
+    (db.giftHistory || []).some(g => g.recipientId === user.userId);
+  const hasPostedMoment =
+    Number(user.taskProgress?.moment_posted || 0) >= 1 ||
+    (db.moments || []).some(m => m.userId === user.userId);
+
+  return GROWTH_TASKS_CATALOG.map(task => {
+    let rawProgress = 0;
+    if (task.id === 'growth-first-attempt') {
+      rawProgress = Number(user.totalGamesPlayed || 0) >= 1 ? 1 : 0;
+    } else if (task.id === 'growth-new-challenger') {
+      rawProgress = Number(user.totalGamesPlayed || 0);
+    } else if (task.id === 'growth-first-show') {
+      rawProgress =
+        Number(user.taskProgress?.voice_joined || 0) >= 1 ||
+        Number(user.totalOnlineMinutes || 0) >= 1 ||
+        (user.unlockedRooms || []).length > 1
+          ? 1
+          : 0;
+    } else if (task.id === 'growth-make-friends') {
+      rawProgress = friendsCount >= 1 ? 1 : 0;
+    } else if (task.id === 'growth-soulmate') {
+      rawProgress = (user.activeRelationships || []).length >= 1 || friendsCount >= 2 ? 1 : 0;
+    } else if (task.id === 'growth-send-gift') {
+      rawProgress = hasSentGift ? 1 : 0;
+    } else if (task.id === 'growth-charming') {
+      rawProgress = hasReceivedGift ? 1 : 0;
+    } else if (task.id === 'growth-fun-times') {
+      rawProgress = hasPostedMoment ? 1 : 0;
+    }
+    const isClaimed = (user.claimedGrowthTaskIds || []).includes(task.id);
+    return {
+      ...task,
+      currentProgress: Math.min(rawProgress, task.targetCount),
+      isCompleted: rawProgress >= task.targetCount,
+      isClaimed,
+    };
+  });
+}
+
+function getFamilyTasksForUser(user: UserProfile) {
+  ensureDailyTaskState(user);
+  const inFamily = Boolean(user.familyId || user.clanName);
+  return FAMILY_TASKS_CATALOG.map(task => {
+    let rawProgress = 0;
+    if (task.id === 'family-join') {
+      rawProgress = inFamily ? 1 : 0;
+    } else if (task.id === 'family-chat') {
+      rawProgress = Number(user.taskProgress?.chat_sent || 0);
+    } else if (task.id === 'family-game') {
+      rawProgress = Number(user.taskProgress?.game_played || 0);
+    } else if (task.id === 'family-gift') {
+      rawProgress = Number(user.taskProgress?.gift_sent || 0);
+    } else if (task.id === 'family-moment') {
+      rawProgress = Number(user.taskProgress?.moment_posted || 0);
+    }
+    const isClaimed = (user.claimedFamilyTaskIds || []).includes(task.id);
+    return {
+      ...task,
+      currentProgress: Math.min(rawProgress, task.targetCount),
+      isCompleted: rawProgress >= task.targetCount,
       isClaimed,
     };
   });
@@ -755,7 +862,9 @@ function isUsernameTaken(users: UserProfile[], normalized: string, excludeUserId
       u.userId !== excludeUserId &&
       (normalizeUsername(u.username) === normalized ||
         String(u.userId || '').trim().toLowerCase() === normalized ||
-        String(u.gamingId || '').trim().toLowerCase() === normalized)
+        String(u.gamingId || '').trim().toLowerCase() === normalized ||
+        String(u.roomAddress || '').trim().toLowerCase() === normalized ||
+        String(u.personalRoomId || '').trim().toLowerCase() === normalized)
   );
 }
 
@@ -891,6 +1000,8 @@ function loadDatabase(): Database {
       if (!Array.isArray(data.families)) data.families = [];
       if (!Array.isArray(data.giftHistory)) data.giftHistory = [];
       if (!Array.isArray(data.directMessages)) data.directMessages = [];
+      if (!Array.isArray(data.adminSessions)) data.adminSessions = [];
+      if (!Array.isArray(data.terminatedAdminTokens)) data.terminatedAdminTokens = [];
       return data;
     } catch (e) {
       console.error('Failed to parse database file, resetting to clean defaults', e);
@@ -1011,6 +1122,8 @@ function loadDatabase(): Database {
         time: 'Live'
       }
     ],
+    adminSessions: [],
+    terminatedAdminTokens: [],
   };
 
   saveDatabase(initialDb);
@@ -1019,13 +1132,149 @@ function loadDatabase(): Database {
 
 function saveDatabase(database: Database) {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2), 'utf-8');
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(database, null, 2), 'utf-8');
+    fs.renameSync(tmpFile, DB_FILE);
   } catch (e) {
-    console.error('Failed to write database file', e);
+    console.error('Failed to write database file atomically', e);
   }
 }
 
 let db = loadDatabase();
+
+function ensureUniqueIdentityIntegrity(database: Database) {
+  let modified = false;
+  if (!Array.isArray(database.users)) database.users = [];
+  if (!Array.isArray(database.adminSessions)) {
+    database.adminSessions = [];
+    modified = true;
+  }
+  if (!Array.isArray(database.terminatedAdminTokens)) {
+    database.terminatedAdminTokens = [];
+    modified = true;
+  }
+
+  const seenUserIds = new Set<string>();
+  const seenGamingIds = new Set<string>();
+  const seenUsernames = new Set<string>();
+  const seenRooms = new Set<string>();
+
+  for (const u of database.users) {
+    // 1. Unique userId
+    const uidLower = String(u.userId || '').trim().toLowerCase();
+    if (!uidLower || seenUserIds.has(uidLower)) {
+      const freshId = u.accountType === 'gamer'
+        ? generateUniqueGamerUserId(u.fullName || 'Player')
+        : generateUniqueUserId(u.fullName || 'Member', u.chosenServiceCode || 'EMO');
+      u.userId = freshId;
+      modified = true;
+    }
+    seenUserIds.add(u.userId.toLowerCase());
+
+    // 2. Unique gamingId
+    const gidRaw = String(u.gamingId || '').trim();
+    const gidLower = gidRaw.toLowerCase();
+    if (!gidRaw || (seenGamingIds.has(gidLower) && gidLower !== u.userId.toLowerCase())) {
+      u.gamingId = u.userId;
+      modified = true;
+    }
+    seenGamingIds.add(String(u.gamingId).toLowerCase());
+
+    // 3. Unique numeric personal Room ID
+    let roomStr = String(u.roomAddress || u.personalRoomId || '').trim();
+    if (!isNumericRoomId(roomStr) || seenRooms.has(roomStr)) {
+      const freshRoom = (u.userId === 'EMO-MOM-MMO' || u.role === 'admin') && !seenRooms.has('1111')
+        ? '1111'
+        : generateUniqueRoomId(u.fullName || u.userId, database.users, database.customVoiceRooms || [], u.userId);
+      u.roomAddress = freshRoom;
+      u.personalRoomId = freshRoom;
+      roomStr = freshRoom;
+      modified = true;
+    } else {
+      if (u.roomAddress !== roomStr) {
+        u.roomAddress = roomStr;
+        modified = true;
+      }
+      if (u.personalRoomId !== roomStr) {
+        u.personalRoomId = roomStr;
+        modified = true;
+      }
+    }
+    seenRooms.add(roomStr);
+
+    // 4. Unique @username (backfill if missing or colliding)
+    let uname = normalizeUsername(u.username);
+    if (
+      !uname ||
+      !isValidUsernameFormat(uname) ||
+      seenUsernames.has(uname) ||
+      uname === u.userId.toLowerCase() ||
+      uname === String(u.gamingId || '').toLowerCase() ||
+      uname === roomStr.toLowerCase()
+    ) {
+      uname = generateUniqueDefaultUsername(u.fullName || u.userId, u.userId, u.gamingId || '');
+      let guard = 1;
+      while (seenUsernames.has(uname)) {
+        uname = `${uname.slice(0, 20)}${guard++}`;
+      }
+      u.username = uname;
+      modified = true;
+    }
+    seenUsernames.add(uname);
+
+    // 5. Enforce max 4 device sessions & workspaceState default
+    u.maxDevices = MAX_DEVICE_SESSIONS;
+    if (!Array.isArray(u.activeSessions)) {
+      u.activeSessions = [];
+    }
+    if (u.activeSessions.length > MAX_DEVICE_SESSIONS) {
+      u.activeSessions = [...u.activeSessions]
+        .sort((a, b) => new Date(b.lastActive || b.loginTime || 0).getTime() - new Date(a.lastActive || a.loginTime || 0).getTime())
+        .slice(0, MAX_DEVICE_SESSIONS);
+      modified = true;
+    }
+  }
+
+  getOrCreateRooms(database);
+
+  if (modified) {
+    saveDatabase(database);
+  }
+}
+
+function computeIdentityAudit(database: Database) {
+  const users = database.users || [];
+  const uidCount = new Map<string, number>();
+  const roomCount = new Map<string, number>();
+  const unameCount = new Map<string, number>();
+
+  for (const u of users) {
+    const uid = String(u.userId || '').trim().toLowerCase();
+    if (uid) uidCount.set(uid, (uidCount.get(uid) || 0) + 1);
+    const room = String(u.roomAddress || u.personalRoomId || '').trim();
+    if (room) roomCount.set(room, (roomCount.get(room) || 0) + 1);
+    const uname = normalizeUsername(u.username);
+    if (uname) unameCount.set(uname, (unameCount.get(uname) || 0) + 1);
+  }
+
+  const duplicateUserIds = Array.from(uidCount.entries()).filter(([, c]) => c > 1).map(([k]) => k);
+  const duplicateRoomIds = Array.from(roomCount.entries()).filter(([, c]) => c > 1).map(([k]) => k);
+  const duplicateUsernames = Array.from(unameCount.entries()).filter(([, c]) => c > 1).map(([k]) => k);
+
+  return {
+    totalUsers: users.length,
+    uniqueUserIds: uidCount.size,
+    uniqueRoomIds: roomCount.size,
+    uniqueUsernames: unameCount.size,
+    duplicateUserIds,
+    duplicateRoomIds,
+    duplicateUsernames,
+    integrityHealthy:
+      duplicateUserIds.length === 0 &&
+      duplicateRoomIds.length === 0 &&
+      duplicateUsernames.length === 0,
+  };
+}
 
 function extractUserInitials(fullName: string): string {
   const cleaned = String(fullName || '').replace(/[^a-zA-Z\s]/g, ' ').trim();
@@ -1050,6 +1299,8 @@ function isAnyIdTaken(candidate: string): boolean {
     u =>
       (u.userId || '').toLowerCase() === lower ||
       (u.gamingId || '').toLowerCase() === lower ||
+      String(u.roomAddress || '').trim().toLowerCase() === lower ||
+      String(u.personalRoomId || '').trim().toLowerCase() === lower ||
       normalizeUsername(u.username) === lower
   );
 }
@@ -1506,43 +1757,230 @@ function isPasswordMatch(storedPassword: string | undefined, inputPassword: stri
   return trimmedInput.length > 0 && storedPassword.trim() === trimmedInput;
 }
 
-function createSessionForUser(user: UserProfile, req: express.Request, preferredToken?: string): { sessionToken: string; session: UserSession } {
+function createSessionForUser(
+  user: UserProfile,
+  req: express.Request,
+  options?: string | {
+    preferredToken?: string;
+    deviceId?: string;
+    replaceSessionId?: string;
+    replaceOldestDevice?: boolean;
+    lastTab?: string;
+  }
+): {
+  limitReached?: boolean;
+  activeSessions?: UserSession[];
+  sessionToken?: string;
+  session?: UserSession;
+} {
+  const opts = typeof options === 'string' ? { preferredToken: options } : (options || {});
   const clientInfo = req.body?.deviceInfo;
   const userAgent = (req.headers['user-agent'] as string) || '';
   const parsed = parseDeviceInfo(userAgent, clientInfo);
   const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || '127.0.0.1';
   const ipAddress = rawIp.replace('::ffff:', '');
+  const deviceId = String(opts.deviceId || req.body?.deviceId || clientInfo?.deviceId || '').trim();
+
+  if (!Array.isArray(user.activeSessions)) {
+    user.activeSessions = [];
+  }
+  if (!Array.isArray(user.terminatedTokens)) {
+    user.terminatedTokens = [];
+  }
+
+  const preferredToken = opts.preferredToken && opts.preferredToken.trim() ? opts.preferredToken.trim() : '';
+  const nowIso = new Date().toISOString();
+
+  // Check if same device (by deviceId or preferredToken) already holds a slot -> reuse that slot seamlessly
+  const existingSlotIndex = user.activeSessions.findIndex(
+    s =>
+      (preferredToken !== '' && s.token === preferredToken) ||
+      (deviceId !== '' && s.deviceId && s.deviceId === deviceId)
+  );
+
+  if (existingSlotIndex !== -1) {
+    const existing = user.activeSessions[existingSlotIndex];
+    const tokenToUse = preferredToken || existing.token || `esp_tok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+    const refreshed: UserSession = {
+      ...existing,
+      token: tokenToUse,
+      deviceId: deviceId || existing.deviceId,
+      deviceType: parsed.deviceType,
+      deviceName: parsed.deviceName,
+      browser: parsed.browser,
+      os: parsed.os,
+      ipAddress,
+      lastActive: nowIso,
+      lastTab: opts.lastTab || existing.lastTab || user.workspaceState?.lastTab,
+    };
+    user.activeSessions.splice(existingSlotIndex, 1);
+    user.activeSessions.unshift(refreshed);
+    user.isOnline = true;
+    user.maxDevices = MAX_DEVICE_SESSIONS;
+    return { sessionToken: tokenToUse, session: refreshed };
+  }
+
+  // Enforce strict 4-device concurrent limit
+  if (user.activeSessions.length >= MAX_DEVICE_SESSIONS) {
+    if (opts.replaceSessionId) {
+      const targetIdx = user.activeSessions.findIndex(s => s.sessionId === opts.replaceSessionId);
+      if (targetIdx !== -1) {
+        const [removed] = user.activeSessions.splice(targetIdx, 1);
+        if (removed?.token) {
+          user.terminatedTokens = Array.from(new Set([removed.token, ...user.terminatedTokens])).slice(0, 50);
+        }
+      }
+    } else if (opts.replaceOldestDevice) {
+      let oldestIdx = 0;
+      let oldestTime = Infinity;
+      user.activeSessions.forEach((s, idx) => {
+        const t = new Date(s.lastActive || s.loginTime || 0).getTime();
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestIdx = idx;
+        }
+      });
+      const [removed] = user.activeSessions.splice(oldestIdx, 1);
+      if (removed?.token) {
+        user.terminatedTokens = Array.from(new Set([removed.token, ...user.terminatedTokens])).slice(0, 50);
+      }
+    } else {
+      return {
+        limitReached: true,
+        activeSessions: user.activeSessions,
+      };
+    }
+  }
 
   const sessionToken =
-    preferredToken && preferredToken.trim()
-      ? preferredToken.trim()
-      : `esp_tok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+    preferredToken || `esp_tok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
   const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
   const newSession: UserSession = {
     sessionId,
     token: sessionToken,
+    deviceId: deviceId || undefined,
     deviceType: parsed.deviceType,
     deviceName: parsed.deviceName,
     browser: parsed.browser,
     os: parsed.os,
     ipAddress,
-    loginTime: new Date().toISOString(),
-    lastActive: new Date().toISOString(),
+    loginTime: nowIso,
+    lastActive: nowIso,
+    lastTab: opts.lastTab || user.workspaceState?.lastTab,
   };
 
-  if (!user.activeSessions) {
-    user.activeSessions = [];
-  }
-
-  // Keep concurrent device sessions so user can be logged in on multiple phones / PCs!
-  user.activeSessions = user.activeSessions.filter(s => s.token !== sessionToken);
   user.activeSessions.unshift(newSession);
-  if (user.activeSessions.length > 25) {
-    user.activeSessions = user.activeSessions.slice(0, 25);
+  if (user.activeSessions.length > MAX_DEVICE_SESSIONS) {
+    user.activeSessions = user.activeSessions.slice(0, MAX_DEVICE_SESSIONS);
   }
+  user.isOnline = true;
+  user.maxDevices = MAX_DEVICE_SESSIONS;
 
   return { sessionToken, session: newSession };
+}
+
+function createAdminSession(
+  req: express.Request,
+  options?: {
+    preferredToken?: string;
+    deviceId?: string;
+    replaceSessionId?: string;
+    replaceOldestDevice?: boolean;
+  }
+): {
+  limitReached?: boolean;
+  activeSessions?: AdminSession[];
+  adminToken?: string;
+  session?: AdminSession;
+} {
+  if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+  if (!Array.isArray(db.terminatedAdminTokens)) db.terminatedAdminTokens = [];
+
+  const opts = options || {};
+  const clientInfo = req.body?.deviceInfo;
+  const userAgent = (req.headers['user-agent'] as string) || '';
+  const parsed = parseDeviceInfo(userAgent, clientInfo);
+  const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || '127.0.0.1';
+  const ipAddress = rawIp.replace('::ffff:', '');
+  const deviceId = String(opts.deviceId || req.body?.deviceId || clientInfo?.deviceId || '').trim();
+  const preferredToken = opts.preferredToken && opts.preferredToken.trim() ? opts.preferredToken.trim() : '';
+  const nowIso = new Date().toISOString();
+
+  const existingIdx = db.adminSessions.findIndex(
+    s =>
+      (preferredToken !== '' && s.token === preferredToken) ||
+      (deviceId !== '' && s.deviceId && s.deviceId === deviceId)
+  );
+
+  if (existingIdx !== -1) {
+    const existing = db.adminSessions[existingIdx];
+    const tokenToUse = preferredToken || existing.token || `esp_adm_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    const refreshed: AdminSession = {
+      ...existing,
+      token: tokenToUse,
+      deviceId: deviceId || existing.deviceId,
+      deviceType: parsed.deviceType,
+      deviceName: parsed.deviceName,
+      browser: parsed.browser,
+      os: parsed.os,
+      ipAddress,
+      lastActive: nowIso,
+    };
+    db.adminSessions.splice(existingIdx, 1);
+    db.adminSessions.unshift(refreshed);
+    return { adminToken: tokenToUse, session: refreshed };
+  }
+
+  if (db.adminSessions.length >= MAX_DEVICE_SESSIONS) {
+    if (opts.replaceSessionId) {
+      const targetIdx = db.adminSessions.findIndex(s => s.sessionId === opts.replaceSessionId);
+      if (targetIdx !== -1) {
+        const [removed] = db.adminSessions.splice(targetIdx, 1);
+        if (removed?.token) {
+          db.terminatedAdminTokens = Array.from(new Set([removed.token, ...db.terminatedAdminTokens])).slice(0, 50);
+        }
+      }
+    } else if (opts.replaceOldestDevice) {
+      let oldestIdx = 0;
+      let oldestTime = Infinity;
+      db.adminSessions.forEach((s, idx) => {
+        const t = new Date(s.lastActive || s.loginTime || 0).getTime();
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestIdx = idx;
+        }
+      });
+      const [removed] = db.adminSessions.splice(oldestIdx, 1);
+      if (removed?.token) {
+        db.terminatedAdminTokens = Array.from(new Set([removed.token, ...db.terminatedAdminTokens])).slice(0, 50);
+      }
+    } else {
+      return {
+        limitReached: true,
+        activeSessions: db.adminSessions,
+      };
+    }
+  }
+
+  const adminToken = preferredToken || `esp_adm_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  const newSess: AdminSession = {
+    sessionId: `admsess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    token: adminToken,
+    deviceId: deviceId || undefined,
+    deviceType: parsed.deviceType,
+    deviceName: parsed.deviceName,
+    browser: parsed.browser,
+    os: parsed.os,
+    ipAddress,
+    loginTime: nowIso,
+    lastActive: nowIso,
+  };
+  db.adminSessions.unshift(newSess);
+  if (db.adminSessions.length > MAX_DEVICE_SESSIONS) {
+    db.adminSessions = db.adminSessions.slice(0, MAX_DEVICE_SESSIONS);
+  }
+  return { adminToken, session: newSess };
 }
 
 // 4. Registration - Sets status to 'pending' for Admin Verification!
@@ -1805,7 +2243,7 @@ app.post('/api/auth/register', (req, res) => {
 
 // 5. Multi-Device Login (Roll Number / Gaming ID / Mobile / Email + Password)
 app.post('/api/auth/login', (req, res) => {
-  const { identifier, password } = req.body;
+  const { identifier, password, deviceId, replaceSessionId, replaceOldestDevice } = req.body || {};
   if (!identifier || !password) {
     return res.status(400).json({ success: false, message: 'कृपया अपनी ESP ID / मोबाइल / ईमेल और पासवर्ड दर्ज करें।' });
   }
@@ -1816,7 +2254,7 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(404).json({
       success: false,
       code: 'ACCOUNT_NOT_FOUND',
-      message: 'इस ESP ID, मोबाइल नंबर या ईमेल से सर्वर पर कोई खाता नहीं मिला। नीचे "Forget ID?" से अपना रोल नंबर खोजें।',
+      message: 'इस ESP ID, मोबाइल नंबर या ईमेल से सर्वर पर कोई खाता नहीं मिला। नीचे "Forget ID?" से अपनी ID खोजें।',
     });
   }
 
@@ -1829,15 +2267,36 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // Create device session for this login
-  const { sessionToken } = createSessionForUser(user, req);
+  // Create device session for this login (max 4 concurrent devices per account)
+  const sessionRes = createSessionForUser(user, req, {
+    deviceId: deviceId || req.body?.deviceInfo?.deviceId,
+    replaceSessionId,
+    replaceOldestDevice: Boolean(replaceOldestDevice),
+  });
+
+  if (sessionRes.limitReached) {
+    return res.status(409).json({
+      success: false,
+      code: 'DEVICE_LIMIT_REACHED',
+      maxDevices: MAX_DEVICE_SESSIONS,
+      activeSessions: (sessionRes.activeSessions || []).map(s => ({
+        ...s,
+        token: '',
+      })),
+      message: `यह खाता पहले से अधिकतम ${MAX_DEVICE_SESSIONS} डिवाइसेस में लॉगिन है! इस डिवाइस पर लॉगिन करने के लिए पहले नीचे से किसी 1 पुराने डिवाइस को लॉगआउट करें।`,
+    });
+  }
+
+  const sessionToken = sessionRes.sessionToken!;
   user.lastLogin = new Date().toISOString();
+  user.isOnline = true;
   saveDatabase(db);
 
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     user: {
       ...user,
+      maxDevices: MAX_DEVICE_SESSIONS,
       activeSessions: user.activeSessions?.map(s => ({
         ...s,
         isCurrent: s.token === sessionToken,
@@ -1850,7 +2309,7 @@ app.post('/api/auth/login', (req, res) => {
 // 5.0.0 Restore Persisted User Account / Session Across Container Restarts or Local Fallback Sync
 app.post('/api/auth/restore-account', (req, res) => {
   try {
-    const { user: backupUser, password, preferredToken } = req.body || {};
+    const { user: backupUser, password, preferredToken, deviceId, replaceSessionId, replaceOldestDevice } = req.body || {};
     if (!backupUser || !backupUser.userId) {
       return res.status(400).json({ success: false, message: 'Valid backup user payload required' });
     }
@@ -1875,7 +2334,22 @@ app.post('/api/auth/restore-account', (req, res) => {
           message: 'आपका यह डिवाइस किसी अन्य डिवाइस से रिमोटली लॉगआउट कर दिया गया है।',
         });
       }
-      const { sessionToken } = createSessionForUser(existing, req, preferredToken);
+      const sessionRes = createSessionForUser(existing, req, {
+        preferredToken,
+        deviceId: deviceId || req.body?.deviceInfo?.deviceId,
+        replaceSessionId,
+        replaceOldestDevice: Boolean(replaceOldestDevice),
+      });
+      if (sessionRes.limitReached) {
+        return res.status(409).json({
+          success: false,
+          code: 'DEVICE_LIMIT_REACHED',
+          maxDevices: MAX_DEVICE_SESSIONS,
+          activeSessions: (sessionRes.activeSessions || []).map(s => ({ ...s, token: '' })),
+          message: `अधिकतम ${MAX_DEVICE_SESSIONS} डिवाइस लॉगिन सीमा पूरी हो चुकी है।`,
+        });
+      }
+      const sessionToken = sessionRes.sessionToken!;
       existing.lastLogin = new Date().toISOString();
       saveDatabase(db);
       return res.json({
@@ -1883,6 +2357,7 @@ app.post('/api/auth/restore-account', (req, res) => {
         restored: false,
         user: {
           ...existing,
+          maxDevices: MAX_DEVICE_SESSIONS,
           activeSessions: existing.activeSessions?.map(s => ({
             ...s,
             isCurrent: s.token === sessionToken,
@@ -1892,11 +2367,14 @@ app.post('/api/auth/restore-account', (req, res) => {
       });
     }
 
-    // Re-hydrate account into running database
+    // Re-hydrate account into running database only if ID does not collide
+    const safeNewUserId = isAnyIdTaken(String(backupUser.userId).trim())
+      ? generateUniqueUserId(String(backupUser.fullName || 'ESP Member').trim(), backupUser.chosenServiceCode || 'EMO')
+      : String(backupUser.userId).trim();
     const restored = normalizeUserRecord({
       ...backupUser,
       id: backupUser.id || `usr-${Date.now()}-restored`,
-      userId: String(backupUser.userId).trim(),
+      userId: safeNewUserId,
       fullName: String(backupUser.fullName || 'ESP Member').trim(),
       phone: normalizePhoneDigits(backupUser.phone || '') || String(backupUser.phone || '').trim(),
       email: String(backupUser.email || '').trim().toLowerCase(),
@@ -1906,8 +2384,13 @@ app.post('/api/auth/restore-account', (req, res) => {
       lastLogin: new Date().toISOString(),
     });
 
-    const { sessionToken } = createSessionForUser(restored, req, preferredToken);
+    const sessionRes = createSessionForUser(restored, req, {
+      preferredToken,
+      deviceId: deviceId || req.body?.deviceInfo?.deviceId,
+    });
+    const sessionToken = sessionRes.sessionToken!;
     db.users.push(restored);
+    ensureUniqueIdentityIntegrity(db);
     saveDatabase(db);
 
     res.json({
@@ -1915,6 +2398,7 @@ app.post('/api/auth/restore-account', (req, res) => {
       restored: true,
       user: {
         ...restored,
+        maxDevices: MAX_DEVICE_SESSIONS,
         activeSessions: restored.activeSessions?.map(s => ({
           ...s,
           isCurrent: s.token === sessionToken,
@@ -1925,6 +2409,303 @@ app.post('/api/auth/restore-account', (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, message: err?.message || 'Restore failed' });
   }
+});
+
+// 5.0.0b Real Multi-Device User Logout (Frees only this device slot, never deletes user data)
+app.post('/api/auth/logout', (req, res) => {
+  const sessionToken = String(req.headers['x-session-token'] || req.body?.sessionToken || '').trim();
+  const userId = String(req.body?.userId || '').trim();
+  const deviceId = String(req.body?.deviceId || '').trim();
+  const workspaceState = req.body?.workspaceState;
+
+  let user = userId ? db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase()) : undefined;
+  if (!user && sessionToken) {
+    user = db.users.find(u => u.activeSessions?.some(s => s.token === sessionToken));
+  }
+  if (!user) {
+    return res.json({ success: true, message: 'Logged out locally' });
+  }
+
+  if (!Array.isArray(user.activeSessions)) user.activeSessions = [];
+  if (workspaceState && typeof workspaceState === 'object') {
+    user.workspaceState = {
+      ...(user.workspaceState || {}),
+      lastTab: workspaceState.lastTab || user.workspaceState?.lastTab,
+      lastGamingSubTab: workspaceState.lastGamingSubTab || user.workspaceState?.lastGamingSubTab,
+      lastDashboardTab: workspaceState.lastDashboardTab || user.workspaceState?.lastDashboardTab,
+      lastRoomAddress: workspaceState.lastRoomAddress || user.workspaceState?.lastRoomAddress,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  user.activeSessions = user.activeSessions.filter(s => {
+    if (sessionToken && s.token === sessionToken) return false;
+    if (deviceId && s.deviceId && s.deviceId === deviceId) return false;
+    return true;
+  });
+  user.isOnline = user.activeSessions.length > 0;
+  saveDatabase(db);
+
+  return res.json({
+    success: true,
+    message: 'इस डिवाइस से सुरक्षित लॉगआउट हो गया (आपका पूरा डेटा सुरक्षित है)।',
+    remainingDevices: user.activeSessions.length,
+  });
+});
+
+// 5.0.0c Save Cross-Device Workspace State (Auto-restore exact screen/tab across 4 devices)
+app.post('/api/user/:userId/workspace-state', (req, res) => {
+  const { userId } = req.params;
+  const sessionToken = String(req.headers['x-session-token'] || req.body?.sessionToken || '').trim();
+  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase());
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const { lastTab, lastGamingSubTab, lastDashboardTab, lastRoomAddress } = req.body || {};
+  user.workspaceState = {
+    ...(user.workspaceState || {}),
+    ...(lastTab !== undefined ? { lastTab: String(lastTab) } : {}),
+    ...(lastGamingSubTab !== undefined ? { lastGamingSubTab: String(lastGamingSubTab) } : {}),
+    ...(lastDashboardTab !== undefined ? { lastDashboardTab: String(lastDashboardTab) } : {}),
+    ...(lastRoomAddress !== undefined ? { lastRoomAddress: String(lastRoomAddress) } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (sessionToken && Array.isArray(user.activeSessions)) {
+    const sess = user.activeSessions.find(s => s.token === sessionToken);
+    if (sess) {
+      if (lastTab) sess.lastTab = String(lastTab);
+      sess.lastActive = new Date().toISOString();
+    }
+  }
+
+  saveDatabase(db);
+  return res.json({ success: true, workspaceState: user.workspaceState });
+});
+
+// 5.0.0d Multi-Device Admin Panel Auth & Device Session Controls (Max 4 Admin Devices)
+app.post('/api/admin/auth/login', (req, res) => {
+  const { adminPassword, deviceId, replaceSessionId, replaceOldestDevice } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'गलत Admin Password! कृपया सही एडमिन पासवर्ड दर्ज करें।' });
+  }
+
+  const result = createAdminSession(req, {
+    deviceId: deviceId || req.body?.deviceInfo?.deviceId,
+    replaceSessionId,
+    replaceOldestDevice: Boolean(replaceOldestDevice),
+  });
+
+  if (result.limitReached) {
+    return res.status(409).json({
+      success: false,
+      code: 'DEVICE_LIMIT_REACHED',
+      maxDevices: MAX_DEVICE_SESSIONS,
+      activeSessions: (result.activeSessions || []).map(s => ({ ...s, token: undefined })),
+      message: `Admin Panel पहले से अधिकतम ${MAX_DEVICE_SESSIONS} डिवाइसेस पर लॉगिन है! नए डिवाइस के लिए 1 पुराना एडमिन डिवाइस लॉगआउट करें।`,
+    });
+  }
+
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    adminToken: result.adminToken,
+    maxDevices: MAX_DEVICE_SESSIONS,
+    activeSessions: (db.adminSessions || []).map(s => ({
+      ...s,
+      token: undefined,
+      isCurrent: s.token === result.adminToken,
+    })),
+  });
+});
+
+app.post('/api/admin/auth/logout', (req, res) => {
+  const adminToken = String(req.headers['x-admin-token'] || req.body?.adminToken || '').trim();
+  const deviceId = String(req.body?.deviceId || '').trim();
+  if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+
+  db.adminSessions = db.adminSessions.filter(s => {
+    if (adminToken && s.token === adminToken) return false;
+    if (deviceId && s.deviceId && s.deviceId === deviceId) return false;
+    return true;
+  });
+  saveDatabase(db);
+  return res.json({ success: true, remainingAdminDevices: db.adminSessions.length });
+});
+
+app.get('/api/admin/auth/verify', (req, res) => {
+  const adminToken = String(req.headers['x-admin-token'] || req.query.token || '').trim();
+  const adminPassword = String(req.headers['x-admin-password'] || req.query.adminPassword || '').trim();
+  if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+  if (!Array.isArray(db.terminatedAdminTokens)) db.terminatedAdminTokens = [];
+
+  if (adminToken && db.terminatedAdminTokens.includes(adminToken)) {
+    return res.json({
+      success: false,
+      valid: false,
+      sessionTerminated: true,
+      message: 'यह Admin डिवाइस किसी अन्य Admin डिवाइस से रिमोटली लॉगआउट कर दिया गया है।',
+    });
+  }
+
+  if (adminToken) {
+    const sess = db.adminSessions.find(s => s.token === adminToken);
+    if (sess) {
+      sess.lastActive = new Date().toISOString();
+      saveDatabase(db);
+      return res.json({
+        success: true,
+        valid: true,
+        maxDevices: MAX_DEVICE_SESSIONS,
+        activeSessions: db.adminSessions.map(s => ({ ...s, token: undefined, isCurrent: s.token === adminToken })),
+      });
+    }
+    if (verifyAdmin(adminPassword)) {
+      const attached = createAdminSession(req, { preferredToken: adminToken, replaceOldestDevice: false });
+      if (!attached.limitReached) {
+        saveDatabase(db);
+        return res.json({
+          success: true,
+          valid: true,
+          maxDevices: MAX_DEVICE_SESSIONS,
+          activeSessions: db.adminSessions.map(s => ({ ...s, token: undefined, isCurrent: s.token === adminToken })),
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        valid: false,
+        code: 'DEVICE_LIMIT_REACHED',
+        maxDevices: MAX_DEVICE_SESSIONS,
+      });
+    }
+    return res.json({ success: false, valid: false, sessionTerminated: true });
+  }
+
+  if (verifyAdmin(adminPassword)) {
+    return res.json({
+      success: true,
+      valid: true,
+      maxDevices: MAX_DEVICE_SESSIONS,
+      activeSessions: db.adminSessions.map(s => ({ ...s, token: undefined })),
+    });
+  }
+  return res.status(401).json({ success: false, valid: false });
+});
+
+app.get('/api/admin/sessions', (req, res) => {
+  const adminPassword = String(req.headers['x-admin-password'] || req.query.adminPassword || '').trim();
+  const adminToken = String(req.headers['x-admin-token'] || req.query.adminToken || '').trim();
+  const hasValidToken = Boolean(adminToken && (db.adminSessions || []).some(s => s.token === adminToken));
+  if (!verifyAdmin(adminPassword) && !hasValidToken) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+
+  const userSessions = db.users
+    .filter(u => (u.activeSessions || []).length > 0)
+    .map(u => ({
+      userId: u.userId,
+      fullName: u.fullName,
+      username: u.username,
+      personalRoomId: u.personalRoomId || u.roomAddress,
+      sponsorId: u.sponsorId,
+      role: u.role,
+      activeCount: (u.activeSessions || []).length,
+      maxDevices: MAX_DEVICE_SESSIONS,
+      sessions: (u.activeSessions || []).map(s => ({ ...s, token: '' })),
+    }));
+
+  return res.json({
+    success: true,
+    maxDevices: MAX_DEVICE_SESSIONS,
+    adminSessions: (db.adminSessions || []).map(s => ({
+      ...s,
+      token: undefined,
+      isCurrent: adminToken ? s.token === adminToken : false,
+    })),
+    userSessions,
+    identityAudit: computeIdentityAudit(db),
+  });
+});
+
+app.post('/api/admin/sessions/terminate', (req, res) => {
+  const { adminPassword, sessionId, terminateAllOthers, currentAdminToken } = req.body || {};
+  const headerToken = String(req.headers['x-admin-token'] || currentAdminToken || '').trim();
+  const hasValidToken = Boolean(headerToken && (db.adminSessions || []).some(s => s.token === headerToken));
+  if (!verifyAdmin(adminPassword) && !hasValidToken) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+
+  if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+  if (!Array.isArray(db.terminatedAdminTokens)) db.terminatedAdminTokens = [];
+
+  const removed: string[] = [];
+  if (terminateAllOthers && headerToken) {
+    for (const s of db.adminSessions) {
+      if (s.token && s.token !== headerToken) removed.push(s.token);
+    }
+    db.adminSessions = db.adminSessions.filter(s => s.token === headerToken);
+  } else if (sessionId) {
+    for (const s of db.adminSessions) {
+      if (s.sessionId === sessionId && s.token) removed.push(s.token);
+    }
+    db.adminSessions = db.adminSessions.filter(s => s.sessionId !== sessionId);
+  }
+
+  if (removed.length > 0) {
+    db.terminatedAdminTokens = Array.from(new Set([...removed, ...db.terminatedAdminTokens])).slice(0, 50);
+  }
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: terminateAllOthers ? 'अन्य सभी Admin डिवाइसेस से लॉगआउट कर दिया गया।' : 'चयनित Admin डिवाइस लॉगआउट हो गया।',
+    adminSessions: db.adminSessions.map(s => ({
+      ...s,
+      token: undefined,
+      isCurrent: headerToken ? s.token === headerToken : false,
+    })),
+  });
+});
+
+app.post('/api/admin/user/:userId/terminate-session', (req, res) => {
+  const { userId } = req.params;
+  const { adminPassword, sessionId, terminateAll } = req.body || {};
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
+  }
+  const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  if (!Array.isArray(user.activeSessions)) user.activeSessions = [];
+  if (!Array.isArray(user.terminatedTokens)) user.terminatedTokens = [];
+
+  const removedTokens: string[] = [];
+  if (terminateAll) {
+    for (const s of user.activeSessions) {
+      if (s.token) removedTokens.push(s.token);
+    }
+    user.activeSessions = [];
+    user.isOnline = false;
+  } else if (sessionId) {
+    for (const s of user.activeSessions) {
+      if (s.sessionId === sessionId && s.token) removedTokens.push(s.token);
+    }
+    user.activeSessions = user.activeSessions.filter(s => s.sessionId !== sessionId);
+    user.isOnline = user.activeSessions.length > 0;
+  }
+
+  if (removedTokens.length > 0) {
+    user.terminatedTokens = Array.from(new Set([...removedTokens, ...user.terminatedTokens])).slice(0, 50);
+  }
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: terminateAll
+      ? `${user.fullName} को सभी डिवाइसेस से लॉगआउट किया गया (डेटा सुरक्षित है)।`
+      : `${user.fullName} का चयनित डिवाइस लॉगआउट किया गया।`,
+    activeSessions: user.activeSessions.map(s => ({ ...s, token: '' })),
+  });
 });
 
 // 5.0.1 Forget ID Recovery (Lookup Roll No / ESP ID via registered Mobile or Email)
@@ -2070,9 +2851,19 @@ app.get('/api/auth/verify-session', (req, res) => {
   }
 
   const currentSession = sessionToken ? user.activeSessions.find(s => s.token === sessionToken) : undefined;
+  const deviceIdHeader = String(req.headers['x-device-id'] || req.query.deviceId || '').trim();
   if (sessionToken && !currentSession) {
-    // Gracefully re-attach valid session after server restart / DB re-sync instead of auto-logging out
-    createSessionForUser(user, req, sessionToken);
+    // Re-attach session only if within 4-device limit or same deviceId
+    const attachRes = createSessionForUser(user, req, { preferredToken: sessionToken, deviceId: deviceIdHeader });
+    if (attachRes.limitReached) {
+      return res.status(409).json({
+        success: false,
+        valid: false,
+        sessionTerminated: true,
+        code: 'DEVICE_LIMIT_REACHED',
+        message: `अधिकतम ${MAX_DEVICE_SESSIONS} डिवाइस लॉगिन सीमा पूरी हो चुकी है।`,
+      });
+    }
     saveDatabase(db);
   } else if (currentSession) {
     currentSession.lastActive = new Date().toISOString();
@@ -2085,6 +2876,7 @@ app.get('/api/auth/verify-session', (req, res) => {
     sessionToken: sessionToken || undefined,
     user: {
       ...user,
+      maxDevices: MAX_DEVICE_SESSIONS,
       activeSessions: user.activeSessions.map(s => ({
         ...s,
         isCurrent: s.token === sessionToken,
@@ -2190,12 +2982,30 @@ app.post('/api/user/:userId/terminate-session', (req, res) => {
 
 
 
-// 7. Update User Profile with Edit History (Telegram Style)
+// 7. Update User Profile with Edit History (Telegram Style + Strict Immutable Identity Lock)
 app.put('/api/user/:userId', (req, res) => {
   const { userId } = req.params;
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase());
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  // Strictly reject any mutation to immutable personal identity fields
+  const reqBody = req.body || {};
+  const attemptingImmutableEdit =
+    (reqBody.userId !== undefined && String(reqBody.userId).trim() !== user.userId) ||
+    (reqBody.gamingId !== undefined && String(reqBody.gamingId).trim() !== (user.gamingId || '')) ||
+    (reqBody.personalRoomId !== undefined && String(reqBody.personalRoomId).trim() !== (user.personalRoomId || user.roomAddress || '')) ||
+    (reqBody.roomAddress !== undefined && String(reqBody.roomAddress).trim() !== (user.roomAddress || '')) ||
+    (reqBody.sponsorId !== undefined && String(reqBody.sponsorId).trim() !== user.sponsorId) ||
+    (reqBody.sponsorName !== undefined && String(reqBody.sponsorName).trim() !== user.sponsorName);
+
+  if (attemptingImmutableEdit) {
+    return res.status(403).json({
+      success: false,
+      code: 'IMMUTABLE_IDENTITY_LOCKED',
+      message: 'Personal User ID, Personal Room ID और Sponsor ID स्थायी रूप से लॉक हैं — इन्हें एडिट या डुप्लिकेट नहीं किया जा सकता!',
+    });
   }
 
   if (!user.editHistory) user.editHistory = [];
@@ -4075,6 +4885,8 @@ app.post('/api/game/daily-checkin', (req, res) => {
   user.gameLevel = calculateLevelFromXp(user.gameXp);
   user.loginStreak = newStreak;
   user.lastDailyCheckInDate = today;
+  ensureDailyTaskState(user);
+  user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + 5);
   if (!Array.isArray(user.daysPlayed)) user.daysPlayed = [];
   if (!user.daysPlayed.includes(today)) user.daysPlayed.push(today);
   user.totalDaysPlayed = user.daysPlayed.length;
@@ -4606,12 +5418,19 @@ app.get('/api/tasks/:userId', (req, res) => {
     isUnlocked: claimedCount >= ch.requiredTasksCompleted,
     isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
   }));
+  const activenessChests = getActivenessChestsForUser(user);
+  const growthTasks = getGrowthTasksForUser(user);
+  const familyTasks = getFamilyTasksForUser(user);
   saveDatabase(db);
 
   res.json({
     success: true,
     tasks,
     chests,
+    todayActiveness: Number(user.todayActiveness || 0),
+    activenessChests,
+    growthTasks,
+    familyTasks,
     claimedTodayCount: claimedCount,
     claimedChestMilestones: user.claimedChestMilestones || [],
     tasksCompletedCount: user.tasksCompletedCount || 0,
@@ -4661,19 +5480,20 @@ app.post('/api/tasks/claim', (req, res) => {
     return res.status(400).json({
       success: false,
       code: 'TASK_NOT_COMPLETED',
-      message: `टास्क अभी पूरा नहीं हुआ है! पहले "${taskDef.hindiTitle}" (${currentProgress}/${taskDef.targetCount}) पूरा करें तभी +5 कॉइन्स और EXP मिलेंगे।`,
+      message: `Complete "${taskDef.title}" (${currentProgress}/${taskDef.targetCount}) first to claim +${taskDef.coinReward} Coins & EXP.`,
     });
   }
 
   if ((user.claimedTaskIds || []).includes(taskDef.id)) {
     return res.status(400).json({
       success: false,
-      message: 'इस टास्क का रिवॉर्ड आज पहले ही क्लेम किया जा चुका है!',
+      message: 'This daily task reward has already been claimed today.',
     });
   }
 
   const balanceBefore = user.coins || 0;
-  const coinsEarned = taskDef.coinReward; // Strictly +5 Coins per completed task!
+  const coinsEarned = taskDef.coinReward;
+  const activenessEarned = Number(taskDef.activenessReward || 15);
   const vipCfg = getVipConfig(user.vipTier);
   const xpEarned = Math.round(taskDef.xpReward * (vipCfg?.bonusXpMultiplier || 1));
 
@@ -4683,15 +5503,16 @@ app.post('/api/tasks/claim', (req, res) => {
   user.gameLevel = calculateLevelFromXp(user.gameXp);
   user.claimedTaskIds!.push(taskDef.id);
   user.tasksCompletedCount = (user.tasksCompletedCount || 0) + 1;
+  user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + activenessEarned);
 
   logCoinTransaction(db, user, {
     type: 'credit',
     category: 'daily_task',
-    categoryLabel: 'रियल टास्क पूर्ण रिवॉर्ड',
+    categoryLabel: 'Daily Task Reward',
     amount: coinsEarned,
     balanceBefore,
     balanceAfter: newCoins,
-    description: `टास्क "${taskDef.hindiTitle}" पूर्ण: +${coinsEarned} कॉइन्स व +${xpEarned} EXP`,
+    description: `${taskDef.title}: +${coinsEarned} Coins, +${activenessEarned} Activeness & +${xpEarned} EXP`,
   });
 
   const tasks = getTasksStatusForUser(user);
@@ -4701,18 +5522,181 @@ app.post('/api/tasks/claim', (req, res) => {
     isUnlocked: claimedCount >= ch.requiredTasksCompleted,
     isClaimed: (user.claimedChestMilestones || []).includes(ch.id),
   }));
+  const activenessChests = getActivenessChestsForUser(user);
 
   saveDatabase(db);
   res.json({
     success: true,
-    message: `🎉 टास्क पूरा! +${coinsEarned} कॉइन्स और +${xpEarned} EXP आपके खाते में जुड़े!`,
+    message: `Claimed "${taskDef.title}": +${coinsEarned} Coins, +${activenessEarned} Activeness & +${xpEarned} EXP!`,
+    coinsAwarded: coinsEarned,
     coinsEarned,
+    xpAwarded: xpEarned,
     xpEarned,
+    activenessEarned,
+    todayActiveness: user.todayActiveness,
+    activenessChests,
     newBalance: user.coins,
     gameXp: user.gameXp,
     gameLevel: user.gameLevel,
     tasks,
     chests,
+    user,
+  });
+});
+
+app.post('/api/tasks/claim-activeness-chest', (req, res) => {
+  const { userId, threshold } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  ensureDailyTaskState(user);
+  const numThreshold = Number(threshold);
+  const chest = ACTIVENESS_CHESTS_CATALOG.find(c => c.threshold === numThreshold);
+  if (!chest) {
+    return res.status(404).json({ success: false, message: 'Activeness chest not found' });
+  }
+
+  const currentActiveness = Number(user.todayActiveness || 0);
+  if (currentActiveness < chest.threshold) {
+    return res.status(400).json({
+      success: false,
+      message: `Reach ${chest.threshold} Today's Activeness to unlock ${chest.label} (Current: ${currentActiveness}).`,
+    });
+  }
+
+  if ((user.claimedActivenessChests || []).includes(chest.threshold)) {
+    return res.status(400).json({ success: false, message: 'This Activeness Chest has already been claimed today.' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + chest.coinReward;
+  user.gameXp = (user.gameXp || 0) + chest.xpReward;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedActivenessChests!.push(chest.threshold);
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'task_chest',
+    categoryLabel: 'Activeness Chest Reward',
+    amount: chest.coinReward,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `${chest.label} Opened: +${chest.coinReward} Coins & +${chest.xpReward} EXP`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `${chest.label} Opened! +${chest.coinReward} Coins & +${chest.xpReward} EXP!`,
+    coinsEarned: chest.coinReward,
+    xpEarned: chest.xpReward,
+    activenessChests: getActivenessChestsForUser(user),
+    user,
+  });
+});
+
+app.post('/api/tasks/claim-growth', (req, res) => {
+  const { userId, taskId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  ensureDailyTaskState(user);
+  const growthTasks = getGrowthTasksForUser(user);
+  const task = growthTasks.find(t => t.id === taskId);
+  if (!task) {
+    return res.status(404).json({ success: false, message: 'Growth milestone not found' });
+  }
+  if (!task.isCompleted) {
+    return res.status(400).json({
+      success: false,
+      message: `Complete "${task.title}" (${task.currentProgress}/${task.targetCount}) first to claim +${task.coinReward} Coins.`,
+    });
+  }
+  if (task.isClaimed) {
+    return res.status(400).json({ success: false, message: 'Growth milestone already claimed!' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + task.coinReward;
+  user.gameXp = (user.gameXp || 0) + task.xpReward;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedGrowthTaskIds!.push(task.id);
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_task',
+    categoryLabel: 'Growth Milestone Reward',
+    amount: task.coinReward,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `Growth Achievement "${task.title}": +${task.coinReward} Coins & +${task.xpReward} EXP`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `Growth Unlocked "${task.title}": +${task.coinReward} Coins & +${task.xpReward} EXP!`,
+    coinsEarned: task.coinReward,
+    xpEarned: task.xpReward,
+    growthTasks: getGrowthTasksForUser(user),
+    user,
+  });
+});
+
+app.post('/api/tasks/claim-family', (req, res) => {
+  const { userId, taskId } = req.body;
+  const user = db.users.find(u => u.userId.toLowerCase() === String(userId).toLowerCase() || u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  ensureDailyTaskState(user);
+  const familyTasks = getFamilyTasksForUser(user);
+  const task = familyTasks.find(t => t.id === taskId);
+  if (!task) {
+    return res.status(404).json({ success: false, message: 'Family task not found' });
+  }
+  if (!task.isCompleted) {
+    return res.status(400).json({
+      success: false,
+      message: `Complete "${task.title}" (${task.currentProgress}/${task.targetCount}) first to claim reward.`,
+    });
+  }
+  if (task.isClaimed) {
+    return res.status(400).json({ success: false, message: 'Family task already claimed today!' });
+  }
+
+  const balanceBefore = user.coins || 0;
+  user.coins = balanceBefore + task.coinReward;
+  user.gameXp = (user.gameXp || 0) + task.xpReward;
+  user.gameLevel = calculateLevelFromXp(user.gameXp);
+  user.claimedFamilyTaskIds!.push(task.id);
+  user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + task.activenessReward);
+
+  logCoinTransaction(db, user, {
+    type: 'credit',
+    category: 'daily_task',
+    categoryLabel: 'Family Task Reward',
+    amount: task.coinReward,
+    balanceBefore,
+    balanceAfter: user.coins,
+    description: `Family Task "${task.title}": +${task.coinReward} Coins, +${task.activenessReward} Activeness & +${task.xpReward} EXP`,
+  });
+
+  saveDatabase(db);
+  res.json({
+    success: true,
+    message: `Family Task Claimed: +${task.coinReward} Coins, +${task.activenessReward} Activeness & +${task.xpReward} EXP!`,
+    coinsEarned: task.coinReward,
+    xpEarned: task.xpReward,
+    activenessEarned: task.activenessReward,
+    todayActiveness: user.todayActiveness,
+    activenessChests: getActivenessChestsForUser(user),
+    familyTasks: getFamilyTasksForUser(user),
     user,
   });
 });
@@ -6351,6 +7335,130 @@ app.get('/api/community/leaderboard', (req, res) => {
   res.json({ success: true, period, leaderboard, topEarners: leaderboard });
 });
 
+// Track genuine ?ref= referral link clicks for Conversion Rate Analytics
+app.post('/api/referrals/track-click', (req, res) => {
+  const { sponsorIdentifier } = req.body || {};
+  const raw = String(sponsorIdentifier || '').trim().replace(/^@+/, '');
+  if (!raw) {
+    return res.status(400).json({ success: false, message: 'Missing sponsor identifier' });
+  }
+  const cleanHandle = normalizeUsername(raw);
+  const sponsor = db.users.find(
+    u =>
+      u.userId.toLowerCase() === raw.toLowerCase() ||
+      (cleanHandle && normalizeUsername(u.username) === cleanHandle)
+  );
+  if (!sponsor) {
+    return res.status(404).json({ success: false, message: 'Sponsor not found' });
+  }
+
+  const today = getTodayDateString();
+  sponsor.referralClicks = Number(sponsor.referralClicks || 0) + 1;
+  if (!Array.isArray(sponsor.referralClickHistory)) {
+    sponsor.referralClickHistory = [];
+  }
+  const existingDay = sponsor.referralClickHistory.find(h => h.date === today);
+  if (existingDay) {
+    existingDay.count = Number(existingDay.count || 0) + 1;
+  } else {
+    sponsor.referralClickHistory.push({ date: today, count: 1 });
+    if (sponsor.referralClickHistory.length > 90) {
+      sponsor.referralClickHistory = sponsor.referralClickHistory.slice(-90);
+    }
+  }
+  saveDatabase(db);
+  res.json({
+    success: true,
+    sponsorUserId: sponsor.userId,
+    referralClicks: sponsor.referralClicks,
+  });
+});
+
+// Top 5 Referrers Leaderboard based on real referral conversions & conversion rates
+app.get('/api/community/top-referrers', (req, res) => {
+  const currentUserId = String(req.query.userId || '').trim().toLowerCase();
+
+  const statsMap = new Map<
+    string,
+    { total: number; converted: number; pending: number; creditedEarnings: number }
+  >();
+
+  for (const r of db.referrals || []) {
+    const key = String(r.sponsorUserId || '').toLowerCase();
+    if (!key) continue;
+    const prev = statsMap.get(key) || {
+      total: 0,
+      converted: 0,
+      pending: 0,
+      creditedEarnings: 0,
+    };
+    prev.total += 1;
+    if (r.status === 'credited') {
+      prev.converted += 1;
+      prev.creditedEarnings += Number(r.commissionAmount || 0);
+    } else if (r.status === 'pending') {
+      prev.pending += 1;
+    }
+    statsMap.set(key, prev);
+  }
+
+  const rankedAll = db.users
+    .map(u => {
+      const st = statsMap.get(u.userId.toLowerCase()) || {
+        total: 0,
+        converted: 0,
+        pending: 0,
+        creditedEarnings: 0,
+      };
+      const rawClicks = Number(u.referralClicks || 0);
+      const effectiveClicks = Math.max(rawClicks, st.total);
+      const conversionRate =
+        effectiveClicks > 0
+          ? Math.min(100, Number(((st.converted / effectiveClicks) * 100).toFixed(1)))
+          : 0;
+      const referralEarnings = Math.max(Number(u.referralEarnings || 0), st.creditedEarnings);
+      return {
+        userId: u.userId,
+        username: u.username || '',
+        fullName: u.fullName,
+        avatar: u.avatar || '',
+        vipTier: u.vipTier || 'none',
+        gameLevel: u.gameLevel || 1,
+        chosenServiceCode: u.chosenServiceCode || 'ESP',
+        totalReferrals: st.total,
+        convertedReferrals: st.converted,
+        pendingReferrals: st.pending,
+        totalClicks: effectiveClicks,
+        conversionRate,
+        referralEarnings,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.convertedReferrals - a.convertedReferrals ||
+        b.totalReferrals - a.totalReferrals ||
+        b.referralEarnings - a.referralEarnings ||
+        b.conversionRate - a.conversionRate ||
+        b.gameLevel - a.gameLevel
+    )
+    .map((entry, idx) => ({
+      rank: idx + 1,
+      ...entry,
+    }));
+
+  const topReferrers = rankedAll.slice(0, 5);
+  const currentUserEntry = currentUserId
+    ? rankedAll.find(e => e.userId.toLowerCase() === currentUserId) || null
+    : null;
+
+  res.json({
+    success: true,
+    topReferrers,
+    currentUserRank: currentUserEntry,
+    totalRankedUsers: rankedAll.length,
+  });
+});
+
 app.get('/api/community/clans', (_req, res) => {
   const clanMap = new Map<string, {
     clanName: string;
@@ -6700,6 +7808,16 @@ app.post('/api/admin/vip-rooms/assign', (req, res) => {
     });
   }
 
+  // Personal Room ID is permanently immutable once assigned — reject altering the numeric Room ID
+  const existingRoomId = String(user.roomAddress || user.personalRoomId || '').trim();
+  if (isNumericRoomId(existingRoomId) && cleanNumber !== existingRoomId) {
+    return res.status(403).json({
+      success: false,
+      code: 'IMMUTABLE_IDENTITY_LOCKED',
+      message: `⚠️ ${user.fullName} की Personal Room ID (#${existingRoomId}) स्थायी रूप से लॉक है और इसे बदला या डुप्लिकेट नहीं किया जा सकता। आप केवल इसी रूम पर VIP Badge लेबल अपडेट कर सकते हैं।`,
+    });
+  }
+
   const rooms = getOrCreateRooms(db);
   const conflict = findRoomConflictOwner(cleanNumber, db.users, rooms, user.userId);
   if (conflict.conflict) {
@@ -6709,7 +7827,7 @@ app.post('/api/admin/vip-rooms/assign', (req, res) => {
     });
   }
 
-  const prevRoomId = user.roomAddress || '';
+  const prevRoomId = existingRoomId;
   const vipFlag = Boolean(isVipRoom || isVipFancyRoomNumber(cleanNumber));
   const cleanLabel = String(vipRoomLabel || (vipFlag ? 'VIP Room' : '')).trim();
 
@@ -6729,74 +7847,29 @@ app.post('/api/admin/vip-rooms/assign', (req, res) => {
   if (!Array.isArray(user.editHistory)) user.editHistory = [];
   user.editHistory.unshift({
     date: new Date().toISOString(),
-    field: 'VIP Room ID',
+    field: 'VIP Room Badge',
     oldValue: prevRoomId || '-',
-    newValue: `${cleanNumber}${vipFlag ? ' (VIP)' : ''}`,
-  });
-
-  if (!Array.isArray(db.notifications)) db.notifications = [];
-  db.notifications.unshift({
-    id: `notif-vip-room-${Date.now()}`,
-    userId: user.userId,
-    title: vipFlag ? `👑 VIP Room ID ${cleanNumber} अलॉट हुआ!` : `🎙️ नया Room ID ${cleanNumber} अपडेट हुआ!`,
-    message: `बधाई हो ${user.fullName}! Admin ने आपका पर्सनल वॉइस रूम नंबर ${prevRoomId || '-'} से बदलकर ${cleanNumber} सेट किया है। अब कोई भी सिर्फ ${cleanNumber} सर्च करके आपका रूम तुरंत खोल सकता है!`,
-    date: new Date().toISOString(),
-    read: false,
-    type: 'system',
+    newValue: `${cleanNumber}${cleanLabel ? ` (${cleanLabel})` : ''}`,
   });
 
   saveDatabase(db);
   return res.json({
     success: true,
-    message: `✅ ${user.fullName} को ${vipFlag ? '👑 VIP ' : ''}Room ID "${cleanNumber}" सफलतापूर्वक अलॉट हो गया!`,
+    message: `✅ ${user.fullName} के लॉक Room ID "#${cleanNumber}" पर VIP Badge अपडेट हो गया!`,
     user,
     room: buildRoomSummary(personalRoom, user.userId),
   });
 });
 
 app.post('/api/admin/vip-rooms/reset', (req, res) => {
-  const { adminPassword, targetUserId } = req.body || {};
+  const { adminPassword } = req.body || {};
   if (!verifyAdmin(adminPassword)) {
     return res.status(401).json({ success: false, message: 'Unauthorized admin request' });
   }
-  const user = db.users.find(
-    u =>
-      u.userId.toLowerCase() === String(targetUserId || '').toLowerCase() ||
-      u.id === targetUserId
-  );
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'चयनित यूजर नहीं मिला।' });
-  }
-
-  const rooms = getOrCreateRooms(db);
-  const nextStandardId = generateUniqueRoomId(user.fullName || user.userId, db.users, rooms, user.userId);
-  const prevRoomId = user.roomAddress || '';
-
-  user.roomAddress = nextStandardId;
-  user.personalRoomId = nextStandardId;
-  user.isVipRoom = false;
-  user.vipRoomLabel = '';
-
-  const personalRoom = ensurePersonalRoomForUser(db, user);
-  personalRoom.roomAddress = nextStandardId;
-  personalRoom.roomNumber = nextStandardId;
-  personalRoom.isVipRoom = false;
-  personalRoom.vipRoomLabel = '';
-
-  if (!Array.isArray(user.editHistory)) user.editHistory = [];
-  user.editHistory.unshift({
-    date: new Date().toISOString(),
-    field: 'Room ID Reset',
-    oldValue: prevRoomId || '-',
-    newValue: nextStandardId,
-  });
-
-  saveDatabase(db);
-  return res.json({
-    success: true,
-    message: `↺ ${user.fullName} का Room ID अब स्टैंडर्ड काउंट नंबर "${nextStandardId}" पर रीसेट हो गया।`,
-    user,
-    room: buildRoomSummary(personalRoom, user.userId),
+  return res.status(403).json({
+    success: false,
+    code: 'IMMUTABLE_IDENTITY_LOCKED',
+    message: 'Personal Room ID स्थायी रूप से लॉक है! किसी भी यूजर की Room ID बदली या रीसेट नहीं की जा सकती।',
   });
 });
 
@@ -7278,6 +8351,24 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
   const user = db.users.find(u => u.userId.toLowerCase() === userId.toLowerCase() || u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  // Strictly block changing immutable User ID, Room ID, or Sponsor ID even by Admin
+  const rawBody = req.body || {};
+  const attemptingImmutableMutation =
+    (rawBody.userId !== undefined && String(rawBody.userId).trim() !== user.userId) ||
+    (rawBody.gamingId !== undefined && String(rawBody.gamingId).trim() !== (user.gamingId || '')) ||
+    (rawBody.personalRoomId !== undefined && String(rawBody.personalRoomId).trim() !== (user.personalRoomId || user.roomAddress || '')) ||
+    (rawBody.roomAddress !== undefined && String(rawBody.roomAddress).trim() !== (user.roomAddress || '')) ||
+    (rawBody.sponsorId !== undefined && String(rawBody.sponsorId).trim() !== user.sponsorId) ||
+    (rawBody.sponsorName !== undefined && String(rawBody.sponsorName).trim() !== user.sponsorName);
+
+  if (attemptingImmutableMutation) {
+    return res.status(403).json({
+      success: false,
+      code: 'IMMUTABLE_IDENTITY_LOCKED',
+      message: 'Personal User ID, Personal Room ID और Sponsor ID लॉक हैं — इन्हें Admin द्वारा भी बदला या डुप्लिकेट नहीं किया जा सकता।',
+    });
   }
 
   if (username !== undefined) {
@@ -9106,6 +10197,7 @@ app.post('/api/dm/send', (req, res) => {
 });
 
 async function startServer() {
+  ensureUniqueIdentityIntegrity(db);
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

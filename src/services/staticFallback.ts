@@ -28,11 +28,16 @@ import type {
   EspFamily,
   GiftHistoryRecord,
   DirectMessageRecord,
+  AdminSession,
+  UserSession,
 } from '../types/index.ts';
 import {
   VIP_TIERS,
   REAL_TASKS_CATALOG,
   CHEST_MILESTONES,
+  ACTIVENESS_CHESTS_CATALOG,
+  GROWTH_TASKS_CATALOG,
+  FAMILY_TASKS_CATALOG,
   ADVANCE_ROOM_THEMES,
   COIN_RECHARGE_PACKS,
   GIFT_CARD_CATALOG,
@@ -61,6 +66,8 @@ import {
 
 const STORAGE_KEY = 'esp_static_db_v2';
 const todayStr = (): string => getIstDateString();
+
+const MAX_STATIC_DEVICES = 4;
 
 interface StaticDb {
   settings: PlatformSettings;
@@ -92,6 +99,8 @@ interface StaticDb {
   voiceRoomChat: Array<{ id: string; senderId: string; sender: string; senderRoll: string; text: string; isGift?: boolean; time: string; audioDataUrl?: string; audioDuration?: number; isVoiceNote?: boolean }>;
   customVoiceRooms: any[];
   directMessages?: DirectMessageRecord[];
+  adminSessions?: AdminSession[];
+  terminatedAdminTokens?: string[];
 }
 
 const DEFAULT_SERVICES: ServiceItem[] = [
@@ -748,10 +757,17 @@ function normalizeStaticUser(u: any): UserProfile {
     u.taskProgress = {};
     u.claimedTaskIds = [];
     u.claimedChestMilestones = [];
+    u.todayActiveness = 0;
+    u.claimedActivenessChests = [];
+    u.claimedFamilyTaskIds = [];
   }
   if (!u.taskProgress) u.taskProgress = {};
   if (!Array.isArray(u.claimedTaskIds)) u.claimedTaskIds = [];
   if (!Array.isArray(u.claimedChestMilestones)) u.claimedChestMilestones = [];
+  if (u.todayActiveness === undefined) u.todayActiveness = 0;
+  if (!Array.isArray(u.claimedActivenessChests)) u.claimedActivenessChests = [];
+  if (!Array.isArray(u.claimedGrowthTaskIds)) u.claimedGrowthTaskIds = [];
+  if (!Array.isArray(u.claimedFamilyTaskIds)) u.claimedFamilyTaskIds = [];
   if (u.tasksCompletedCount === undefined) u.tasksCompletedCount = 0;
   if (!Array.isArray(u.ownedRelationshipTokens)) u.ownedRelationshipTokens = [];
   if (!Array.isArray(u.activeRelationships)) u.activeRelationships = [];
@@ -761,6 +777,67 @@ function normalizeStaticUser(u: any): UserProfile {
   if (!Array.isArray(u.unlockedRoomTiers)) u.unlockedRoomTiers = ['normal'];
   if (!Array.isArray(u.claimedEventIds)) u.claimedEventIds = [];
   return u;
+}
+
+function getStaticActivenessChests(user: UserProfile) {
+  const activeness = Number(user.todayActiveness || 0);
+  return ACTIVENESS_CHESTS_CATALOG.map(ch => ({
+    ...ch,
+    isUnlocked: activeness >= ch.threshold,
+    isClaimed: (user.claimedActivenessChests || []).includes(ch.threshold),
+  }));
+}
+
+function getStaticGrowthTasks(db: StaticDb, user: UserProfile) {
+  const friendsCount = Math.max(Number(user.friendsList?.length || 0), Number(user.friendsCount || 0));
+  const hasSentGift =
+    Number(user.taskProgress?.gift_sent || 0) >= 1 ||
+    Number(user.totalCoinsSpent || 0) > 0 ||
+    (db.giftHistory || []).some(g => g.senderId === user.userId);
+  const hasReceivedGift =
+    Number(user.charms || 0) > 0 ||
+    Object.keys(user.receivedGifts || {}).length > 0 ||
+    (db.giftHistory || []).some(g => g.recipientId === user.userId);
+  const hasPostedMoment =
+    Number(user.taskProgress?.moment_posted || 0) >= 1 ||
+    (db.moments || []).some(m => m.userId === user.userId);
+
+  return GROWTH_TASKS_CATALOG.map(task => {
+    let raw = 0;
+    if (task.id === 'growth-first-attempt') raw = Number(user.totalGamesPlayed || 0) >= 1 ? 1 : 0;
+    else if (task.id === 'growth-new-challenger') raw = Number(user.totalGamesPlayed || 0);
+    else if (task.id === 'growth-first-show') {
+      raw = Number(user.taskProgress?.voice_joined || 0) >= 1 || Number(user.totalOnlineMinutes || 0) >= 1 ? 1 : 0;
+    } else if (task.id === 'growth-make-friends') raw = friendsCount >= 1 ? 1 : 0;
+    else if (task.id === 'growth-soulmate') raw = (user.activeRelationships || []).length >= 1 || friendsCount >= 2 ? 1 : 0;
+    else if (task.id === 'growth-send-gift') raw = hasSentGift ? 1 : 0;
+    else if (task.id === 'growth-charming') raw = hasReceivedGift ? 1 : 0;
+    else if (task.id === 'growth-fun-times') raw = hasPostedMoment ? 1 : 0;
+    return {
+      ...task,
+      currentProgress: Math.min(raw, task.targetCount),
+      isCompleted: raw >= task.targetCount,
+      isClaimed: (user.claimedGrowthTaskIds || []).includes(task.id),
+    };
+  });
+}
+
+function getStaticFamilyTasks(user: UserProfile) {
+  const inFamily = Boolean(user.familyId || user.clanName);
+  return FAMILY_TASKS_CATALOG.map(task => {
+    let raw = 0;
+    if (task.id === 'family-join') raw = inFamily ? 1 : 0;
+    else if (task.id === 'family-chat') raw = Number(user.taskProgress?.chat_sent || 0);
+    else if (task.id === 'family-game') raw = Number(user.taskProgress?.game_played || 0);
+    else if (task.id === 'family-gift') raw = Number(user.taskProgress?.gift_sent || 0);
+    else if (task.id === 'family-moment') raw = Number(user.taskProgress?.moment_posted || 0);
+    return {
+      ...task,
+      currentProgress: Math.min(raw, task.targetCount),
+      isCompleted: raw >= task.targetCount,
+      isClaimed: (user.claimedFamilyTaskIds || []).includes(task.id),
+    };
+  });
 }
 
 function trackStaticTask(user: UserProfile, eventType: TaskEventType, inc = 1) {
@@ -919,6 +996,8 @@ function createInitialStaticDb(): StaticDb {
     customVoiceRooms: [],
     families: [],
     giftHistory: [],
+    adminSessions: [],
+    terminatedAdminTokens: [],
   };
 }
 
@@ -995,6 +1074,8 @@ function getDb(): StaticDb {
         mergeLegacyBackupUsers(parsed);
         if (!Array.isArray(parsed.giftCardRedemptions)) parsed.giftCardRedemptions = [];
         if (!parsed.activeGameWagers || typeof parsed.activeGameWagers !== 'object') parsed.activeGameWagers = {};
+        if (!Array.isArray(parsed.adminSessions)) parsed.adminSessions = [];
+        if (!Array.isArray(parsed.terminatedAdminTokens)) parsed.terminatedAdminTokens = [];
         return parsed;
       }
     }
@@ -1028,6 +1109,135 @@ function findUser(db: StaticDb, idOrUserId: string): UserProfile | undefined {
 
 function verifyAdminPass(pass?: string): boolean {
   return pass === 'admin123' || pass === 'ESP@Admin2026' || pass === 'ESP_Admin_9988#Secure' || pass === 'admin';
+}
+
+function createStaticUserSession(
+  user: UserProfile,
+  body: any,
+  preferredToken?: string
+): { limitReached?: boolean; activeSessions?: UserSession[]; sessionToken?: string } {
+  if (!Array.isArray(user.activeSessions)) user.activeSessions = [];
+  if (!Array.isArray(user.terminatedTokens)) user.terminatedTokens = [];
+  const info = body?.deviceInfo || {};
+  const deviceId = String(body?.deviceId || info?.deviceId || '').trim();
+  const nowIso = new Date().toISOString();
+  const tokPref = preferredToken ? String(preferredToken).trim() : '';
+
+  const existingIdx = user.activeSessions.findIndex(
+    s => (tokPref && s.token === tokPref) || (deviceId && s.deviceId === deviceId)
+  );
+  if (existingIdx !== -1) {
+    const cur = user.activeSessions[existingIdx];
+    const token = tokPref || cur.token || `esp_static_${Date.now()}`;
+    const updated: UserSession = {
+      ...cur,
+      token,
+      deviceId: deviceId || cur.deviceId,
+      deviceType: info.deviceType || cur.deviceType || 'desktop',
+      deviceName: info.deviceName || cur.deviceName || 'Web Browser',
+      browser: info.browser || cur.browser || 'Browser',
+      os: info.os || cur.os || 'OS',
+      lastActive: nowIso,
+      lastTab: user.workspaceState?.lastTab || cur.lastTab,
+    };
+    user.activeSessions.splice(existingIdx, 1);
+    user.activeSessions.unshift(updated);
+    user.maxDevices = MAX_STATIC_DEVICES;
+    return { sessionToken: token };
+  }
+
+  if (user.activeSessions.length >= MAX_STATIC_DEVICES) {
+    if (body?.replaceSessionId) {
+      const idx = user.activeSessions.findIndex(s => s.sessionId === body.replaceSessionId);
+      if (idx !== -1) {
+        const [removed] = user.activeSessions.splice(idx, 1);
+        if (removed?.token) user.terminatedTokens = Array.from(new Set([removed.token, ...user.terminatedTokens])).slice(0, 50);
+      }
+    } else if (body?.replaceOldestDevice) {
+      const [removed] = user.activeSessions.splice(user.activeSessions.length - 1, 1);
+      if (removed?.token) user.terminatedTokens = Array.from(new Set([removed.token, ...user.terminatedTokens])).slice(0, 50);
+    } else {
+      return { limitReached: true, activeSessions: user.activeSessions };
+    }
+  }
+
+  const sessionToken = tokPref || `esp_static_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  user.activeSessions.unshift({
+    sessionId: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    token: sessionToken,
+    deviceId: deviceId || undefined,
+    deviceType: info.deviceType || 'desktop',
+    deviceName: info.deviceName || 'Web Browser',
+    browser: info.browser || 'Browser',
+    os: info.os || 'OS',
+    loginTime: nowIso,
+    lastActive: nowIso,
+    lastTab: user.workspaceState?.lastTab,
+  });
+  user.maxDevices = MAX_STATIC_DEVICES;
+  return { sessionToken };
+}
+
+function createStaticAdminSession(
+  db: StaticDb,
+  body: any,
+  preferredToken?: string
+): { limitReached?: boolean; activeSessions?: AdminSession[]; adminToken?: string } {
+  if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+  if (!Array.isArray(db.terminatedAdminTokens)) db.terminatedAdminTokens = [];
+  const info = body?.deviceInfo || {};
+  const deviceId = String(body?.deviceId || info?.deviceId || '').trim();
+  const nowIso = new Date().toISOString();
+  const tokPref = preferredToken ? String(preferredToken).trim() : '';
+
+  const idx = db.adminSessions.findIndex(
+    s => (tokPref && s.token === tokPref) || (deviceId && s.deviceId === deviceId)
+  );
+  if (idx !== -1) {
+    const cur = db.adminSessions[idx];
+    const adminToken = tokPref || cur.token || `esp_adm_static_${Date.now()}`;
+    db.adminSessions.splice(idx, 1);
+    db.adminSessions.unshift({
+      ...cur,
+      token: adminToken,
+      deviceId: deviceId || cur.deviceId,
+      deviceType: info.deviceType || cur.deviceType || 'desktop',
+      deviceName: info.deviceName || cur.deviceName || 'Admin Browser',
+      browser: info.browser || cur.browser || 'Browser',
+      os: info.os || cur.os || 'OS',
+      lastActive: nowIso,
+    });
+    return { adminToken };
+  }
+
+  if (db.adminSessions.length >= MAX_STATIC_DEVICES) {
+    if (body?.replaceSessionId) {
+      const tIdx = db.adminSessions.findIndex(s => s.sessionId === body.replaceSessionId);
+      if (tIdx !== -1) {
+        const [removed] = db.adminSessions.splice(tIdx, 1);
+        if (removed?.token) db.terminatedAdminTokens = Array.from(new Set([removed.token, ...db.terminatedAdminTokens])).slice(0, 50);
+      }
+    } else if (body?.replaceOldestDevice) {
+      const [removed] = db.adminSessions.splice(db.adminSessions.length - 1, 1);
+      if (removed?.token) db.terminatedAdminTokens = Array.from(new Set([removed.token, ...db.terminatedAdminTokens])).slice(0, 50);
+    } else {
+      return { limitReached: true, activeSessions: db.adminSessions };
+    }
+  }
+
+  const adminToken = tokPref || `esp_adm_static_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  db.adminSessions.unshift({
+    sessionId: `admsess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    token: adminToken,
+    deviceId: deviceId || undefined,
+    deviceType: info.deviceType || 'desktop',
+    deviceName: info.deviceName || 'Admin Browser',
+    browser: info.browser || 'Browser',
+    os: info.os || 'OS',
+    loginTime: nowIso,
+    lastActive: nowIso,
+  });
+  return { adminToken };
 }
 
 function buildNwiTree(db: StaticDb, user: UserProfile): NwiTreeRecord {
@@ -1295,11 +1505,161 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         message: 'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या "Forget Password?" का उपयोग करें।',
       };
     }
-    const sessionToken = `esp_static_${Date.now()}`;
+    const sessionRes = createStaticUserSession(user, body);
+    if (sessionRes.limitReached) {
+      return {
+        success: false,
+        code: 'DEVICE_LIMIT_REACHED',
+        maxDevices: MAX_STATIC_DEVICES,
+        activeSessions: (sessionRes.activeSessions || []).map(s => ({ ...s, token: '' })),
+        message: `यह खाता पहले से अधिकतम ${MAX_STATIC_DEVICES} डिवाइसेस में लॉगिन है! किसी 1 पुराने डिवाइस को लॉगआउट करें।`,
+      };
+    }
+    const sessionToken = sessionRes.sessionToken!;
     user.lastLogin = new Date().toISOString();
     user.isOnline = true;
     saveDb(db);
-    return { success: true, user, sessionToken };
+    return {
+      success: true,
+      user: {
+        ...user,
+        maxDevices: MAX_STATIC_DEVICES,
+        activeSessions: user.activeSessions?.map(s => ({ ...s, isCurrent: s.token === sessionToken })),
+      },
+      sessionToken,
+    };
+  }
+
+  if (path === '/api/auth/logout' && method === 'POST') {
+    const sessionToken = String(headersObj['x-session-token'] || body.sessionToken || '').trim();
+    const deviceId = String(body.deviceId || '').trim();
+    const user = body.userId ? findUser(db, body.userId) : db.users.find(u => u.activeSessions?.some(s => s.token === sessionToken));
+    if (user) {
+      if (!Array.isArray(user.activeSessions)) user.activeSessions = [];
+      if (body.workspaceState && typeof body.workspaceState === 'object') {
+        user.workspaceState = {
+          ...(user.workspaceState || {}),
+          ...body.workspaceState,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      user.activeSessions = user.activeSessions.filter(s => !(sessionToken && s.token === sessionToken) && !(deviceId && s.deviceId === deviceId));
+      user.isOnline = user.activeSessions.length > 0;
+      saveDb(db);
+    }
+    return { success: true, remainingDevices: user?.activeSessions?.length || 0 };
+  }
+
+  if (path === '/api/admin/auth/login' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) {
+      return { success: false, message: 'गलत Admin Password!' };
+    }
+    const res = createStaticAdminSession(db, body);
+    if (res.limitReached) {
+      return {
+        success: false,
+        code: 'DEVICE_LIMIT_REACHED',
+        maxDevices: MAX_STATIC_DEVICES,
+        activeSessions: (res.activeSessions || []).map(s => ({ ...s, token: undefined })),
+        message: `Admin Panel अधिकतम ${MAX_STATIC_DEVICES} डिवाइसेस पर लॉगिन है!`,
+      };
+    }
+    saveDb(db);
+    return {
+      success: true,
+      adminToken: res.adminToken,
+      maxDevices: MAX_STATIC_DEVICES,
+      activeSessions: (db.adminSessions || []).map(s => ({ ...s, token: undefined, isCurrent: s.token === res.adminToken })),
+    };
+  }
+  if (path === '/api/admin/auth/logout' && method === 'POST') {
+    const tok = String(headersObj['x-admin-token'] || body.adminToken || '').trim();
+    const devId = String(body.deviceId || '').trim();
+    db.adminSessions = (db.adminSessions || []).filter(s => !(tok && s.token === tok) && !(devId && s.deviceId === devId));
+    saveDb(db);
+    return { success: true };
+  }
+  if (path === '/api/admin/auth/verify' && method === 'GET') {
+    const tok = String(headersObj['x-admin-token'] || search.get('token') || '').trim();
+    if (tok && (db.terminatedAdminTokens || []).includes(tok)) {
+      return { success: false, valid: false, sessionTerminated: true, message: 'यह Admin डिवाइस रिमोटली लॉगआउट किया गया है।' };
+    }
+    return {
+      success: true,
+      valid: true,
+      maxDevices: MAX_STATIC_DEVICES,
+      activeSessions: (db.adminSessions || []).map(s => ({ ...s, token: undefined, isCurrent: tok ? s.token === tok : false })),
+    };
+  }
+  if (path === '/api/admin/sessions' && method === 'GET') {
+    const tok = String(headersObj['x-admin-token'] || search.get('adminToken') || '').trim();
+    return {
+      success: true,
+      maxDevices: MAX_STATIC_DEVICES,
+      adminSessions: (db.adminSessions || []).map(s => ({ ...s, token: undefined, isCurrent: tok ? s.token === tok : false })),
+      userSessions: db.users
+        .filter(u => (u.activeSessions || []).length > 0)
+        .map(u => ({
+          userId: u.userId,
+          fullName: u.fullName,
+          username: u.username,
+          personalRoomId: u.personalRoomId || u.roomAddress,
+          sponsorId: u.sponsorId,
+          role: u.role,
+          activeCount: (u.activeSessions || []).length,
+          maxDevices: MAX_STATIC_DEVICES,
+          sessions: (u.activeSessions || []).map(s => ({ ...s, token: '' })),
+        })),
+      identityAudit: {
+        totalUsers: db.users.length,
+        uniqueUserIds: new Set(db.users.map(u => (u.userId || '').toLowerCase())).size,
+        uniqueRoomIds: new Set(db.users.map(u => String(u.roomAddress || u.personalRoomId || ''))).size,
+        uniqueUsernames: new Set(db.users.map(u => normalizeStaticUsername(u.username)).filter(Boolean)).size,
+        duplicateUserIds: [],
+        duplicateRoomIds: [],
+        duplicateUsernames: [],
+        integrityHealthy: true,
+      },
+    };
+  }
+  if (path === '/api/admin/sessions/terminate' && method === 'POST') {
+    const tok = String(headersObj['x-admin-token'] || body.currentAdminToken || '').trim();
+    if (!Array.isArray(db.adminSessions)) db.adminSessions = [];
+    if (!Array.isArray(db.terminatedAdminTokens)) db.terminatedAdminTokens = [];
+    if (body.terminateAllOthers && tok) {
+      db.adminSessions.forEach(s => {
+        if (s.token && s.token !== tok) db.terminatedAdminTokens!.unshift(s.token);
+      });
+      db.adminSessions = db.adminSessions.filter(s => s.token === tok);
+    } else if (body.sessionId) {
+      db.adminSessions.forEach(s => {
+        if (s.sessionId === body.sessionId && s.token) db.terminatedAdminTokens!.unshift(s.token);
+      });
+      db.adminSessions = db.adminSessions.filter(s => s.sessionId !== body.sessionId);
+    }
+    saveDb(db);
+    return {
+      success: true,
+      adminSessions: db.adminSessions.map(s => ({ ...s, token: undefined, isCurrent: tok ? s.token === tok : false })),
+    };
+  }
+  if (path.match(/^\/api\/admin\/user\/[^/]+\/terminate-session$/) && method === 'POST') {
+    const uid = decodeURIComponent(path.split('/')[4]);
+    const u = findUser(db, uid);
+    if (!u) return { success: false, message: 'User not found' };
+    if (!Array.isArray(u.activeSessions)) u.activeSessions = [];
+    if (!Array.isArray(u.terminatedTokens)) u.terminatedTokens = [];
+    if (body.terminateAll) {
+      u.activeSessions.forEach(s => s.token && u.terminatedTokens!.unshift(s.token));
+      u.activeSessions = [];
+      u.isOnline = false;
+    } else if (body.sessionId) {
+      u.activeSessions.forEach(s => s.sessionId === body.sessionId && s.token && u.terminatedTokens!.unshift(s.token));
+      u.activeSessions = u.activeSessions.filter(s => s.sessionId !== body.sessionId);
+      u.isOnline = u.activeSessions.length > 0;
+    }
+    saveDb(db);
+    return { success: true, activeSessions: u.activeSessions };
   }
 
   if (path === '/api/auth/restore-account' && method === 'POST') {
@@ -1311,8 +1671,17 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       db.users.push(existing);
       saveDb(db);
     }
-    const sessionToken = body.preferredToken || `esp_static_${Date.now()}`;
-    return { success: true, user: existing, sessionToken };
+    const resSess = createStaticUserSession(existing, body, body.preferredToken);
+    if (resSess.limitReached) {
+      return {
+        success: false,
+        code: 'DEVICE_LIMIT_REACHED',
+        maxDevices: MAX_STATIC_DEVICES,
+        activeSessions: (resSess.activeSessions || []).map(s => ({ ...s, token: '' })),
+      };
+    }
+    saveDb(db);
+    return { success: true, user: existing, sessionToken: resSess.sessionToken };
   }
 
   if (path === '/api/auth/forget-id' && method === 'POST') {
@@ -1366,8 +1735,20 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
 
   if (path === '/api/auth/verify-session') {
     const userId = search.get('userId') || '';
+    const tok = String(headersObj['x-session-token'] || search.get('token') || '').trim();
     const user = findUser(db, userId);
-    return user ? { valid: true, user } : { valid: false, accountMissing: true, sessionTerminated: false };
+    if (!user) return { valid: false, accountMissing: true, sessionTerminated: false };
+    if (tok && (user.terminatedTokens || []).includes(tok)) {
+      return { valid: false, sessionTerminated: true, message: 'आपका यह डिवाइस रिमोटली लॉगआउट कर दिया गया है।' };
+    }
+    return {
+      valid: true,
+      user: {
+        ...user,
+        maxDevices: MAX_STATIC_DEVICES,
+        activeSessions: (user.activeSessions || []).map(s => ({ ...s, isCurrent: tok ? s.token === tok : false })),
+      },
+    };
   }
 
   // User Dashboard, Profile, Withdraw, Heartbeat, Avatar, Server State
@@ -1409,6 +1790,20 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     }
     if (!sub && method === 'PUT') {
       if (!user) return { success: false, message: 'User not found' };
+      const immutableMut =
+        (body.userId !== undefined && String(body.userId).trim() !== user.userId) ||
+        (body.gamingId !== undefined && String(body.gamingId).trim() !== (user.gamingId || '')) ||
+        (body.personalRoomId !== undefined && String(body.personalRoomId).trim() !== (user.personalRoomId || user.roomAddress || '')) ||
+        (body.roomAddress !== undefined && String(body.roomAddress).trim() !== (user.roomAddress || '')) ||
+        (body.sponsorId !== undefined && String(body.sponsorId).trim() !== user.sponsorId) ||
+        (body.sponsorName !== undefined && String(body.sponsorName).trim() !== user.sponsorName);
+      if (immutableMut) {
+        return {
+          success: false,
+          code: 'IMMUTABLE_IDENTITY_LOCKED',
+          message: 'Personal User ID, Personal Room ID और Sponsor ID लॉक हैं — इन्हें बदला या डुप्लिकेट नहीं किया जा सकता!',
+        };
+      }
       const { fullName, username, email, gender, location, fullAddress, paymentAddress, payoutUpiId, bio, houseName, clanName, avatar, coverPhoto, accountType } = body;
       if (username !== undefined) {
         const cleanUsername = normalizeStaticUsername(username);
@@ -1498,9 +1893,43 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       saveDb(db);
       return { success: true, message: 'विथड्रॉल रिक्वेस्ट सबमिट हो गई!', payout, user };
     }
+    if (sub === 'workspace-state' && method === 'POST') {
+      if (!user) return { success: false, message: 'User not found' };
+      user.workspaceState = {
+        ...(user.workspaceState || {}),
+        ...(body.lastTab !== undefined ? { lastTab: String(body.lastTab) } : {}),
+        ...(body.lastGamingSubTab !== undefined ? { lastGamingSubTab: String(body.lastGamingSubTab) } : {}),
+        ...(body.lastDashboardTab !== undefined ? { lastDashboardTab: String(body.lastDashboardTab) } : {}),
+        ...(body.lastRoomAddress !== undefined ? { lastRoomAddress: String(body.lastRoomAddress) } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      saveDb(db);
+      return { success: true, workspaceState: user.workspaceState };
+    }
     if (sub === 'profile-history') return { success: true, history: db.profileHistory.filter(h => h.userId === userId) };
     if (sub === 'session-history') return { success: true, sessions: db.activitySessions.filter(s => s.userId === userId) };
-    if (sub === 'terminate-session') return { success: true, message: 'Session closed' };
+    if (sub === 'terminate-session') {
+      if (!user) return { success: false, message: 'User not found' };
+      if (!Array.isArray(user.activeSessions)) user.activeSessions = [];
+      if (!Array.isArray(user.terminatedTokens)) user.terminatedTokens = [];
+      if (body.terminateAllOthers && body.currentSessionToken) {
+        user.activeSessions.forEach(s => {
+          if (s.token && s.token !== body.currentSessionToken) user.terminatedTokens!.unshift(s.token);
+        });
+        user.activeSessions = user.activeSessions.filter(s => s.token === body.currentSessionToken);
+      } else if (body.sessionId) {
+        user.activeSessions.forEach(s => {
+          if (s.sessionId === body.sessionId && s.token) user.terminatedTokens!.unshift(s.token);
+        });
+        user.activeSessions = user.activeSessions.filter(s => s.sessionId !== body.sessionId);
+      }
+      saveDb(db);
+      return {
+        success: true,
+        message: 'Session closed',
+        activeSessions: user.activeSessions.map(s => ({ ...s, isCurrent: s.token === body.currentSessionToken })),
+      };
+    }
   }
 
   // Chatbot
@@ -1691,6 +2120,10 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       success: true,
       tasks,
       chests,
+      todayActiveness: Number(user.todayActiveness || 0),
+      activenessChests: getStaticActivenessChests(user),
+      growthTasks: getStaticGrowthTasks(db, user),
+      familyTasks: getStaticFamilyTasks(user),
       claimedTodayCount: claimedCount,
       claimedChestMilestones: user.claimedChestMilestones || [],
       tasksCompletedCount: user.tasksCompletedCount || 0,
@@ -1713,30 +2146,150 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     if (!t) return { success: false, message: 'Task not found' };
     const p = Number(user.taskProgress?.[t.eventType] || 0);
     if (p < t.targetCount) {
-      return { success: false, code: 'TASK_NOT_COMPLETED', message: `पहले टास्क पूरा करें (${p}/${t.targetCount}) तभी +5 कॉइन्स व EXP मिलेंगे।` };
+      return { success: false, code: 'TASK_NOT_COMPLETED', message: `Complete "${t.title}" (${p}/${t.targetCount}) first.` };
     }
     if ((user.claimedTaskIds || []).includes(t.id)) {
-      return { success: false, message: 'आज यह टास्क पहले ही क्लेम हो चुका है!' };
+      return { success: false, message: 'Already claimed today!' };
     }
     const before = user.coins || 0;
     const vipCfg = getVipConfig(user.vipTier);
     const xpEarned = Math.round(t.xpReward * (vipCfg?.bonusXpMultiplier || 1));
+    const activenessEarned = Number(t.activenessReward || 15);
     user.coins = before + t.coinReward;
     user.gameXp = (user.gameXp || 0) + xpEarned;
     user.gameLevel = calculateLevelFromXp(user.gameXp);
     user.claimedTaskIds!.push(t.id);
     user.tasksCompletedCount = (user.tasksCompletedCount || 0) + 1;
+    user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + activenessEarned);
     pushStaticCoinTx(db, user, {
       type: 'credit',
       category: 'daily_task',
-      categoryLabel: 'रियल टास्क पूर्ण रिवॉर्ड',
+      categoryLabel: 'Daily Task Reward',
       amount: t.coinReward,
       balanceBefore: before,
       balanceAfter: user.coins,
-      description: `${t.hindiTitle} पूर्ण: +${t.coinReward} कॉइन्स व +${xpEarned} EXP`,
+      description: `${t.title}: +${t.coinReward} Coins & +${xpEarned} EXP`,
     });
     saveDb(db);
-    return { success: true, message: `🎉 +${t.coinReward} कॉइन्स और +${xpEarned} EXP जुड़े!`, coinsEarned: t.coinReward, xpEarned, newBalance: user.coins, user };
+    return {
+      success: true,
+      message: `Claimed +${t.coinReward} Coins, +${activenessEarned} Activeness & +${xpEarned} EXP!`,
+      coinsEarned: t.coinReward,
+      coinsAwarded: t.coinReward,
+      xpEarned,
+      xpAwarded: xpEarned,
+      activenessEarned,
+      todayActiveness: user.todayActiveness,
+      activenessChests: getStaticActivenessChests(user),
+      newBalance: user.coins,
+      user,
+    };
+  }
+  if (path === '/api/tasks/claim-activeness-chest' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const chest = ACTIVENESS_CHESTS_CATALOG.find(c => c.threshold === Number(body.threshold));
+    if (!chest) return { success: false, message: 'Activeness chest not found' };
+    if (Number(user.todayActiveness || 0) < chest.threshold) {
+      return { success: false, message: `Reach ${chest.threshold} Activeness first.` };
+    }
+    if ((user.claimedActivenessChests || []).includes(chest.threshold)) {
+      return { success: false, message: 'Already claimed today!' };
+    }
+    const before = user.coins || 0;
+    user.coins = before + chest.coinReward;
+    user.gameXp = (user.gameXp || 0) + chest.xpReward;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.claimedActivenessChests!.push(chest.threshold);
+    pushStaticCoinTx(db, user, {
+      type: 'credit',
+      category: 'task_chest',
+      categoryLabel: 'Activeness Chest Reward',
+      amount: chest.coinReward,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `${chest.label}: +${chest.coinReward} Coins & +${chest.xpReward} EXP`,
+    });
+    saveDb(db);
+    return {
+      success: true,
+      message: `${chest.label} Opened! +${chest.coinReward} Coins & +${chest.xpReward} EXP!`,
+      coinsEarned: chest.coinReward,
+      xpEarned: chest.xpReward,
+      activenessChests: getStaticActivenessChests(user),
+      user,
+    };
+  }
+  if (path === '/api/tasks/claim-growth' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const growthTasks = getStaticGrowthTasks(db, user);
+    const task = growthTasks.find(t => t.id === body.taskId);
+    if (!task) return { success: false, message: 'Growth milestone not found' };
+    if (!task.isCompleted) return { success: false, message: `Complete "${task.title}" first.` };
+    if (task.isClaimed) return { success: false, message: 'Already claimed!' };
+    const before = user.coins || 0;
+    user.coins = before + task.coinReward;
+    user.gameXp = (user.gameXp || 0) + task.xpReward;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.claimedGrowthTaskIds!.push(task.id);
+    pushStaticCoinTx(db, user, {
+      type: 'credit',
+      category: 'daily_task',
+      categoryLabel: 'Growth Milestone Reward',
+      amount: task.coinReward,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `Growth "${task.title}": +${task.coinReward} Coins & +${task.xpReward} EXP`,
+    });
+    saveDb(db);
+    return {
+      success: true,
+      message: `Growth Unlocked! +${task.coinReward} Coins & +${task.xpReward} EXP!`,
+      coinsEarned: task.coinReward,
+      xpEarned: task.xpReward,
+      growthTasks: getStaticGrowthTasks(db, user),
+      user,
+    };
+  }
+  if (path === '/api/tasks/claim-family' && method === 'POST') {
+    const user = findUser(db, body.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    normalizeStaticUser(user);
+    const familyTasks = getStaticFamilyTasks(user);
+    const task = familyTasks.find(t => t.id === body.taskId);
+    if (!task) return { success: false, message: 'Family task not found' };
+    if (!task.isCompleted) return { success: false, message: `Complete "${task.title}" first.` };
+    if (task.isClaimed) return { success: false, message: 'Already claimed today!' };
+    const before = user.coins || 0;
+    user.coins = before + task.coinReward;
+    user.gameXp = (user.gameXp || 0) + task.xpReward;
+    user.gameLevel = calculateLevelFromXp(user.gameXp);
+    user.claimedFamilyTaskIds!.push(task.id);
+    user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + task.activenessReward);
+    pushStaticCoinTx(db, user, {
+      type: 'credit',
+      category: 'daily_task',
+      categoryLabel: 'Family Task Reward',
+      amount: task.coinReward,
+      balanceBefore: before,
+      balanceAfter: user.coins,
+      description: `Family "${task.title}": +${task.coinReward} Coins & +${task.xpReward} EXP`,
+    });
+    saveDb(db);
+    return {
+      success: true,
+      message: `Family Task Claimed! +${task.coinReward} Coins, +${task.activenessReward} Activeness!`,
+      coinsEarned: task.coinReward,
+      xpEarned: task.xpReward,
+      activenessEarned: task.activenessReward,
+      todayActiveness: user.todayActiveness,
+      activenessChests: getStaticActivenessChests(user),
+      familyTasks: getStaticFamilyTasks(user),
+      user,
+    };
   }
   if (path === '/api/tasks/claim-chest' && method === 'POST') {
     const user = findUser(db, body.userId);
@@ -1924,6 +2477,84 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       .slice(0, 50)
       .map((item, idx) => ({ ...item, rank: idx + 1 }));
     return { success: true, period, leaderboard, topEarners: leaderboard };
+  }
+  if (path === '/api/referrals/track-click' && method === 'POST') {
+    const raw = String(body.sponsorIdentifier || '').trim().replace(/^@+/, '');
+    if (!raw) return { success: false, message: 'Missing sponsor identifier' };
+    const cleanHandle = normalizeStaticUsername(raw);
+    const sponsor = db.users.find(
+      u =>
+        u.userId.toLowerCase() === raw.toLowerCase() ||
+        (cleanHandle && normalizeStaticUsername(u.username) === cleanHandle)
+    );
+    if (!sponsor) return { success: false, message: 'Sponsor not found' };
+    const today = todayStr();
+    sponsor.referralClicks = Number(sponsor.referralClicks || 0) + 1;
+    if (!Array.isArray(sponsor.referralClickHistory)) sponsor.referralClickHistory = [];
+    const ex = sponsor.referralClickHistory.find(h => h.date === today);
+    if (ex) ex.count = Number(ex.count || 0) + 1;
+    else sponsor.referralClickHistory.push({ date: today, count: 1 });
+    saveDb(db);
+    return { success: true, sponsorUserId: sponsor.userId, referralClicks: sponsor.referralClicks };
+  }
+  if (path === '/api/community/top-referrers' && method === 'GET') {
+    const currentUserId = (search.get('userId') || '').trim().toLowerCase();
+    const statsMap = new Map<string, { total: number; converted: number; pending: number; creditedEarnings: number }>();
+    for (const r of db.referrals || []) {
+      const k = String(r.sponsorUserId || '').toLowerCase();
+      if (!k) continue;
+      const p = statsMap.get(k) || { total: 0, converted: 0, pending: 0, creditedEarnings: 0 };
+      p.total += 1;
+      if (r.status === 'credited') {
+        p.converted += 1;
+        p.creditedEarnings += Number(r.commissionAmount || 0);
+      } else if (r.status === 'pending') {
+        p.pending += 1;
+      }
+      statsMap.set(k, p);
+    }
+    const rankedAll = db.users
+      .map(u => {
+        const st = statsMap.get(u.userId.toLowerCase()) || { total: 0, converted: 0, pending: 0, creditedEarnings: 0 };
+        const effectiveClicks = Math.max(Number(u.referralClicks || 0), st.total);
+        const conversionRate =
+          effectiveClicks > 0 ? Math.min(100, Number(((st.converted / effectiveClicks) * 100).toFixed(1))) : 0;
+        return {
+          userId: u.userId,
+          username: u.username || '',
+          fullName: u.fullName,
+          avatar: u.avatar || '',
+          vipTier: u.vipTier || 'none',
+          gameLevel: u.gameLevel || 1,
+          chosenServiceCode: u.chosenServiceCode || 'ESP',
+          totalReferrals: st.total,
+          convertedReferrals: st.converted,
+          pendingReferrals: st.pending,
+          totalClicks: effectiveClicks,
+          conversionRate,
+          referralEarnings: Math.max(Number(u.referralEarnings || 0), st.creditedEarnings),
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.convertedReferrals - a.convertedReferrals ||
+          b.totalReferrals - a.totalReferrals ||
+          b.referralEarnings - a.referralEarnings ||
+          b.conversionRate - a.conversionRate ||
+          b.gameLevel - a.gameLevel
+      )
+      .map((entry, idx) => ({ rank: idx + 1, ...entry }));
+
+    const currentUserRank = currentUserId
+      ? rankedAll.find(e => e.userId.toLowerCase() === currentUserId) || null
+      : null;
+
+    return {
+      success: true,
+      topReferrers: rankedAll.slice(0, 5),
+      currentUserRank,
+      totalRankedUsers: rankedAll.length,
+    };
   }
   if (path === '/api/community/clans') {
     const clanMap = new Map<string, { clanName: string; membersCount: number; totalXp: number; totalCharms: number; leaderName: string; leaderId: string }>();
@@ -2466,6 +3097,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     user.gameLevel = calculateLevelFromXp(user.gameXp);
     user.loginStreak = newStreak;
     user.lastDailyCheckInDate = today;
+    normalizeStaticUser(user);
+    user.todayActiveness = Math.min(100, Number(user.todayActiveness || 0) + 5);
     db.coinTransactions.unshift({
       id: `CTX-${Date.now()}`,
       userId: user.userId,
@@ -3096,6 +3729,14 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     if (!user) return { success: false, message: 'User not found' };
     const cleanNum = String(body.roomNumber || '').trim();
     if (!/^\d{3,10}$/.test(cleanNum)) return { success: false, message: 'केवल 3 से 10 अंक दर्ज करें।' };
+    const existingRoom = String(user.roomAddress || user.personalRoomId || '').trim();
+    if (isStaticNumericRoomId(existingRoom) && cleanNum !== existingRoom) {
+      return {
+        success: false,
+        code: 'IMMUTABLE_IDENTITY_LOCKED',
+        message: `⚠️ ${user.fullName} की Personal Room ID (#${existingRoom}) स्थायी रूप से लॉक है। केवल इसी रूम पर VIP Badge बदला जा सकता है।`,
+      };
+    }
     const rooms = ensureAllStaticRooms(db);
     const conflict = findStaticRoomConflict(db.users, rooms, cleanNum, user.userId);
     if (conflict.conflict) return { success: false, message: `Room ID ${cleanNum} पहले से अलॉट है।` };
@@ -3110,21 +3751,15 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     room.isVipRoom = vipFlag;
     room.vipRoomLabel = user.vipRoomLabel;
     saveDb(db);
-    return { success: true, message: `✅ ${user.fullName} को Room ID "${cleanNum}" अलॉट हो गया!`, user, room };
+    return { success: true, message: `✅ ${user.fullName} के लॉक Room ID "#${cleanNum}" पर VIP Badge अपडेट हो गया!`, user, room };
   }
   if (path === '/api/admin/vip-rooms/reset' && method === 'POST') {
     if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
-    const user = findUser(db, body.targetUserId);
-    if (!user) return { success: false, message: 'User not found' };
-    const rooms = ensureAllStaticRooms(db);
-    const nextStd = generateStaticRoomId(db.users, rooms, user.fullName, user.userId);
-    user.roomAddress = nextStd;
-    user.personalRoomId = nextStd;
-    user.isVipRoom = false;
-    user.vipRoomLabel = '';
-    const room = ensureStaticPersonalRoom(db, user);
-    saveDb(db);
-    return { success: true, message: `↺ Room ID "${nextStd}" पर रीसेट हो गया।`, user, room };
+    return {
+      success: false,
+      code: 'IMMUTABLE_IDENTITY_LOCKED',
+      message: 'Personal Room ID स्थायी रूप से लॉक है! इसे बदला या रीसेट नहीं किया जा सकता।',
+    };
   }
   if (path.match(/^\/api\/admin\/users\/[^/]+\/status$/) && method === 'POST') {
     if (!verifyAdminPass(adminPassHeader)) return { success: false, message: 'Unauthorized' };
@@ -3463,6 +4098,20 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     const uid = decodeURIComponent(path.split('/')[4]);
     const user = findUser(db, uid);
     if (!user) return { success: false, message: 'User not found' };
+    const immutableMut =
+      (body.userId !== undefined && String(body.userId).trim() !== user.userId) ||
+      (body.gamingId !== undefined && String(body.gamingId).trim() !== (user.gamingId || '')) ||
+      (body.personalRoomId !== undefined && String(body.personalRoomId).trim() !== (user.personalRoomId || user.roomAddress || '')) ||
+      (body.roomAddress !== undefined && String(body.roomAddress).trim() !== (user.roomAddress || '')) ||
+      (body.sponsorId !== undefined && String(body.sponsorId).trim() !== user.sponsorId) ||
+      (body.sponsorName !== undefined && String(body.sponsorName).trim() !== user.sponsorName);
+    if (immutableMut) {
+      return {
+        success: false,
+        code: 'IMMUTABLE_IDENTITY_LOCKED',
+        message: 'Personal User ID, Personal Room ID और Sponsor ID लॉक हैं — इन्हें Admin द्वारा भी बदला या डुप्लिकेट नहीं किया जा सकता।',
+      };
+    }
     if (body.fullName) user.fullName = String(body.fullName).trim();
     if (body.username) user.username = normalizeStaticUsername(body.username);
     if (body.password && String(body.password).length >= 3) user.password = String(body.password).trim();

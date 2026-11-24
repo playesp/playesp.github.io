@@ -28,9 +28,13 @@ import {
   MessageSquare,
   Crown,
   Hash,
-  RefreshCw
+  RefreshCw,
+  Laptop,
+  Smartphone,
+  Tablet,
+  LogOut
 } from 'lucide-react';
-import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem, LiveTimeMeta } from '../types/index.ts';
+import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem, LiveTimeMeta, AdminSession, UserSession } from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
@@ -50,7 +54,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onUpdateSettings,
   onLogoutAdmin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'weekly_clock' | 'settings' | 'audits' | 'slider_photos'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'weekly_clock' | 'multi_device' | 'settings' | 'audits' | 'slider_photos'>('members');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all');
   
   const [stats, setStats] = useState<any>(null);
@@ -210,6 +214,82 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [resetClaimUserInput, setResetClaimUserInput] = useState('');
   const [resetPreserveStreak, setResetPreserveStreak] = useState(true);
   const [resettingClaimBusy, setResettingClaimBusy] = useState(false);
+
+  // Multi-Device Admin & Member Sessions + Identity Uniqueness Audit State
+  const [multiDeviceData, setMultiDeviceData] = useState<{
+    maxDevices: number;
+    adminSessions: AdminSession[];
+    userSessions: Array<{
+      userId: string;
+      fullName: string;
+      username?: string;
+      personalRoomId?: string;
+      sponsorId?: string;
+      role: string;
+      activeCount: number;
+      maxDevices: number;
+      sessions: UserSession[];
+    }>;
+    identityAudit: {
+      totalUsers: number;
+      uniqueUserIds: number;
+      uniqueRoomIds: number;
+      uniqueUsernames: number;
+      duplicateUserIds: string[];
+      duplicateRoomIds: string[];
+      duplicateUsernames: string[];
+      integrityHealthy: boolean;
+    };
+  } | null>(null);
+  const [loadingMultiDevice, setLoadingMultiDevice] = useState(false);
+  const [terminatingDeviceKey, setTerminatingDeviceKey] = useState<string | null>(null);
+  const [multiDeviceSearch, setMultiDeviceSearch] = useState('');
+
+  const loadMultiDeviceSessions = async () => {
+    setLoadingMultiDevice(true);
+    try {
+      const res = await api.getAdminSessions(adminPassword);
+      if (res?.success) {
+        setMultiDeviceData(res);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Multi-device sessions लोड करने में त्रुटि आई', 'error');
+    } finally {
+      setLoadingMultiDevice(false);
+    }
+  };
+
+  const handleTerminateAdminDevice = async (sessionId?: string, terminateAllOthers = false) => {
+    const key = terminateAllOthers ? 'admin-all' : `admin-${sessionId}`;
+    setTerminatingDeviceKey(key);
+    try {
+      const res = await api.terminateAdminSession(adminPassword, sessionId, terminateAllOthers);
+      if (res?.success) {
+        showToast(res.message || 'Admin device session logged out!', 'success');
+        await loadMultiDeviceSessions();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Admin session logout failed', 'error');
+    } finally {
+      setTerminatingDeviceKey(null);
+    }
+  };
+
+  const handleAdminTerminateUserDevice = async (userId: string, sessionId?: string, terminateAll = false) => {
+    const key = terminateAll ? `user-all-${userId}` : `user-${userId}-${sessionId}`;
+    setTerminatingDeviceKey(key);
+    try {
+      const res = await api.adminTerminateUserSession(adminPassword, userId, sessionId, terminateAll);
+      if (res?.success) {
+        showToast(res.message || 'Member device logged out safely (0 data deleted)!', 'success');
+        await loadMultiDeviceSessions();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Member session logout failed', 'error');
+    } finally {
+      setTerminatingDeviceKey(null);
+    }
+  };
 
   const loadAdminTimeStats = async () => {
     try {
@@ -584,13 +664,25 @@ export const AdminView: React.FC<AdminViewProps> = ({
     };
   }, [activeTab, vipRoomNumberInput, vipSelectedUserId, adminPassword]);
 
+  useEffect(() => {
+    loadMultiDeviceSessions();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'multi_device') {
+      loadMultiDeviceSessions();
+    }
+  }, [activeTab]);
+
   const handleAssignVipRoom = async () => {
-    const cleanDigits = vipRoomNumberInput.replace(/\D/g, '');
     if (!vipSelectedUserId) {
       showToast('कृपया पहले किसी सदस्य का चयन करें', 'error');
       return;
     }
-    if (cleanDigits.length < 3 || cleanDigits.length > 10) {
+    const targetUser = users.find(u => u.userId === vipSelectedUserId);
+    // Once assigned, Personal Room ID is strictly locked & non-editable. Use existing roomAddress!
+    const lockedRoomDigits = (targetUser?.roomAddress || vipRoomNumberInput).replace(/\D/g, '');
+    if (lockedRoomDigits.length < 3 || lockedRoomDigits.length > 10) {
       showToast('VIP Room ID केवल 3 से 10 अंकों का नंबर होना चाहिए (जैसे 1111, 2222, 1234)', 'error');
       return;
     }
@@ -599,22 +691,22 @@ export const AdminView: React.FC<AdminViewProps> = ({
       const res = await api.assignVipRoomNumber(
         adminPassword,
         vipSelectedUserId,
-        cleanDigits,
+        lockedRoomDigits,
         true,
         vipRoomLabelInput.trim() || 'VIP Royal'
       );
       if (res?.success) {
-        showToast(res.message || `👑 VIP Room ID ${cleanDigits} असाइन हो गया!`, 'success');
+        showToast(res.message || `👑 Room #${lockedRoomDigits} पर VIP बैज अपडेट हो गया!`, 'success');
         const updatedUser = res.user;
         if (updatedUser) {
           setUsers(prev => prev.map(u => (u.userId === updatedUser.userId ? { ...u, ...updatedUser } : u)));
         }
         await loadAdminData();
       } else {
-        showToast(res?.message || 'VIP Room ID असाइन करने में त्रुटि आई', 'error');
+        showToast(res?.message || 'VIP बैज अपडेट करने में त्रुटि आई', 'error');
       }
     } catch (err: any) {
-      showToast(err?.message || 'VIP Room ID पहले से उपयोग में है या अमान्य है', 'error');
+      showToast(err?.message || 'पर्सनल रूम आईडी लॉक है — केवल VIP बैज अपडेट संभव है', 'error');
     } finally {
       setVipSaving(false);
     }
@@ -1290,6 +1382,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
         >
           <Crown className="w-3.5 h-3.5" />
           <span>👑 VIP Room IDs ({users.filter(u => u.isVipRoom || isVipFancyRoomNumber(u.roomAddress)).length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('multi_device')}
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
+            activeTab === 'multi_device'
+              ? 'bg-[#2874f0] text-white'
+              : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+          }`}
+        >
+          <Laptop className="w-3.5 h-3.5" />
+          <span>🖥️ Multi-Device Control ({multiDeviceData?.adminSessions.length || 1}/4)</span>
         </button>
 
         <button
@@ -3700,16 +3804,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </div>
             </div>
 
-            {/* VIP Assignment Panel */}
+            {/* VIP Badge & Locked Personal Room Panel */}
             <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
                 <div>
                   <h3 className="text-base font-bold text-[#212121] flex items-center gap-2">
                     <Crown className="w-5 h-5 text-amber-500" />
-                    <span>VIP Room ID आवंटन व प्रबंधन (Admin VIP Room Setup)</span>
+                    <span>VIP Badge &amp; Immutable Personal Room Registry</span>
                   </h3>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    किसी भी सदस्य को यूनिक VIP नंबर (जैसे 1111, 2222, 1234, 7777, 9999) असाइन करें — कोई दो सदस्य एक ही Room ID नहीं रख सकते।
+                    सुरक्षा नियम: प्रत्येक यूज़र का Personal Room ID एक बार बनने के बाद लाइफटाइम लॉक (Non-Editable &amp; Non-Duplicable) रहता है। यहाँ आप किसी भी सदस्य के फिक्स्ड रूम नंबर पर VIP Royal / King / Diamond बैज लेबल अपडेट कर सकते हैं। नया कस्टम VIP नंबर केवल नए खिलाड़ी बनाते समय सेट करें।
                   </p>
                 </div>
                 <button
@@ -3787,29 +3891,44 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   )}
                 </div>
 
-                {/* Right 7 cols: Enter / Pick VIP Room ID */}
+                {/* Right 7 cols: Locked Room Number + VIP Badge */}
                 <div className="lg:col-span-7 space-y-3 bg-[#f9fafb] border border-slate-200 rounded-md p-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-[#212121] mb-1">
-                        2. नया VIP Room Number (केवल अंक / 3-10 Digits)
+                        2. Personal Room Number 🔒 (पूरी तरह लॉक)
                       </label>
                       <div className="relative">
                         <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                         <input
                           type="text"
                           inputMode="numeric"
-                          value={vipRoomNumberInput}
-                          onChange={e => setVipRoomNumberInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          placeholder="जैसे: 1111, 2222, 1234, 7777"
-                          className="w-full pl-9 pr-3 py-2 rounded-sm bg-white border border-slate-300 text-sm font-mono tabular-nums font-black text-[#212121] outline-none focus:border-[#2874f0]"
+                          readOnly={Boolean(selectedUser?.roomAddress)}
+                          disabled={Boolean(selectedUser?.roomAddress)}
+                          value={selectedUser?.roomAddress || vipRoomNumberInput}
+                          onChange={e => {
+                            if (!selectedUser?.roomAddress) {
+                              setVipRoomNumberInput(e.target.value.replace(/\D/g, '').slice(0, 10));
+                            }
+                          }}
+                          placeholder="Auto Unique Room ID"
+                          className={`w-full pl-9 pr-20 py-2 rounded-sm border text-sm font-mono tabular-nums font-black outline-none ${
+                            selectedUser?.roomAddress
+                              ? 'bg-slate-100 border-slate-300 text-slate-600 cursor-not-allowed'
+                              : 'bg-white border-slate-300 text-[#212121] focus:border-[#2874f0]'
+                          }`}
                         />
+                        {selectedUser?.roomAddress && (
+                          <span className="absolute right-2.5 top-2 text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded-sm border border-amber-300">
+                            LOCKED
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-[#212121] mb-1">
-                        3. VIP बैज लेबल (Optional Badge Title)
+                        3. VIP बैज लेबल (Badge Title on Locked Room)
                       </label>
                       <select
                         value={vipRoomLabelInput}
@@ -3826,83 +3945,32 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Live Conflict / Availability Banner */}
-                  {vipRoomNumberInput && (
-                    <div className={`px-3 py-2 rounded-sm border text-xs font-semibold flex items-center justify-between gap-2 ${
-                      vipChecking
-                        ? 'bg-slate-100 border-slate-300 text-slate-700'
-                        : vipCheckResult?.available
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        : 'bg-rose-50 border-rose-200 text-rose-800'
-                    }`}>
-                      <span>
-                        {vipChecking
-                          ? 'उपलब्धता की जाँच हो रही है...'
-                          : vipCheckResult?.available
-                          ? `✓ Room ID #${vipCheckResult.normalized} उपलब्ध है! ${vipCheckResult.isFancyVip ? '(Fancy VIP Tier)' : ''}`
-                          : vipCheckResult?.conflictOwner
-                          ? `✕ Room ID #${vipCheckResult.normalized} पहले से ${vipCheckResult.conflictOwner} के पास है`
-                          : vipCheckResult?.message || 'कम से कम 3 अंकों की संख्या दर्ज करें'}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Quick Curated VIP Numbers Picker */}
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-600 mb-1.5">
-                      क्विक VIP फैंसी नंबर चुनें (तुरंत उपलब्धता देखें):
+                  {/* Permanent Lock Explanation Banner */}
+                  <div className="px-3 py-2 rounded-sm border bg-blue-50 border-blue-200 text-blue-900 text-[11px] font-semibold flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-[#2874f0] shrink-0" />
+                    <span>
+                      {selectedUser?.roomAddress
+                        ? `Room ID #${selectedUser.roomAddress} स्थायी रूप से लॉक है (Non-Editable & Zero Duplicate)। आप इसके ऊपर केवल VIP बैज सक्रिय/अपडेट कर सकते हैं।`
+                        : 'इस सदस्य को एक यूनिक रूम नंबर असाइन किया जाएगा।'}
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CURATED_VIP_ROOM_NUMBERS.map(num => {
-                        const holder = takenRoomMap.get(num);
-                        const isMine = holder && holder.userId === vipSelectedUserId;
-                        const isTakenByOther = Boolean(holder && !isMine);
-                        const isSelected = vipRoomNumberInput === num;
-                        return (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setVipRoomNumberInput(num)}
-                            title={holder ? `Assigned to ${holder.fullName}` : 'Available VIP Number'}
-                            className={`px-2.5 py-1 rounded-sm text-xs font-mono tabular-nums font-black border transition cursor-pointer ${
-                              isSelected
-                                ? 'bg-[#2874f0] text-white border-[#2874f0]'
-                                : isMine
-                                ? 'bg-amber-100 text-amber-900 border-amber-400'
-                                : isTakenByOther
-                                ? 'bg-slate-100 text-slate-400 border-slate-200 line-through'
-                                : 'bg-white text-[#212121] border-amber-300 hover:bg-amber-50'
-                            }`}
-                          >
-                            {num}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
 
-                  {/* Submit / Reset Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                  {/* Submit Button */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
                     <button
                       type="button"
-                      disabled={vipSaving || !vipSelectedUserId || vipRoomNumberInput.length < 3 || (vipCheckResult !== null && !vipCheckResult.available)}
+                      disabled={vipSaving || !vipSelectedUserId}
                       onClick={handleAssignVipRoom}
                       className="px-4 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1e60d5] text-white text-xs font-black transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                     >
                       <Crown className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{vipSaving ? 'सेव हो रहा है...' : '👑 VIP Room ID असाइन करें'}</span>
+                      <span>{vipSaving ? 'सेव हो रहा है...' : '👑 लॉक रूम पर VIP बैज अपडेट करें'}</span>
                     </button>
 
-                    {selectedUser && (selectedUser.isVipRoom || isVipFancyRoomNumber(selectedUser.roomAddress)) && (
-                      <button
-                        type="button"
-                        disabled={vipSaving}
-                        onClick={() => handleResetVipRoom(selectedUser)}
-                        className="px-3.5 py-2 rounded-sm bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold transition cursor-pointer disabled:opacity-50"
-                      >
-                        ↺ Standard Count ID (10001+) पर रीसेट करें
-                      </button>
-                    )}
+                    <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                      <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                      Immutable Room ID Policy Active
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3933,7 +4001,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <th className="py-2.5 px-3">Member / @Username</th>
                       <th className="py-2.5 px-3">User ID</th>
                       <th className="py-2.5 px-3">Account / Plan</th>
-                      <th className="py-2.5 px-3">Room Number</th>
+                      <th className="py-2.5 px-3">Locked Room #</th>
                       <th className="py-2.5 px-3">Tier / Badge</th>
                       <th className="py-2.5 px-3 text-right">Actions</th>
                     </tr>
@@ -3958,11 +4026,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             </span>
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-sm font-mono tabular-nums font-black text-xs border ${
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm font-mono tabular-nums font-black text-xs border ${
                               isVip
                                 ? 'bg-amber-50 text-amber-900 border-amber-300'
                                 : 'bg-blue-50 text-[#2874f0] border-blue-200'
                             }`}>
+                              <Lock className="w-3 h-3 opacity-70" />
                               #{u.roomAddress || '—'}
                             </span>
                           </td>
@@ -3978,35 +4047,322 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <div className="inline-flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setVipSelectedUserId(u.userId);
-                                  setVipRoomNumberInput(u.roomAddress || '');
-                                  setVipRoomLabelInput(u.vipRoomLabel || 'VIP Royal');
-                                }}
-                                className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-blue-50 text-[#2874f0] border border-slate-300 text-[11px] font-bold cursor-pointer"
-                              >
-                                Edit / Set VIP
-                              </button>
-                              {isVip && (
-                                <button
-                                  type="button"
-                                  disabled={vipSaving}
-                                  onClick={() => handleResetVipRoom(u)}
-                                  className="px-2.5 py-1 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer"
-                                >
-                                  Reset
-                                </button>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVipSelectedUserId(u.userId);
+                                setVipRoomNumberInput(u.roomAddress || '');
+                                setVipRoomLabelInput(u.vipRoomLabel || 'VIP Royal');
+                              }}
+                              className="px-2.5 py-1 rounded-sm bg-[#f1f3f6] hover:bg-blue-50 text-[#2874f0] border border-slate-300 text-[11px] font-bold cursor-pointer"
+                            >
+                              Update VIP Badge
+                            </button>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================== TAB 10: MULTI-DEVICE ADMIN & MEMBER CONTROL (MAX 4 DEVICES) ===================== */}
+      {activeTab === 'multi_device' && (() => {
+        const currentAdminTok = api.getStoredAdminToken();
+        const audit = multiDeviceData?.identityAudit;
+        const adminSessList = multiDeviceData?.adminSessions || [];
+        const userSessList = (multiDeviceData?.userSessions || []).filter(entry => {
+          const q = multiDeviceSearch.trim().toLowerCase();
+          if (!q) return true;
+          return (
+            entry.fullName.toLowerCase().includes(q) ||
+            entry.userId.toLowerCase().includes(q) ||
+            (entry.username || '').toLowerCase().includes(q) ||
+            (entry.personalRoomId || '').toLowerCase().includes(q) ||
+            (entry.sponsorId || '').toLowerCase().includes(q)
+          );
+        });
+
+        return (
+          <div className="space-y-5">
+            {/* 1. Identity Uniqueness Audit & Zero-Deletion Shield */}
+            <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-[#212121] flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-[#388e3c]" />
+                    <span>Identity Integrity &amp; Zero-Duplicate Verification Audit</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    प्रत्येक यूज़र का Personal User ID, Personal Room ID, Sponsor ID और @Username लाइफटाइम नॉन-एडिटेबल व 100% यूनिक रहता है। किसी भी यूज़र का डेटा कभी डिलीट या मिसिंग नहीं होता।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadMultiDeviceSessions}
+                  disabled={loadingMultiDevice}
+                  className="px-3.5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1e60d5] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start sm:self-auto"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingMultiDevice ? 'animate-spin' : ''}`} />
+                  <span>{loadingMultiDevice ? 'Syncing...' : 'Refresh Sessions & Audit'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Total Users</p>
+                  <p className="text-xl font-black text-[#212121] font-mono">{audit?.totalUsers ?? users.length}</p>
+                </div>
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Unique User IDs</p>
+                  <p className="text-xl font-black text-[#2874f0] font-mono">{audit?.uniqueUserIds ?? users.length}</p>
+                </div>
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Unique Room IDs</p>
+                  <p className="text-xl font-black text-purple-700 font-mono">{audit?.uniqueRoomIds ?? users.length}</p>
+                </div>
+                <div className="bg-[#f9fafb] border border-slate-200 rounded-md p-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Unique @Usernames</p>
+                  <p className="text-xl font-black text-indigo-700 font-mono">{audit?.uniqueUsernames ?? users.length}</p>
+                </div>
+                <div className={`rounded-md p-3 border col-span-2 lg:col-span-1 ${
+                  audit?.integrityHealthy !== false
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}>
+                  <p className="text-[10px] font-bold uppercase">Duplicate Check</p>
+                  <p className="text-sm font-black mt-1">
+                    {audit?.integrityHealthy !== false ? '✓ 0 Duplicates Healthy' : '⚠ Duplicate Detected'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Admin Panel Multi-Device Active Sessions (Max 4 Admin Devices) */}
+            <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm sm:text-base font-bold text-[#212121]">
+                      Admin Panel Connected Devices
+                    </h4>
+                    <span className={`px-2.5 py-0.5 rounded-sm text-[11px] font-black border ${
+                      adminSessList.length >= 4
+                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                        : 'bg-emerald-50 text-[#388e3c] border-emerald-200'
+                    }`}>
+                      {adminSessList.length} / {multiDeviceData?.maxDevices || 4} Admin Slots Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    आप एक साथ अधिकतम 4 मोबाइल/कंप्यूटर पर Admin Panel लॉगिन कर सकते हैं और किसी भी अन्य Admin डिवाइस को यहाँ से 1-क्लिक रिमोट लॉगआउट कर सकते हैं।
+                  </p>
+                </div>
+
+                {adminSessList.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={terminatingDeviceKey === 'admin-all'}
+                    onClick={() => handleTerminateAdminDevice(undefined, true)}
+                    className="px-3.5 py-2 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{terminatingDeviceKey === 'admin-all' ? 'Logging out...' : 'Log Out Other Admin Devices'}</span>
+                  </button>
+                )}
+              </div>
+
+              {adminSessList.length === 0 ? (
+                <div className="p-4 rounded-md bg-[#f9fafb] border border-slate-200 text-xs text-slate-600 text-center">
+                  सक्रिय Admin डिवाइस सत्र लोड हो रहे हैं...
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {adminSessList.map(sess => {
+                    const isThisDevice = Boolean(currentAdminTok && sess.token === currentAdminTok);
+                    return (
+                      <div
+                        key={sess.sessionId}
+                        className={`p-3.5 rounded-md border flex items-center justify-between gap-3 ${
+                          isThisDevice
+                            ? 'bg-emerald-50/70 border-emerald-300'
+                            : 'bg-[#f9fafb] border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 ${
+                            isThisDevice
+                              ? 'bg-emerald-100 text-[#388e3c] border border-emerald-200'
+                              : 'bg-white text-slate-600 border border-slate-200'
+                          }`}>
+                            {sess.deviceType === 'mobile' ? (
+                              <Smartphone className="w-5 h-5" />
+                            ) : sess.deviceType === 'tablet' ? (
+                              <Tablet className="w-5 h-5" />
+                            ) : (
+                              <Laptop className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-bold text-xs text-[#212121] truncate">{sess.deviceName}</span>
+                              {isThisDevice && (
+                                <span className="bg-emerald-100 text-[#388e3c] text-[9px] font-black px-1.5 py-0.5 rounded-sm border border-emerald-200">
+                                  THIS ADMIN DEVICE
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-600 truncate">
+                              {sess.os} • {sess.browser} {sess.ipAddress ? `• IP: ${sess.ipAddress}` : ''}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              Login: {new Date(sess.loginTime).toLocaleString('hi-IN')}
+                            </p>
+                          </div>
+                        </div>
+
+                        {!isThisDevice && (
+                          <button
+                            type="button"
+                            disabled={terminatingDeviceKey === `admin-${sess.sessionId}`}
+                            onClick={() => handleTerminateAdminDevice(sess.sessionId, false)}
+                            className="px-2.5 py-1.5 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                          >
+                            <LogOut className="w-3 h-3" />
+                            <span>Logout</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Member Multi-Device Active Sessions (Max 4 Slots Per User) */}
+            <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm sm:text-base font-bold text-[#212121]">
+                    All Member Multi-Device Sessions (Max 4 Devices / User)
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    किसी भी सदस्य का डिवाइस लॉगआउट करने से उसका कोई भी खाता डेटा (Coins, Balance, Room ID, Sponsor ID) डिलीट नहीं होता — केवल उस डिवाइस से लॉगआउट होता है।
+                  </p>
+                </div>
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={multiDeviceSearch}
+                    onChange={e => setMultiDeviceSearch(e.target.value)}
+                    placeholder="User ID, Room ID, @username या नाम..."
+                    className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3 py-1.5 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {userSessList.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-6 bg-[#f9fafb] rounded border border-slate-200">
+                    कोई मिलान सदस्य नहीं मिला।
+                  </p>
+                ) : (
+                  userSessList.map(entry => (
+                    <div
+                      key={entry.userId}
+                      className="border border-slate-200 rounded-md p-4 bg-[#f9fafb] space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-black text-xs sm:text-sm text-[#212121]">
+                              {entry.fullName}
+                            </span>
+                            {entry.username && (
+                              <span className="text-[11px] font-mono text-[#2874f0] font-bold">
+                                @{entry.username}
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded-sm text-[10px] font-black border ${
+                              entry.activeCount >= 4
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : entry.activeCount > 0
+                                ? 'bg-emerald-50 text-[#388e3c] border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                              {entry.activeCount} / {entry.maxDevices || 4} Devices
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-600">
+                            <span>User ID: <strong className="text-[#2874f0]">{entry.userId}</strong></span>
+                            <span>•</span>
+                            <span>Room ID: <strong className="text-purple-700">#{entry.personalRoomId || '—'}</strong></span>
+                            <span>•</span>
+                            <span>Sponsor: <strong className="text-emerald-700">{entry.sponsorId || 'ROOT'}</strong></span>
+                          </div>
+                        </div>
+
+                        {entry.activeCount > 0 && (
+                          <button
+                            type="button"
+                            disabled={terminatingDeviceKey === `user-all-${entry.userId}`}
+                            onClick={() => handleAdminTerminateUserDevice(entry.userId, undefined, true)}
+                            className="px-3 py-1.5 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>
+                              {terminatingDeviceKey === `user-all-${entry.userId}` ? 'Logging out...' : 'Logout All Devices'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+
+                      {entry.sessions.length === 0 ? (
+                        <p className="text-[11px] text-slate-500 bg-white px-3 py-2 rounded border border-slate-200">
+                          वर्तमान में कोई सक्रिय डिवाइस लॉगिन नहीं है (सारा डेटा 100% सुरक्षित है)।
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {entry.sessions.map(s => (
+                            <div
+                              key={s.sessionId}
+                              className="bg-white border border-slate-200 rounded-sm p-2.5 flex items-center justify-between gap-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {s.deviceType === 'mobile' ? (
+                                  <Smartphone className="w-4 h-4 text-[#2874f0] shrink-0" />
+                                ) : s.deviceType === 'tablet' ? (
+                                  <Tablet className="w-4 h-4 text-[#2874f0] shrink-0" />
+                                ) : (
+                                  <Laptop className="w-4 h-4 text-[#2874f0] shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-bold text-[#212121] truncate">{s.deviceName}</p>
+                                  <p className="text-[10px] text-slate-500 truncate">
+                                    {s.os} • {s.browser} • {new Date(s.lastActive).toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={terminatingDeviceKey === `user-${entry.userId}-${s.sessionId}`}
+                                onClick={() => handleAdminTerminateUserDevice(entry.userId, s.sessionId, false)}
+                                className="px-2 py-1 rounded-sm bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold cursor-pointer shrink-0 disabled:opacity-50"
+                              >
+                                Logout
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -4176,7 +4532,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   ✏️ Edit Player Credentials &amp; VIP Effect
                 </h3>
                 <p className="text-[11px] font-mono text-slate-500">
-                  User ID: {editingPlayerModal.user.userId}
+                  User ID, Room ID व Sponsor ID स्थायी रूप से लॉक हैं (Zero Duplicate)
                 </p>
               </div>
               <button
@@ -4186,6 +4542,34 @@ export const AdminView: React.FC<AdminViewProps> = ({
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Strictly Locked Immutable Identities */}
+            <div className="grid grid-cols-3 gap-2 bg-slate-50 border border-slate-200 rounded-sm p-2.5">
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-[#2874f0]" /> User ID (LOCKED)
+                </label>
+                <div className="font-mono font-black text-[#2874f0] text-[11px] truncate">
+                  {editingPlayerModal.user.userId}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-purple-700" /> Room ID (LOCKED)
+                </label>
+                <div className="font-mono font-black text-purple-700 text-[11px] truncate">
+                  #{editingPlayerModal.user.personalRoomId || editingPlayerModal.user.roomAddress || 'UNIQUE'}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-emerald-700" /> Sponsor ID (LOCKED)
+                </label>
+                <div className="font-mono font-black text-emerald-700 text-[11px] truncate">
+                  {editingPlayerModal.user.sponsorId || 'ROOT'}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

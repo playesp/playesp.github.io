@@ -133,6 +133,25 @@ function safeAvatarForFirestore(avatar: unknown): string {
   return trimmed;
 }
 
+function sanitizeWorkspaceState(ws: any) {
+  if (!ws || typeof ws !== 'object') {
+    return {
+      lastTab: 'dashboard',
+      lastGamingSubTab: 'games',
+      lastDashboardTab: 'overview',
+      lastRoomAddress: '',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return {
+    lastTab: clampString(ws.lastTab, 48),
+    lastGamingSubTab: clampString(ws.lastGamingSubTab, 48),
+    lastDashboardTab: clampString(ws.lastDashboardTab, 48),
+    lastRoomAddress: clampString(ws.lastRoomAddress, 24),
+    updatedAt: clampString(ws.updatedAt, 64) || new Date().toISOString(),
+  };
+}
+
 function buildValidatedUserDoc(userData: any, authUid: string) {
   const safeUserId = sanitizeFirestoreId(userData.userId || userData.id);
   const nowIso = new Date().toISOString();
@@ -156,6 +175,7 @@ function buildValidatedUserDoc(userData: any, authUid: string) {
   const emailRaw = clampString(userData.email, 150);
   const email = emailRaw.includes('@') && emailRaw.length >= 3 ? emailRaw : `${safeUserId.toLowerCase()}@esp.local`;
   const createdAt = clampString(userData.createdAt, 64) || nowIso;
+  const roomNum = clampString(userData.personalRoomId || userData.roomAddress, 24);
 
   return {
     userId: safeUserId,
@@ -197,6 +217,16 @@ function buildValidatedUserDoc(userData: any, authUid: string) {
     friendsList: Array.isArray(userData.friendsList)
       ? userData.friendsList.filter((f: unknown): f is string => typeof f === 'string' && f.trim().length > 0).slice(0, 500)
       : [],
+    gamingId: clampString(userData.gamingId || `GM-${safeUserId}`, 64),
+    personalRoomId: roomNum,
+    roomAddress: roomNum,
+    todayActiveness: nonNegativeNumber(userData.todayActiveness, 0),
+    loginStreak: nonNegativeNumber(userData.loginStreak, 0),
+    claimedDays: Array.isArray(userData.claimedDays)
+      ? userData.claimedDays.map((d: unknown) => Number(d)).filter((n: number) => Number.isFinite(n)).slice(0, 7)
+      : [],
+    lastDailyCheckInDate: clampString(userData.lastDailyCheckInDate, 32),
+    workspaceState: sanitizeWorkspaceState(userData.workspaceState),
     role,
     createdAt: createdAt.length >= 4 ? createdAt : nowIso,
     updatedAt: nowIso,
@@ -210,6 +240,7 @@ function buildPublicProfileDoc(userData: any, authUid: string) {
     userData.vipTier === 'silver' || userData.vipTier === 'gold' || userData.vipTier === 'diamond'
       ? userData.vipTier
       : 'none';
+  const roomNum = clampString(userData.personalRoomId || userData.roomAddress, 24);
 
   return {
     userId: safeUserId,
@@ -228,6 +259,8 @@ function buildPublicProfileDoc(userData: any, authUid: string) {
     charms: nonNegativeNumber(userData.charms, 0),
     coins: nonNegativeNumber(userData.coins, 0),
     clanName: clampString(userData.clanName, 100),
+    personalRoomId: roomNum,
+    roomAddress: roomNum,
     friendsCount: Array.isArray(userData.friendsList) ? userData.friendsList.length : nonNegativeNumber(userData.friendsCount, 0),
     isPublic: true,
     updatedAt: nowIso,
@@ -317,6 +350,7 @@ export async function syncUserToFirestore(userData: any, silentIfUnauthenticated
               : existingData.friendsList || [],
             clanName: clampString(userData.clanName, 100),
             accountType: userData.accountType === 'gamer' ? 'gamer' : 'business',
+            workspaceState: sanitizeWorkspaceState(userData.workspaceState),
             updatedAt: new Date().toISOString(),
           },
           { merge: true }

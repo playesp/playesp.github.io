@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Lock, ShieldAlert, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, X, Monitor, LogOut, RefreshCw } from 'lucide-react';
 import { api } from '../services/api.ts';
+import type { AdminSession } from '../types/index.ts';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdminLoginSuccess: (password: string) => void;
+  onAdminLoginSuccess: (password: string, adminToken?: string) => void;
 }
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
@@ -16,11 +17,19 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [conflictSessions, setConflictSessions] = useState<AdminSession[] | null>(null);
+  const [maxDevices, setMaxDevices] = useState(4);
+
+  useEffect(() => {
+    if (isOpen) {
+      setErrorMsg(null);
+      setConflictSessions(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const attemptAdminLogin = async (opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }) => {
     if (!password.trim()) {
       setErrorMsg('कृपया एडमिन मास्टर पासवर्ड दर्ज करें');
       return;
@@ -28,23 +37,36 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await api.getAdminOverview(password);
+      const res = await api.adminLogin(password.trim(), opts);
       if (res.success) {
-        onAdminLoginSuccess(password);
+        setConflictSessions(null);
+        onAdminLoginSuccess(password.trim(), res.adminToken);
         onClose();
       } else {
         setErrorMsg('अमान्य एडमिन सुरक्षा कुंजी (Invalid Master Key)');
       }
-    } catch {
-      setErrorMsg('अमान्य एडमिन सुरक्षा कुंजी (Invalid Master Key)');
+    } catch (err: any) {
+      if (err?.code === 'DEVICE_LIMIT_REACHED' && Array.isArray(err.activeSessions)) {
+        setConflictSessions(err.activeSessions);
+        setMaxDevices(err.maxDevices || 4);
+        setErrorMsg(err.message || 'Admin Panel पहले से 4 डिवाइसेस में लॉगिन है।');
+      } else {
+        setConflictSessions(null);
+        setErrorMsg(err?.message || 'अमान्य एडमिन सुरक्षा कुंजी (Invalid Master Key)');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await attemptAdminLogin();
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-md p-6 sm:p-8 max-w-sm w-full shadow-xl relative space-y-5 text-[#212121]">
+      <div className="bg-white border border-slate-200 rounded-md p-6 sm:p-7 max-w-md w-full shadow-xl relative space-y-4 text-[#212121]">
         <button
           onClick={onClose}
           className="absolute right-4 top-4 p-1.5 rounded-sm bg-[#f1f3f6] text-slate-600 hover:text-[#212121] cursor-pointer"
@@ -56,15 +78,54 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           <div className="w-12 h-12 rounded-md bg-blue-50 text-[#2874f0] flex items-center justify-center mx-auto border border-blue-200">
             <Lock className="w-6 h-6" />
           </div>
-          <h2 className="text-lg font-bold text-[#212121]">ESP Master Admin Access</h2>
+          <h2 className="text-lg font-bold text-[#212121]">ESP Multi-Device Admin Access</h2>
           <p className="text-xs text-slate-500">
-            Restricted security area for system administrators
+            Up to 4 Admin devices supported simultaneously with remote session control
           </p>
         </div>
 
         {errorMsg && (
           <div className="p-2.5 rounded-sm bg-rose-50 border border-rose-200 text-rose-700 text-xs text-center font-medium">
             {errorMsg}
+          </div>
+        )}
+
+        {conflictSessions && (
+          <div className="p-3 rounded-sm bg-amber-50 border border-amber-300 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                <Monitor className="w-4 h-4 text-[#fb641b]" />
+                <span>Admin Slots Full ({conflictSessions.length}/{maxDevices})</span>
+              </span>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => attemptAdminLogin({ replaceOldestDevice: true })}
+                className="px-2.5 py-1 rounded-xs bg-[#fb641b] text-white text-[11px] font-bold hover:bg-[#e8550f] flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Replace Oldest</span>
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {conflictSessions.map((s, idx) => (
+                <div key={s.sessionId} className="bg-white border border-amber-200 rounded-xs px-2.5 py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold text-[#212121] truncate">#{idx + 1} · {s.deviceName}</p>
+                    <p className="text-[10px] text-[#666666]">{new Date(s.lastActive || s.loginTime).toLocaleString()}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => attemptAdminLogin({ replaceSessionId: s.sessionId })}
+                    className="shrink-0 px-2.5 py-1 rounded-xs bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    <span>Logout & Enter</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -96,3 +157,4 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     </div>
   );
 };
+

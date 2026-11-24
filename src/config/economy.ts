@@ -216,7 +216,8 @@ export interface RealTaskCatalogItem {
   title: string;
   hindiTitle: string;
   description: string;
-  coinReward: number; // Strictly 5 coins per completed task
+  coinReward: number;
+  activenessReward: number;
   xpReward: number;
   targetCount: number;
   icon: string;
@@ -226,82 +227,252 @@ export interface RealTaskCatalogItem {
 
 export const REAL_TASKS_CATALOG: RealTaskCatalogItem[] = [
   {
-    id: 'task-profile',
-    eventType: 'profile_completed',
-    title: 'Complete Your Profile & Bio',
-    hindiTitle: 'प्रोफाइल नाम, बायो या अवतार अपडेट करें',
-    description: 'अपनी प्रोफाइल डिटेल या अवतार सेव करें। पूरा होने पर ही 5 कॉइन्स और +30 EXP मिलेंगे।',
+    id: 'task-game',
+    eventType: 'game_played',
+    title: 'Play Space Werewolf & Arena',
+    hindiTitle: 'गेम एरीना में 2 गेम राउंड पूरे करें',
+    description: 'Complete 2 rounds of Space Werewolf, Bingo, or Mini Games.',
     coinReward: 5,
-    xpReward: 30,
-    targetCount: 1,
-    icon: '🪪',
-    actionTab: 'profile',
-    actionLabel: 'प्रोफाइल अपडेट करें',
-  },
-  {
-    id: 'task-chat',
-    eventType: 'chat_sent',
-    title: 'Send 3 Messages in Chat Club / Voice Room',
-    hindiTitle: 'चैट क्लब या वॉइस रूम में 3 असली मैसेज भेजें',
-    description: 'जब आप चैट में कम से कम 3 मैसेज भेज देंगे तभी यह टास्क पूरा होगा।',
-    coinReward: 5,
-    xpReward: 25,
-    targetCount: 3,
-    icon: '💬',
-    actionTab: 'voice_room',
-    actionLabel: 'चैट / वॉइस रूम खोलें',
-  },
-  {
-    id: 'task-moment',
-    eventType: 'moment_posted',
-    title: 'Share a Real Post in Daily Moments',
-    hindiTitle: 'डेली मोमेंट्स फ़ीड में 1 पोस्ट शेयर करें',
-    description: 'डेली मोमेंट्स में अपना स्टेटस या प्रमोशन पोस्ट पब्लिश करें।',
-    coinReward: 5,
-    xpReward: 35,
-    targetCount: 1,
-    icon: '📸',
-    actionTab: 'moments',
-    actionLabel: 'मोमेंट पोस्ट करें',
+    activenessReward: 20,
+    xpReward: 20,
+    targetCount: 2,
+    icon: '🐺',
+    actionTab: 'game:werewolf',
+    actionLabel: 'Go',
   },
   {
     id: 'task-voice',
     eventType: 'voice_joined',
-    title: 'Join Any Live Voice Stage Seat',
+    title: 'Join Live Voice Room',
     hindiTitle: 'लाइव वॉइस रूम में माइक सीट जॉइन करें',
-    description: 'वॉइस रूम में किसी खाली माइक सीट पर बैठकर सक्रिय भाग लें।',
+    description: 'Stay active or take a mic seat inside any ESP Voice Room.',
     coinReward: 5,
-    xpReward: 30,
+    activenessReward: 20,
+    xpReward: 20,
     targetCount: 1,
     icon: '🎙️',
     actionTab: 'voice_room',
-    actionLabel: 'वॉइस सीट जॉइन करें',
+    actionLabel: 'Go',
   },
   {
-    id: 'task-game',
-    eventType: 'game_played',
-    title: 'Complete 2 Real Game Rounds',
-    hindiTitle: 'गेम एरीना में 2 गेम राउंड पूरे करें',
-    description: 'स्पिन, डाइस, कॉइन फ्लिप, वेयरवुल्फ या स्पाई गेम के 2 राउंड पूरे करें।',
+    id: 'task-chat',
+    eventType: 'chat_sent',
+    title: 'Send Chat Messages',
+    hindiTitle: 'चैट क्लब या वॉइस रूम में 3 असली मैसेज भेजें',
+    description: 'Send 3 real messages in Chat Club, Friends Chat, or Voice Rooms.',
     coinReward: 5,
-    xpReward: 40,
-    targetCount: 2,
-    icon: '🎮',
-    actionTab: 'games_arena',
-    actionLabel: 'गेम खेलें',
+    activenessReward: 15,
+    xpReward: 15,
+    targetCount: 3,
+    icon: '💬',
+    actionTab: 'friends',
+    actionLabel: 'Go',
+  },
+  {
+    id: 'task-moment',
+    eventType: 'moment_posted',
+    title: 'Shining Moment',
+    hindiTitle: 'डेली मोमेंट्स फ़ीड में 1 पोस्ट शेयर करें',
+    description: 'Share a photo, status, or ESP moment in the Moments feed.',
+    coinReward: 5,
+    activenessReward: 20,
+    xpReward: 20,
+    targetCount: 1,
+    icon: '📸',
+    actionTab: 'moments',
+    actionLabel: 'Go',
   },
   {
     id: 'task-gift',
     eventType: 'gift_sent',
-    title: 'Send 1 Gift to Any Community Member',
+    title: 'Establish Good Relations',
     hindiTitle: 'किसी खिलाड़ी या होस्ट को 1 गिफ्ट भेजें',
-    description: 'अपने कॉइन्स से कम से कम 1 गिफ्ट भेजकर सम्मान बढ़ाएं।',
+    description: 'Send a gift to friends or Voice Room hosts to boost intimacy.',
     coinReward: 5,
-    xpReward: 50,
+    activenessReward: 15,
+    xpReward: 20,
     targetCount: 1,
     icon: '🎁',
+    actionTab: 'gift',
+    actionLabel: 'Go',
+  },
+  {
+    id: 'task-profile',
+    eventType: 'profile_completed',
+    title: 'Update Avatar & Profile',
+    hindiTitle: 'प्रोफाइल नाम, बायो या अवतार अपडेट करें',
+    description: 'Refresh your avatar frame, nickname, or bio in your profile.',
+    coinReward: 5,
+    activenessReward: 15,
+    xpReward: 15,
+    targetCount: 1,
+    icon: '🪪',
+    actionTab: 'profile',
+    actionLabel: 'Go',
+  },
+];
+
+export interface ActivenessChestCatalogItem {
+  threshold: 10 | 40 | 70 | 100;
+  label: string;
+  coinReward: number;
+  xpReward: number;
+  tierColor: 'green' | 'blue' | 'gold' | 'royal';
+}
+
+export const ACTIVENESS_CHESTS_CATALOG: ActivenessChestCatalogItem[] = [
+  { threshold: 10, label: 'Starter Chest (10)', coinReward: 5, xpReward: 15, tierColor: 'green' },
+  { threshold: 40, label: 'Silver Chest (40)', coinReward: 10, xpReward: 30, tierColor: 'blue' },
+  { threshold: 70, label: 'Gold Chest (70)', coinReward: 15, xpReward: 50, tierColor: 'gold' },
+  { threshold: 100, label: 'Royal Chest (100)', coinReward: 25, xpReward: 80, tierColor: 'royal' },
+];
+
+export interface GrowthTaskCatalogItem {
+  id: string;
+  title: string;
+  description: string;
+  coinReward: number;
+  xpReward: number;
+  targetCount: number;
+  actionTab: string;
+}
+
+export const GROWTH_TASKS_CATALOG: GrowthTaskCatalogItem[] = [
+  {
+    id: 'growth-first-attempt',
+    title: 'First Attempt',
+    description: 'Play or win in the mini games for the first time.',
+    coinReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'game:crazy_alpaca',
+  },
+  {
+    id: 'growth-new-challenger',
+    title: 'New Challenger',
+    description: 'Complete 3 rounds in board & party games (Ludo, Bingo, Spy).',
+    coinReward: 10,
+    xpReward: 25,
+    targetCount: 3,
+    actionTab: 'game:ludo',
+  },
+  {
+    id: 'growth-first-show',
+    title: 'First Show',
+    description: 'Join or host a Live Voice Room for the first time.',
+    coinReward: 10,
+    xpReward: 25,
+    targetCount: 1,
     actionTab: 'voice_room',
-    actionLabel: 'गिफ्ट भेजें',
+  },
+  {
+    id: 'growth-make-friends',
+    title: 'Make Friends',
+    description: 'Add a friend in ESP Friends & Chat.',
+    coinReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'friends',
+  },
+  {
+    id: 'growth-soulmate',
+    title: 'Soulmate',
+    description: 'Make a mutual Bond or add 2 friends.',
+    coinReward: 10,
+    xpReward: 30,
+    targetCount: 1,
+    actionTab: 'relationships',
+  },
+  {
+    id: 'growth-send-gift',
+    title: 'Send Gift',
+    description: 'Send a gift for the first time.',
+    coinReward: 10,
+    xpReward: 30,
+    targetCount: 1,
+    actionTab: 'gift',
+  },
+  {
+    id: 'growth-charming',
+    title: 'Charming',
+    description: 'Receive a gift or charm for the first time.',
+    coinReward: 10,
+    xpReward: 30,
+    targetCount: 1,
+    actionTab: 'voice_room',
+  },
+  {
+    id: 'growth-fun-times',
+    title: 'Fun Times',
+    description: 'Post something on the Moments for the first time.',
+    coinReward: 15,
+    xpReward: 35,
+    targetCount: 1,
+    actionTab: 'moments',
+  },
+];
+
+export interface FamilyTaskCatalogItem {
+  id: string;
+  title: string;
+  description: string;
+  coinReward: number;
+  activenessReward: number;
+  xpReward: number;
+  targetCount: number;
+  actionTab: string;
+}
+
+export const FAMILY_TASKS_CATALOG: FamilyTaskCatalogItem[] = [
+  {
+    id: 'family-join',
+    title: 'Join an ESP Family or Clan',
+    description: 'Become a member or founder of any active Family / Clan.',
+    coinReward: 10,
+    activenessReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'family',
+  },
+  {
+    id: 'family-chat',
+    title: 'Family Lounge Check-In',
+    description: 'Send 2 messages with Family, Friends, or Voice Room.',
+    coinReward: 5,
+    activenessReward: 10,
+    xpReward: 15,
+    targetCount: 2,
+    actionTab: 'family',
+  },
+  {
+    id: 'family-game',
+    title: 'Family Team Match',
+    description: 'Play 1 round of Who\'s the Spy, Werewolf, or Bingo.',
+    coinReward: 5,
+    activenessReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'game:spy',
+  },
+  {
+    id: 'family-gift',
+    title: 'Support Family Member',
+    description: 'Send 1 gift to boost Family & host charm.',
+    coinReward: 5,
+    activenessReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'gift',
+  },
+  {
+    id: 'family-moment',
+    title: 'Share Family Highlight',
+    description: 'Post 1 update or greeting on Daily Moments.',
+    coinReward: 5,
+    activenessReward: 10,
+    xpReward: 20,
+    targetCount: 1,
+    actionTab: 'moments',
   },
 ];
 

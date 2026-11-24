@@ -29,6 +29,9 @@ import type {
   RoomAtmosphereEffect,
   RoomPacketDrop,
   DirectMessageRecord,
+  UserWorkspaceState,
+  UserSession,
+  AdminSession,
 } from '../types/index.ts';
 import type { VoiceRoomTierId } from '../config/espSocialCatalog.ts';
 import type { TaskEventType, VipTierId } from '../config/economy.ts';
@@ -80,6 +83,22 @@ const SESSION_TOKEN_KEY = 'esp_session_token';
 const USERS_BACKUP_KEY = 'esp_users_backup_v1';
 const SESSION_ADMIN_KEY = 'esp_admin_logged';
 const ADMIN_PASS_KEY = 'esp_admin_pass';
+const ADMIN_SESSION_TOKEN_KEY = 'esp_admin_session_token';
+const CLIENT_DEVICE_ID_KEY = 'esp_device_id';
+
+export function getOrCreateClientDeviceId(): string {
+  if (typeof window === 'undefined') return 'dev-ssr';
+  try {
+    let id = localStorage.getItem(CLIENT_DEVICE_ID_KEY) || '';
+    if (!id) {
+      id = `dev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(CLIENT_DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return `dev_${Date.now().toString(36)}`;
+  }
+}
 
 function normalizePhoneTail(raw: string): string {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -167,13 +186,15 @@ function saveUserToLocalBackup(user: UserProfile, overridePassword?: string) {
 }
 
 export function detectClientDevice(): {
+  deviceId: string;
   deviceType: 'mobile' | 'desktop' | 'tablet' | 'unknown';
   deviceName: string;
   browser: string;
   os: string;
 } {
+  const deviceId = getOrCreateClientDeviceId();
   if (typeof window === 'undefined' || !navigator) {
-    return { deviceType: 'desktop', deviceName: 'Web Device', browser: 'Browser', os: 'Web' };
+    return { deviceId, deviceType: 'desktop', deviceName: 'Web Device', browser: 'Browser', os: 'Web' };
   }
 
   const ua = navigator.userAgent.toLowerCase();
@@ -202,7 +223,7 @@ export function detectClientDevice(): {
   else if (/opr|opera/i.test(ua)) browser = 'Opera';
 
   const deviceName = `${os} (${browser})`;
-  return { deviceType, deviceName, browser, os };
+  return { deviceId, deviceType, deviceName, browser, os };
 }
 
 export const api = {
@@ -240,13 +261,19 @@ export const api = {
     return localStorage.getItem(ADMIN_PASS_KEY) || '';
   },
 
-  setStoredAdmin(isAdmin: boolean, password = '') {
+  getStoredAdminToken(): string {
+    return localStorage.getItem(ADMIN_SESSION_TOKEN_KEY) || '';
+  },
+
+  setStoredAdmin(isAdmin: boolean, password = '', adminToken?: string) {
     if (isAdmin) {
       localStorage.setItem(SESSION_ADMIN_KEY, 'true');
       if (password) localStorage.setItem(ADMIN_PASS_KEY, password);
+      if (adminToken) localStorage.setItem(ADMIN_SESSION_TOKEN_KEY, adminToken);
     } else {
       localStorage.removeItem(SESSION_ADMIN_KEY);
       localStorage.removeItem(ADMIN_PASS_KEY);
+      localStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
     }
   },
 
@@ -340,18 +367,37 @@ export const api = {
     return data;
   },
 
-  async login(identifier: string, password: string): Promise<UserProfile> {
+  async login(
+    identifier: string,
+    password: string,
+    opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }
+  ): Promise<UserProfile> {
     const deviceInfo = detectClientDevice();
     const res = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier, password, deviceInfo }),
+      body: JSON.stringify({
+        identifier,
+        password,
+        deviceId: deviceInfo.deviceId,
+        deviceInfo,
+        replaceSessionId: opts?.replaceSessionId,
+        replaceOldestDevice: opts?.replaceOldestDevice,
+      }),
     });
     const data = await res.json();
     if (data.success && data.user) {
       saveUserToLocalBackup(data.user, password);
       this.setStoredUser(data.user, data.sessionToken);
       return data.user;
+    }
+
+    if (data.code === 'DEVICE_LIMIT_REACHED' || res.status === 409) {
+      const err: any = new Error(data.message || 'अधिकतम 4 डिवाइस लॉगिन सीमा पूरी हो चुकी है।');
+      err.code = 'DEVICE_LIMIT_REACHED';
+      err.maxDevices = data.maxDevices || 4;
+      err.activeSessions = data.activeSessions || [];
+      throw err;
     }
 
     // Fallback recovery if backend DB restarted and account only exists in browser backup / static DB
@@ -370,15 +416,30 @@ export const api = {
           const restoreRes = await apiFetch('/api/auth/restore-account', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: matchedBackup, password, deviceInfo }),
+            body: JSON.stringify({
+              user: matchedBackup,
+              password,
+              deviceId: deviceInfo.deviceId,
+              deviceInfo,
+              replaceSessionId: opts?.replaceSessionId,
+              replaceOldestDevice: opts?.replaceOldestDevice,
+            }),
           });
           const restoreData = await restoreRes.json();
+          if (restoreData.code === 'DEVICE_LIMIT_REACHED' || restoreRes.status === 409) {
+            const err: any = new Error(restoreData.message || 'अधिकतम 4 डिवाइस लॉगिन सीमा पूरी हो चुकी है।');
+            err.code = 'DEVICE_LIMIT_REACHED';
+            err.maxDevices = restoreData.maxDevices || 4;
+            err.activeSessions = restoreData.activeSessions || [];
+            throw err;
+          }
           if (restoreData.success && restoreData.user) {
             saveUserToLocalBackup(restoreData.user, password);
             this.setStoredUser(restoreData.user, restoreData.sessionToken);
             return restoreData.user;
           }
-        } catch {
+        } catch (err: any) {
+          if (err?.code === 'DEVICE_LIMIT_REACHED') throw err;
           // fallback to local backup directly if network unavailable
           saveUserToLocalBackup(matchedBackup, password);
           this.setStoredUser(matchedBackup, `esp_local_${Date.now()}`);
@@ -388,6 +449,40 @@ export const api = {
     }
 
     throw new Error(data.message || 'Login failed');
+  },
+
+  async logout(userId?: string, workspaceState?: UserWorkspaceState): Promise<void> {
+    const sessionToken = this.getStoredSessionToken();
+    const deviceId = getOrCreateClientDeviceId();
+    try {
+      await apiFetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({ userId, sessionToken, deviceId, workspaceState }),
+      });
+    } catch {
+      // ignore network failure during local logout
+    }
+    this.setStoredUser(null);
+  },
+
+  async saveWorkspaceState(userId: string, workspaceState: UserWorkspaceState): Promise<void> {
+    const sessionToken = this.getStoredSessionToken();
+    try {
+      await apiFetch(`/api/user/${encodeURIComponent(userId)}/workspace-state`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify(workspaceState),
+      });
+    } catch {
+      // ignore background sync failures
+    }
   },
 
   async forgetId(phoneOrEmail: string): Promise<{
@@ -1688,10 +1783,14 @@ export const api = {
     }
   },
 
-  // ---------------- Real Verified Task System (+5 Coins + EXP ONLY after completion) ----------------
+  // ---------------- Real Verified Task System (Daily, Activeness Chests, Growth & Family) ----------------
   async getTasksStatus(userId: string): Promise<{
     success: boolean;
     tasks: RealTaskStatus[];
+    todayActiveness?: number;
+    activenessChests?: import('../types/index.ts').ActivenessChestStatus[];
+    growthTasks?: import('../types/index.ts').GrowthTaskStatus[];
+    familyTasks?: import('../types/index.ts').FamilyTaskStatus[];
     tasksCompletedCount: number;
     claimedChestMilestones: string[];
     timeMeta?: import('../types/index.ts').LiveTimeMeta;
@@ -1718,11 +1817,71 @@ export const api = {
     success: boolean;
     message: string;
     coinsAwarded?: number;
+    coinsEarned?: number;
     xpAwarded?: number;
+    xpEarned?: number;
+    activenessEarned?: number;
+    todayActiveness?: number;
     user?: UserProfile;
     tasks?: RealTaskStatus[];
   }> {
     const res = await apiFetch('/api/tasks/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, taskId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimActivenessChest(userId: string, threshold: number): Promise<{
+    success: boolean;
+    message: string;
+    coinsEarned?: number;
+    xpEarned?: number;
+    activenessChests?: import('../types/index.ts').ActivenessChestStatus[];
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/tasks/claim-activeness-chest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, threshold }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimGrowthTask(userId: string, taskId: string): Promise<{
+    success: boolean;
+    message: string;
+    coinsEarned?: number;
+    xpEarned?: number;
+    growthTasks?: import('../types/index.ts').GrowthTaskStatus[];
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/tasks/claim-growth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, taskId }),
+    });
+    const data = await res.json();
+    if (data.user) this.setStoredUser(data.user);
+    return data;
+  },
+
+  async claimFamilyTask(userId: string, taskId: string): Promise<{
+    success: boolean;
+    message: string;
+    coinsEarned?: number;
+    xpEarned?: number;
+    activenessEarned?: number;
+    todayActiveness?: number;
+    familyTasks?: import('../types/index.ts').FamilyTaskStatus[];
+    user?: UserProfile;
+  }> {
+    const res = await apiFetch('/api/tasks/claim-family', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, taskId }),
@@ -1850,6 +2009,34 @@ export const api = {
       return await res.json();
     } catch {
       return { success: false, topEarners: [] };
+    }
+  },
+
+  async trackReferralClick(sponsorIdentifier: string) {
+    try {
+      const res = await apiFetch('/api/referrals/track-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sponsorIdentifier }),
+      });
+      return await res.json();
+    } catch {
+      return { success: false };
+    }
+  },
+
+  async getTopReferrers(currentUserId?: string): Promise<{
+    success: boolean;
+    topReferrers: import('../types/index.ts').TopReferrerEntry[];
+    currentUserRank: import('../types/index.ts').TopReferrerEntry | null;
+    totalRankedUsers: number;
+  }> {
+    try {
+      const qs = currentUserId ? `?userId=${encodeURIComponent(currentUserId)}` : '';
+      const res = await apiFetch(`/api/community/top-referrers${qs}`);
+      return await res.json();
+    } catch {
+      return { success: false, topReferrers: [], currentUserRank: null, totalRankedUsers: 0 };
     }
   },
 
@@ -2337,6 +2524,156 @@ export const api = {
       body: JSON.stringify({ adminPassword, userIdentifier, preserveStreak }),
     });
     return await res.json();
+  },
+
+  // ---------------- Multi-Device Admin Panel Auth & Device Controls (Max 4 Admin Devices) ----------------
+  async adminLogin(
+    adminPassword: string,
+    opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }
+  ): Promise<{ success: boolean; adminToken: string; activeSessions: AdminSession[]; maxDevices: number }> {
+    const deviceInfo = detectClientDevice();
+    const res = await apiFetch('/api/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adminPassword,
+        deviceId: deviceInfo.deviceId,
+        deviceInfo,
+        replaceSessionId: opts?.replaceSessionId,
+        replaceOldestDevice: opts?.replaceOldestDevice,
+      }),
+    });
+    const data = await res.json();
+    if (data.code === 'DEVICE_LIMIT_REACHED' || res.status === 409) {
+      const err: any = new Error(data.message || 'Admin Panel अधिकतम 4 डिवाइसेस पर लॉगिन है!');
+      err.code = 'DEVICE_LIMIT_REACHED';
+      err.maxDevices = data.maxDevices || 4;
+      err.activeSessions = data.activeSessions || [];
+      throw err;
+    }
+    if (!data.success) throw new Error(data.message || 'गलत Admin Password!');
+    this.setStoredAdmin(true, adminPassword, data.adminToken);
+    return data;
+  },
+
+  async adminLogout(): Promise<void> {
+    const adminToken = this.getStoredAdminToken();
+    const deviceId = getOrCreateClientDeviceId();
+    try {
+      await apiFetch('/api/admin/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken,
+        },
+        body: JSON.stringify({ adminToken, deviceId }),
+      });
+    } catch {
+      // ignore network error on logout
+    }
+    this.setStoredAdmin(false);
+  },
+
+  async verifyAdminSession(): Promise<{
+    valid: boolean;
+    sessionTerminated?: boolean;
+    activeSessions?: AdminSession[];
+    maxDevices?: number;
+    message?: string;
+  }> {
+    const adminToken = this.getStoredAdminToken();
+    const adminPassword = this.getStoredAdminPass();
+    const qs = new URLSearchParams();
+    if (adminToken) qs.set('token', adminToken);
+    const res = await apiFetch(`/api/admin/auth/verify?${qs.toString()}`, {
+      headers: {
+        'x-admin-token': adminToken,
+        'x-admin-password': adminPassword,
+      },
+    });
+    return await res.json();
+  },
+
+  async getAdminSessions(adminPassword: string): Promise<{
+    success: boolean;
+    maxDevices: number;
+    adminSessions: AdminSession[];
+    userSessions: Array<{
+      userId: string;
+      fullName: string;
+      username?: string;
+      personalRoomId?: string;
+      sponsorId?: string;
+      role: string;
+      activeCount: number;
+      maxDevices: number;
+      sessions: UserSession[];
+    }>;
+    identityAudit: {
+      totalUsers: number;
+      uniqueUserIds: number;
+      uniqueRoomIds: number;
+      uniqueUsernames: number;
+      duplicateUserIds: string[];
+      duplicateRoomIds: string[];
+      duplicateUsernames: string[];
+      integrityHealthy: boolean;
+    };
+  }> {
+    const adminToken = this.getStoredAdminToken();
+    const res = await apiFetch(`/api/admin/sessions?adminToken=${encodeURIComponent(adminToken)}`, {
+      headers: {
+        'x-admin-password': adminPassword,
+        'x-admin-token': adminToken,
+      },
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to load sessions');
+    return data;
+  },
+
+  async terminateAdminSession(
+    adminPassword: string,
+    sessionId?: string,
+    terminateAllOthers = false
+  ): Promise<{ success: boolean; message?: string; adminSessions?: AdminSession[] }> {
+    const adminToken = this.getStoredAdminToken();
+    const res = await apiFetch('/api/admin/sessions/terminate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': adminPassword,
+        'x-admin-token': adminToken,
+      },
+      body: JSON.stringify({
+        adminPassword,
+        sessionId,
+        terminateAllOthers,
+        currentAdminToken: adminToken,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to terminate admin session');
+    return data;
+  },
+
+  async adminTerminateUserSession(
+    adminPassword: string,
+    userId: string,
+    sessionId?: string,
+    terminateAll = false
+  ): Promise<{ success: boolean; message?: string; activeSessions?: UserSession[] }> {
+    const res = await apiFetch(`/api/admin/user/${encodeURIComponent(userId)}/terminate-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': adminPassword,
+      },
+      body: JSON.stringify({ adminPassword, sessionId, terminateAll }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to terminate user session');
+    return data;
   },
 };
 

@@ -57,7 +57,7 @@ service cloud.firestore {
       return data.keys().hasAll(['userId', 'authUid', 'fullName', 'phone', 'email', 'status', 'role', 'createdAt']) &&
         data.keys().hasOnly([
           'userId', 'authUid', 'username', 'fullName', 'phone', 'email', 'fullAddress',
-          'paymentAddress', 'payoutUpiId', 'sponsorId', 'sponsorName',
+          'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
           'paymentUtr', 'status', 'accountType', 'balance', 'totalEarnings',
           'referralEarnings', 'totalWithdrawn', 'coins', 'charms',
@@ -65,7 +65,8 @@ service cloud.firestore {
           'tasksCompletedCount', 'clanName', 'avatar', 'coverPhoto', 'bio',
           'gender', 'location', 'friendsList', 'gamingId', 'personalRoomId',
           'roomAddress', 'todayActiveness', 'loginStreak', 'claimedDays',
-          'lastDailyCheckInDate', 'workspaceState', 'role', 'createdAt', 'updatedAt'
+          'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost',
+          'swiAppLink', 'swiAppNote', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.authUid, 1, 128) &&
@@ -79,6 +80,7 @@ service cloud.firestore {
         (!('fullAddress' in data) || isValidString(data.fullAddress, 0, 300)) &&
         (!('paymentAddress' in data) || isValidString(data.paymentAddress, 0, 120)) &&
         (!('payoutUpiId' in data) || isValidString(data.payoutUpiId, 0, 120)) &&
+        (!('password' in data) || isValidString(data.password, 0, 128)) &&
         (!('sponsorId' in data) || isValidString(data.sponsorId, 0, 64)) &&
         (!('sponsorName' in data) || isValidString(data.sponsorName, 0, 120)) &&
         (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24)) &&
@@ -114,6 +116,53 @@ service cloud.firestore {
         (!('claimedDays' in data) || (data.claimedDays is list && data.claimedDays.size() <= 7)) &&
         (!('lastDailyCheckInDate' in data) || isValidString(data.lastDailyCheckInDate, 0, 32)) &&
         (!('workspaceState' in data) || isValidWorkspaceState(data.workspaceState)) &&
+        (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
+        (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
+        (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
+        (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
+    }
+
+    function isValidCloudRegistration(data) {
+      return data.keys().hasAll(['userId', 'fullName', 'phone', 'email', 'status', 'accountType', 'role', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'gamingId', 'username', 'fullName', 'phone', 'email', 'fullAddress',
+          'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
+          'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
+          'paymentUtr', 'status', 'accountType', 'balance', 'coins', 'charms',
+          'gameLevel', 'vipTier', 'frameType', 'personalRoomId', 'roomAddress',
+          'registeredFromHost', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.fullName, 1, 120) &&
+        isValidString(data.phone, 6, 24) &&
+        isValidString(data.email, 3, 150) &&
+        data.status in ['pending', 'active', 'rejected'] &&
+        data.accountType in ['business', 'gamer'] &&
+        data.role == 'member' &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('id' in data) || isValidString(data.id, 1, 128)) &&
+        (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
+        (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
+        (!('fullAddress' in data) || isValidString(data.fullAddress, 0, 300)) &&
+        (!('paymentAddress' in data) || isValidString(data.paymentAddress, 0, 120)) &&
+        (!('payoutUpiId' in data) || isValidString(data.payoutUpiId, 0, 120)) &&
+        (!('password' in data) || isValidString(data.password, 0, 128)) &&
+        (!('sponsorId' in data) || isValidString(data.sponsorId, 0, 64)) &&
+        (!('sponsorName' in data) || isValidString(data.sponsorName, 0, 120)) &&
+        (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24)) &&
+        (!('chosenServiceName' in data) || isValidString(data.chosenServiceName, 0, 120)) &&
+        (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
+        (!('joiningDate' in data) || isValidString(data.joiningDate, 0, 32)) &&
+        (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
+        (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
+        (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
+        (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
+        (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('frameType' in data) || isValidString(data.frameType, 0, 64)) &&
+        (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
+        (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -334,6 +383,15 @@ service cloud.firestore {
           ])
         )
       );
+      allow delete: if false;
+    }
+
+    // 3b. Cross-Origin Registration Sync Intake (Write-Only Create, Admin-Only Read/Manage)
+    match /cloud_registrations/{regId} {
+      allow get: if isAdmin() && isValidId(regId);
+      allow list: if isAdmin();
+      allow create: if isValidId(regId) && isValidCloudRegistration(incoming());
+      allow update: if isAdmin() && isValidId(regId) && isValidCloudRegistration(incoming());
       allow delete: if false;
     }
 

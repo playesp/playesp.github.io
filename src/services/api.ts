@@ -36,6 +36,7 @@ import type {
 import type { VoiceRoomTierId } from '../config/espSocialCatalog.ts';
 import type { TaskEventType, VipTierId } from '../config/economy.ts';
 import { handleStaticApiRequest } from './staticFallback.ts';
+import { pushRegistrationToCloudBridge } from './firebase.ts';
 
 const API_BASE_URL =
   ((import.meta as any).env?.VITE_API_BASE_URL ||
@@ -353,16 +354,29 @@ export const api = {
 
   async register(formData: any) {
     const deviceInfo = detectClientDevice();
+    const currentHost =
+      typeof window !== 'undefined' ? window.location.hostname : 'web';
     const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...formData, deviceInfo }),
+      body: JSON.stringify({
+        ...formData,
+        deviceInfo,
+        registeredFromHost: formData?.registeredFromHost || currentHost,
+      }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Registration failed');
     if (data.user) {
-      saveUserToLocalBackup(data.user, formData.password);
-      this.setStoredUser(data.user, data.sessionToken);
+      const mergedUser = {
+        ...data.user,
+        password: formData.password || data.user.password,
+        registeredFromHost: data.user.registeredFromHost || currentHost,
+      };
+      saveUserToLocalBackup(mergedUser, formData.password);
+      this.setStoredUser(mergedUser, data.sessionToken);
+      // Immediately push to cross-origin Firestore bridge so Admin Panel sees playesp.github.io & live registrations instantly
+      pushRegistrationToCloudBridge(mergedUser, currentHost).catch(() => {});
     }
     return data;
   },
@@ -2674,6 +2688,63 @@ export const api = {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to terminate user session');
     return data;
+  },
+
+  getLocalBackupUsers(): UserProfile[] {
+    return readAllLocalBackupUsers();
+  },
+
+  async syncLocalBackupsToCloudBridge(): Promise<number> {
+    if (typeof window === 'undefined') return 0;
+    const allLocal = readAllLocalBackupUsers();
+    if (allLocal.length === 0) return 0;
+    const PUSHED_KEY = 'esp_cloud_pushed_ids_v1';
+    let pushedIds: string[] = [];
+    try {
+      const raw = localStorage.getItem(PUSHED_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) pushedIds = arr;
+      }
+    } catch {}
+    const pushedSet = new Set(pushedIds.map(s => String(s).toLowerCase()));
+    let newlyPushed = 0;
+    const host = window.location.hostname || 'web';
+    for (const u of allLocal) {
+      if (!u?.userId) continue;
+      if (pushedSet.has(u.userId.toLowerCase())) continue;
+      const ok = await pushRegistrationToCloudBridge(u, u.registeredFromHost || host);
+      if (ok) {
+        pushedSet.add(u.userId.toLowerCase());
+        newlyPushed++;
+      }
+    }
+    try {
+      localStorage.setItem(PUSHED_KEY, JSON.stringify(Array.from(pushedSet).slice(0, 500)));
+    } catch {}
+    return newlyPushed;
+  },
+
+  async importCloudUsersToAdmin(
+    adminPassword: string,
+    cloudUsers: Partial<UserProfile>[]
+  ): Promise<{
+    success: boolean;
+    importedCount: number;
+    updatedCount?: number;
+    totalUsers: number;
+    users?: UserProfile[];
+    message?: string;
+  }> {
+    const res = await apiFetch('/api/admin/import-cloud-users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': adminPassword,
+      },
+      body: JSON.stringify({ adminPassword, users: cloudUsers }),
+    });
+    return await res.json();
   },
 };
 

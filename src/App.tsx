@@ -182,6 +182,23 @@ export default function App() {
 
     api.getSettings().then(setSettings);
     api.getServices().then(setServices);
+    api.syncLocalBackupsToCloudBridge().catch(() => {});
+
+    // Global 3D click enlarge + glow pulse for every button across desktop & mobile
+    const handleGlobalButtonPulse = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest('button, [role="button"], .btn-3d') as HTMLElement | null;
+      if (!btn || (btn as HTMLButtonElement).disabled || btn.getAttribute('aria-disabled') === 'true') {
+        return;
+      }
+      btn.classList.remove('esp-btn-glow-active');
+      void btn.offsetWidth;
+      btn.classList.add('esp-btn-glow-active');
+      window.setTimeout(() => {
+        btn.classList.remove('esp-btn-glow-active');
+      }, 300);
+    };
+    document.addEventListener('pointerdown', handleGlobalButtonPulse, { passive: true });
 
     // Multi-Device synchronization on mount and when returning to browser tab
     const verifyCurrentSession = async () => {
@@ -211,6 +228,7 @@ export default function App() {
     const sessionPoll = setInterval(verifyCurrentSession, 20000);
     return () => {
       clearInterval(sessionPoll);
+      document.removeEventListener('pointerdown', handleGlobalButtonPulse);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('esp-toast', handleToastEvent);
     };

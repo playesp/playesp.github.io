@@ -2002,7 +2002,15 @@ app.post('/api/auth/register', (req, res) => {
       paymentUtr,
       paymentScreenshot,
       accountType,
+      registeredFromHost,
     } = req.body;
+
+    const detectedRegisterHost = String(
+      registeredFromHost || req.headers.origin || req.headers.host || 'web'
+    )
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .slice(0, 128);
 
     const isGamer = accountType === 'gamer';
 
@@ -2165,6 +2173,7 @@ app.post('/api/auth/register', (req, res) => {
       initialFormData,
       editHistory: [],
       role: 'member',
+      registeredFromHost: detectedRegisterHost,
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
@@ -3382,6 +3391,189 @@ app.get('/api/admin/overview', (req, res) => {
     adminNotifications: (db.notifications || []).filter(n => n.userId === 'EMO-MOM-MMO').slice(0, 50),
     services: db.services,
     settings: db.settings,
+  });
+});
+
+// 10b. Import & Merge Cross-Origin Registrations (playesp.github.io / Firestore / Local Backup) cleanly without deleting or duplicating IDs
+app.post('/api/admin/import-cloud-users', (req, res) => {
+  const adminPassword = (req.body?.adminPassword || req.headers['x-admin-password']) as string;
+  if (!verifyAdmin(adminPassword)) {
+    return res.status(401).json({ success: false, message: 'Invalid Admin Security Key' });
+  }
+
+  const incoming = Array.isArray(req.body?.users) ? req.body.users : [];
+  let importedCount = 0;
+  let updatedCount = 0;
+
+  for (const raw of incoming) {
+    if (!raw || (!raw.userId && !raw.phone && !raw.email)) continue;
+    const rawUserId = String(raw.userId || '').trim();
+    const rawPhone = normalizePhoneDigits(raw.phone || '') || String(raw.phone || '').trim();
+    const rawEmail = String(raw.email || '').trim().toLowerCase();
+
+    const existingUser = db.users.find(
+      u =>
+        (rawUserId && u.userId.toLowerCase() === rawUserId.toLowerCase()) ||
+        (rawPhone && normalizePhoneDigits(u.phone) === rawPhone && rawPhone.length >= 10) ||
+        (rawEmail && rawEmail.includes('@') && (u.email || '').trim().toLowerCase() === rawEmail)
+    );
+
+    if (existingUser) {
+      let touched = false;
+      if (!existingUser.registeredFromHost && raw.registeredFromHost) {
+        existingUser.registeredFromHost = String(raw.registeredFromHost).slice(0, 128);
+        touched = true;
+      }
+      if (!existingUser.fullAddress && raw.fullAddress) {
+        existingUser.fullAddress = String(raw.fullAddress).slice(0, 300);
+        touched = true;
+      }
+      if (!existingUser.paymentAddress && raw.paymentAddress) {
+        existingUser.paymentAddress = String(raw.paymentAddress).slice(0, 120);
+        existingUser.payoutUpiId = existingUser.payoutUpiId || existingUser.paymentAddress;
+        touched = true;
+      }
+      if (!existingUser.password && raw.password) {
+        existingUser.password = String(raw.password).slice(0, 128);
+        touched = true;
+      }
+      if (touched) updatedCount++;
+      continue;
+    }
+
+    const cleanName = String(raw.fullName || 'ESP Member').trim().replace(/\s+/g, ' ');
+    const isGamer = raw.accountType === 'gamer';
+    const fee = isGamer ? 0 : Math.max(0, Number(raw.joiningFee) || 10);
+    const serviceObj = isGamer
+      ? { code: raw.chosenServiceCode || 'GAME', name: raw.chosenServiceName || 'ESP GAMING & VOICE CLUB' }
+      : db.services.find(s => s.code === raw.chosenServiceCode) || {
+          code: raw.chosenServiceCode || 'EMO',
+          name: raw.chosenServiceName || 'EARN MONEY ONLINE',
+        };
+
+    // Preserve incoming userId if unique, else mint non-colliding unique ID
+    const userIdTaken =
+      !rawUserId ||
+      db.users.some(u => u.userId.toLowerCase() === rawUserId.toLowerCase());
+    const finalUserId = userIdTaken
+      ? isGamer
+        ? generateUniqueGamerUserId(cleanName)
+        : generateUniqueUserId(cleanName, serviceObj.code)
+      : rawUserId;
+
+    let finalGamingId = String(raw.gamingId || '').trim() || (isGamer ? finalUserId : generateUniqueGamerUserId(cleanName));
+    if (!isGamer && finalGamingId.toLowerCase() === finalUserId.toLowerCase()) {
+      finalGamingId = `${finalGamingId}G`;
+    }
+
+    const rawUname = normalizeUsername(raw.username || '');
+    const finalUsername =
+      rawUname && isValidUsernameFormat(rawUname) && !isUsernameTaken(db.users, rawUname)
+        ? rawUname
+        : generateUniqueDefaultUsername(cleanName, finalUserId, finalGamingId);
+
+    const candidateRoom = String(raw.personalRoomId || raw.roomAddress || '').trim();
+    const roomTaken =
+      !candidateRoom ||
+      db.users.some(u => (u.personalRoomId || u.roomAddress) === candidateRoom) ||
+      (db.customVoiceRooms || []).some((r: any) => r.roomAddress === candidateRoom);
+    const finalRoomAddress = roomTaken
+      ? generateUniqueRoomId(cleanName, db.users, db.customVoiceRooms || [])
+      : candidateRoom;
+
+    const sp = findUserBySponsorRef(db.users, raw.sponsorId || db.settings.ownerSponsorId);
+    const resolvedSponsorId = sp ? sp.userId : (String(raw.sponsorId || '').trim() || db.settings.ownerSponsorId);
+    const resolvedSponsorName = sp ? sp.fullName : (String(raw.sponsorName || '').trim() || db.settings.ownerName);
+
+    const importedUser: UserProfile = {
+      id: String(raw.id || `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+      userId: finalUserId,
+      gamingId: finalGamingId,
+      username: finalUsername,
+      fullName: cleanName,
+      phone: rawPhone || '0000000000',
+      email: rawEmail || `${finalUserId.toLowerCase()}@espgaming.club`,
+      fullAddress: String(raw.fullAddress || ''),
+      paymentAddress: String(raw.paymentAddress || ''),
+      payoutUpiId: String(raw.payoutUpiId || raw.paymentAddress || ''),
+      password: String(raw.password || '123456'),
+      sponsorId: resolvedSponsorId,
+      sponsorName: resolvedSponsorName,
+      chosenServiceCode: serviceObj.code,
+      chosenServiceName: serviceObj.name,
+      joiningFee: fee,
+      joiningDate: String(raw.joiningDate || (raw.createdAt ? String(raw.createdAt).split('T')[0] : new Date().toISOString().split('T')[0])),
+      paymentUtr: String(raw.paymentUtr || (isGamer ? 'FREE_GAMING_USER' : 'CLOUD_SYNC')),
+      paymentScreenshot: String(raw.paymentScreenshot || ''),
+      status: raw.status === 'active' || raw.status === 'rejected' ? raw.status : isGamer ? 'active' : 'pending',
+      accountType: isGamer ? 'gamer' : 'business',
+      balance: Math.max(0, Number(raw.balance) || 0),
+      totalEarnings: Math.max(0, Number(raw.totalEarnings) || 0),
+      referralEarnings: Math.max(0, Number(raw.referralEarnings) || 0),
+      promoEarnings: Math.max(0, Number(raw.promoEarnings) || 0),
+      totalWithdrawn: Math.max(0, Number(raw.totalWithdrawn) || 0),
+      coins: Math.max(0, Number(raw.coins) || 0),
+      charms: Math.max(0, Number(raw.charms) || 0),
+      gameLevel: Math.max(1, Number(raw.gameLevel) || 1),
+      gameXp: Math.max(0, Number(raw.gameXp) || 0),
+      vipTier: raw.vipTier === 'silver' || raw.vipTier === 'gold' || raw.vipTier === 'diamond' ? raw.vipTier : 'none',
+      vipTitle: '',
+      unlockedFrames: Array.isArray(raw.unlockedFrames) && raw.unlockedFrames.length > 0 ? raw.unlockedFrames : ['standard'],
+      frameType: String(raw.frameType || 'standard'),
+      unlockedRooms: ['default_dark'],
+      roomTheme: 'default_dark',
+      taskProgress: {},
+      taskProgressDate: getTodayDateString(),
+      claimedTaskIds: [],
+      claimedChestMilestones: [],
+      tasksCompletedCount: 0,
+      roomAddress: finalRoomAddress,
+      personalRoomId: finalRoomAddress,
+      followedRooms: [],
+      houseName: `House of ${cleanName.split(' ')[0]}`,
+      clanName: String(raw.clanName || 'Royal Warriors ESP'),
+      clanRole: 'Member',
+      loginStreak: Math.max(0, Number(raw.loginStreak) || 0),
+      claimedDays: Array.isArray(raw.claimedDays) ? raw.claimedDays : [],
+      friendsCount: 0,
+      visitorCount: 0,
+      privacySettings: { showPhone: false, showEmail: false, showAddress: false },
+      activeSessions: [],
+      terminatedTokens: [],
+      initialFormData: {
+        fullName: cleanName,
+        phone: rawPhone || '0000000000',
+        email: rawEmail || `${finalUserId.toLowerCase()}@espgaming.club`,
+        fullAddress: String(raw.fullAddress || ''),
+        paymentAddress: String(raw.paymentAddress || ''),
+        chosenServiceCode: serviceObj.code,
+        joiningFee: fee,
+        joiningDate: String(raw.joiningDate || new Date().toISOString().split('T')[0]),
+        paymentUtr: String(raw.paymentUtr || (isGamer ? 'FREE_GAMING_USER' : 'CLOUD_SYNC')),
+        paymentScreenshot: String(raw.paymentScreenshot || ''),
+      },
+      editHistory: [],
+      role: 'member',
+      registeredFromHost: String(raw.registeredFromHost || 'playesp.github.io').slice(0, 128),
+      createdAt: String(raw.createdAt || new Date().toISOString()),
+      lastLogin: String(raw.lastLogin || raw.createdAt || new Date().toISOString()),
+    };
+
+    db.users.push(importedUser);
+    ensurePersonalRoomForUser(db, importedUser);
+    importedCount++;
+  }
+
+  if (importedCount > 0 || updatedCount > 0) {
+    saveDatabase(db);
+  }
+
+  res.json({
+    success: true,
+    importedCount,
+    updatedCount,
+    totalUsers: db.users.length,
+    users: db.users.slice().reverse(),
   });
 });
 
@@ -8343,6 +8535,14 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
     houseName,
     clanName,
     bio,
+    accountType,
+    fullAddress,
+    paymentAddress,
+    payoutUpiId,
+    balance,
+    chosenServiceCode,
+    chosenServiceName,
+    joiningFee,
   } = req.body;
   if (!verifyAdmin(adminPassword)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -8419,9 +8619,17 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
     user.avatar = avatar;
   }
 
-  if (phone) user.phone = phone.trim();
-  if (email) user.email = email.trim();
+  if (phone !== undefined && String(phone).trim()) user.phone = String(phone).trim();
+  if (email !== undefined && String(email).trim()) user.email = String(email).trim();
+  if (fullAddress !== undefined) user.fullAddress = String(fullAddress).trim();
+  if (paymentAddress !== undefined) {
+    user.paymentAddress = String(paymentAddress).trim();
+    user.payoutUpiId = String(payoutUpiId !== undefined ? payoutUpiId : paymentAddress).trim();
+  } else if (payoutUpiId !== undefined) {
+    user.payoutUpiId = String(payoutUpiId).trim();
+  }
   if (password && String(password).trim().length >= 3) user.password = String(password).trim();
+  if (balance !== undefined && !isNaN(Number(balance))) user.balance = Math.max(0, Number(balance));
   if (coins !== undefined && !isNaN(Number(coins))) user.coins = Math.max(0, Number(coins));
   if (charms !== undefined && !isNaN(Number(charms))) user.charms = Math.max(0, Number(charms));
   if (gameLevel !== undefined && !isNaN(Number(gameLevel))) {
@@ -8440,13 +8648,32 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
     if (!Array.isArray(user.unlockedFrames)) user.unlockedFrames = ['standard'];
     if (!user.unlockedFrames.includes(frameType)) user.unlockedFrames.push(frameType);
   }
-  if (status) user.status = status;
+  if (status && ['active', 'pending', 'rejected'].includes(status)) user.status = status;
+  if (accountType && ['business', 'gamer'].includes(accountType)) {
+    user.accountType = accountType;
+  }
+  if (chosenServiceCode !== undefined && String(chosenServiceCode).trim()) {
+    user.chosenServiceCode = String(chosenServiceCode).trim();
+    const matchedSrv = db.services.find(s => s.code === user.chosenServiceCode);
+    if (chosenServiceName !== undefined && String(chosenServiceName).trim()) {
+      user.chosenServiceName = String(chosenServiceName).trim();
+    } else if (matchedSrv) {
+      user.chosenServiceName = matchedSrv.name;
+    } else if (user.chosenServiceCode === 'GAME') {
+      user.chosenServiceName = 'ESP GAMING & VOICE CLUB';
+    }
+  } else if (chosenServiceName !== undefined && String(chosenServiceName).trim()) {
+    user.chosenServiceName = String(chosenServiceName).trim();
+  }
+  if (joiningFee !== undefined && !isNaN(Number(joiningFee))) {
+    user.joiningFee = Math.max(0, Number(joiningFee));
+  }
   if (houseName) user.houseName = houseName.trim();
   if (clanName) user.clanName = clanName.trim();
-  if (bio) user.bio = bio.trim();
+  if (bio !== undefined) user.bio = String(bio).trim();
 
   saveDatabase(db);
-  res.json({ success: true, message: 'यूजर प्रोफाइल विवरण सफलतापूर्वक अपडेट कर दिया गया!', user });
+  res.json({ success: true, message: 'यूजर प्रोफाइल व कंट्रोल विवरण सफलतापूर्वक अपडेट हो गए!', user });
 });
 
 app.post('/api/user/:userId/avatar', (req, res) => {

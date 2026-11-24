@@ -6127,6 +6127,18 @@
     }
   ],
   "directMessages": [],
-  "adminSessions": [],
+  "adminSessions": [
+    {
+      "sessionId": "admsess_1795508390703_pu432e",
+      "token": "esp_adm_1795507483766_dm4hq9fq",
+      "deviceType": "desktop",
+      "deviceName": "Windows PC - Google Chrome",
+      "browser": "Google Chrome",
+      "os": "Windows PC",
+      "ipAddress": "2001:4490:4021:8002:8118:8089:1850:e34",
+      "loginTime": "2026-11-24T08:19:50.703Z",
+      "lastActive": "2026-11-24T08:34:25.736Z"
+    }
+  ],
   "terminatedAdminTokens": []
 }

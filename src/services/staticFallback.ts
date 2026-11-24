@@ -1477,6 +1477,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       friendsCount: 0,
       visitorCount: 0,
       role: 'member',
+      registeredFromHost:
+        String(body.registeredFromHost || (typeof window !== 'undefined' ? window.location.hostname : 'playesp.github.io')).slice(0, 128),
       avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userId)}`,
       createdAt: new Date().toISOString(),
     });
@@ -3695,6 +3697,93 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       },
     };
   }
+  if (path === '/api/admin/import-cloud-users' && method === 'POST') {
+    if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
+    const incoming = Array.isArray(body.users) ? body.users : [];
+    let importedCount = 0;
+    let updatedCount = 0;
+    for (const raw of incoming) {
+      if (!raw || (!raw.userId && !raw.phone && !raw.email)) continue;
+      const rawUserId = String(raw.userId || '').trim();
+      const rawPhone = normalizeStaticPhone(raw.phone || '') || String(raw.phone || '').trim();
+      const rawEmail = String(raw.email || '').trim().toLowerCase();
+      const existingUser = db.users.find(
+        u =>
+          (rawUserId && u.userId.toLowerCase() === rawUserId.toLowerCase()) ||
+          (rawPhone && normalizeStaticPhone(u.phone || '') === rawPhone && rawPhone.length >= 10) ||
+          (rawEmail && rawEmail.includes('@') && (u.email || '').trim().toLowerCase() === rawEmail)
+      );
+      if (existingUser) {
+        if (!existingUser.registeredFromHost && raw.registeredFromHost) {
+          existingUser.registeredFromHost = String(raw.registeredFromHost).slice(0, 128);
+          updatedCount++;
+        }
+        continue;
+      }
+      const cleanName = String(raw.fullName || 'ESP Member').trim().replace(/\s+/g, ' ');
+      const isGamer = raw.accountType === 'gamer';
+      const srv = isGamer
+        ? { code: raw.chosenServiceCode || 'GAME', name: raw.chosenServiceName || 'ESP GAMING & VOICE CLUB' }
+        : db.services.find(s => s.code === raw.chosenServiceCode) || {
+            code: raw.chosenServiceCode || 'EMO',
+            name: raw.chosenServiceName || 'EARN MONEY ONLINE',
+          };
+      const finalUserId =
+        rawUserId && !db.users.some(u => u.userId.toLowerCase() === rawUserId.toLowerCase())
+          ? rawUserId
+          : isGamer
+          ? generateStaticGamerId(db.users, cleanName)
+          : generateStaticIncomeId(db.users, cleanName, srv.code);
+      const gamingId = String(raw.gamingId || '').trim() || (isGamer ? finalUserId : generateStaticGamerId(db.users, cleanName));
+      const rawUname = normalizeStaticUsername(raw.username || '');
+      const username =
+        rawUname && isValidStaticUsername(rawUname) && !isStaticUsernameTaken(db.users, rawUname)
+          ? rawUname
+          : generateStaticDefaultUsername(db.users, cleanName, finalUserId, gamingId);
+      const candRoom = String(raw.personalRoomId || raw.roomAddress || '').trim();
+      const roomTaken = !candRoom || db.users.some(u => (u.personalRoomId || u.roomAddress) === candRoom);
+      const roomAddress = roomTaken ? generateStaticRoomId(db.users, db.customVoiceRooms || [], cleanName) : candRoom;
+      const sp = findStaticSponsorUser(db.users, raw.sponsorId || db.settings.ownerSponsorId);
+      const newUser = normalizeStaticUser({
+        id: String(raw.id || `usr-${Date.now()}`),
+        userId: finalUserId,
+        gamingId,
+        username,
+        fullName: cleanName,
+        phone: rawPhone || '0000000000',
+        email: rawEmail || `${finalUserId.toLowerCase()}@espgaming.club`,
+        fullAddress: String(raw.fullAddress || ''),
+        paymentAddress: String(raw.paymentAddress || ''),
+        payoutUpiId: String(raw.payoutUpiId || raw.paymentAddress || ''),
+        password: String(raw.password || '123456'),
+        sponsorId: sp ? sp.userId : (String(raw.sponsorId || '').trim() || db.settings.ownerSponsorId),
+        sponsorName: sp ? sp.fullName : (String(raw.sponsorName || '').trim() || db.settings.ownerName),
+        chosenServiceCode: srv.code,
+        chosenServiceName: srv.name,
+        joiningFee: isGamer ? 0 : Math.max(0, Number(raw.joiningFee) || 10),
+        joiningDate: String(raw.joiningDate || new Date().toISOString().split('T')[0]),
+        paymentUtr: String(raw.paymentUtr || (isGamer ? 'FREE_GAMING_USER' : 'CLOUD_SYNC')),
+        status: raw.status === 'active' || raw.status === 'rejected' ? raw.status : isGamer ? 'active' : 'pending',
+        accountType: isGamer ? 'gamer' : 'business',
+        balance: Math.max(0, Number(raw.balance) || 0),
+        coins: Math.max(0, Number(raw.coins) || 0),
+        charms: Math.max(0, Number(raw.charms) || 0),
+        gameLevel: Math.max(1, Number(raw.gameLevel) || 1),
+        vipTier: raw.vipTier || 'none',
+        frameType: raw.frameType || 'standard',
+        roomAddress,
+        personalRoomId: roomAddress,
+        registeredFromHost: String(raw.registeredFromHost || 'playesp.github.io'),
+        role: 'member',
+        createdAt: String(raw.createdAt || new Date().toISOString()),
+      });
+      db.users.unshift(newUser);
+      ensureStaticPersonalRoom(db, newUser);
+      importedCount++;
+    }
+    if (importedCount > 0 || updatedCount > 0) saveDb(db);
+    return { success: true, importedCount, updatedCount, totalUsers: db.users.length, users: db.users };
+  }
   if (path === '/api/admin/vip-rooms/check' && method === 'POST') {
     if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
     const rooms = ensureAllStaticRooms(db);
@@ -4114,7 +4203,15 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     }
     if (body.fullName) user.fullName = String(body.fullName).trim();
     if (body.username) user.username = normalizeStaticUsername(body.username);
+    if (body.phone !== undefined && String(body.phone).trim()) user.phone = String(body.phone).trim();
+    if (body.email !== undefined && String(body.email).trim()) user.email = String(body.email).trim();
+    if (body.fullAddress !== undefined) user.fullAddress = String(body.fullAddress).trim();
+    if (body.paymentAddress !== undefined) {
+      user.paymentAddress = String(body.paymentAddress).trim();
+      user.payoutUpiId = String(body.payoutUpiId !== undefined ? body.payoutUpiId : body.paymentAddress).trim();
+    }
     if (body.password && String(body.password).length >= 3) user.password = String(body.password).trim();
+    if (body.balance !== undefined && !isNaN(Number(body.balance))) user.balance = Math.max(0, Number(body.balance));
     if (body.coins !== undefined) user.coins = Math.max(0, Number(body.coins));
     if (body.charms !== undefined) user.charms = Math.max(0, Number(body.charms));
     if (body.gameLevel !== undefined) {
@@ -4126,8 +4223,19 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       user.vipTitle = body.vipTier === 'diamond' ? 'Diamond VIP' : body.vipTier === 'gold' ? 'Gold VIP' : body.vipTier === 'silver' ? 'Silver VIP' : '';
     }
     if (body.frameType) user.frameType = body.frameType;
+    if (body.status && ['active', 'pending', 'rejected'].includes(body.status)) user.status = body.status;
+    if (body.accountType && ['business', 'gamer'].includes(body.accountType)) user.accountType = body.accountType;
+    if (body.chosenServiceCode) {
+      user.chosenServiceCode = String(body.chosenServiceCode).trim();
+      const matched = db.services.find(s => s.code === user.chosenServiceCode);
+      if (body.chosenServiceName) user.chosenServiceName = String(body.chosenServiceName).trim();
+      else if (matched) user.chosenServiceName = matched.name;
+      else if (user.chosenServiceCode === 'GAME') user.chosenServiceName = 'ESP GAMING & VOICE CLUB';
+    }
+    if (body.joiningFee !== undefined && !isNaN(Number(body.joiningFee))) user.joiningFee = Math.max(0, Number(body.joiningFee));
+    if (body.clanName) user.clanName = String(body.clanName).trim();
     saveDb(db);
-    return { success: true, user, message: 'डिटेल्स अपडेट हो गईं!' };
+    return { success: true, user, message: 'डिटेल्स व कंट्रोल सेटिंग्स अपडेट हो गईं!' };
   }
   if (path.match(/^\/api\/game\/voice-rooms\/[^/]+\/set-effect$/) && method === 'POST') {
     const rid = decodeURIComponent(path.split('/')[4]);

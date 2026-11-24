@@ -50,11 +50,55 @@
         "claimedDays": { "type": "array" },
         "lastDailyCheckInDate": { "type": "string", "maxLength": 32 },
         "workspaceState": { "type": "object" },
+        "registeredFromHost": { "type": "string", "maxLength": 128 },
+        "swiAppLink": { "type": "string", "maxLength": 500 },
+        "swiAppNote": { "type": "string", "maxLength": 500 },
+        "password": { "type": "string", "maxLength": 128 },
         "role": { "type": "string", "enum": ["member", "admin"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["userId", "authUid", "fullName", "phone", "email", "status", "role", "createdAt"]
+    },
+    "CloudRegistration": {
+      "title": "CloudRegistration",
+      "description": "Cross-origin registration intake record bridging static hosts (playesp.github.io) to Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "gamingId": { "type": "string", "maxLength": 64 },
+        "username": { "type": "string", "maxLength": 24 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 24 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "fullAddress": { "type": "string", "maxLength": 300 },
+        "paymentAddress": { "type": "string", "maxLength": 120 },
+        "payoutUpiId": { "type": "string", "maxLength": 120 },
+        "password": { "type": "string", "maxLength": 128 },
+        "sponsorId": { "type": "string", "maxLength": 64 },
+        "sponsorName": { "type": "string", "maxLength": 120 },
+        "chosenServiceCode": { "type": "string", "maxLength": 24 },
+        "chosenServiceName": { "type": "string", "maxLength": 120 },
+        "joiningFee": { "type": "number" },
+        "joiningDate": { "type": "string", "maxLength": 32 },
+        "paymentUtr": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["pending", "active", "rejected"] },
+        "accountType": { "type": "string", "enum": ["business", "gamer"] },
+        "balance": { "type": "number" },
+        "coins": { "type": "number" },
+        "charms": { "type": "number" },
+        "gameLevel": { "type": "number" },
+        "vipTier": { "type": "string", "enum": ["none", "silver", "gold", "diamond"] },
+        "frameType": { "type": "string", "maxLength": 64 },
+        "personalRoomId": { "type": "string", "maxLength": 24 },
+        "roomAddress": { "type": "string", "maxLength": 24 },
+        "registeredFromHost": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["member"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "fullName", "phone", "email", "status", "accountType", "role", "createdAt"]
     },
     "PublicUserProfile": {
       "title": "PublicUserProfile",
@@ -246,6 +290,10 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Private PII & wallet records (owner or admin only)"
+    },
+    "/cloud_registrations/{regId}": {
+      "schema": "CloudRegistration",
+      "description": "Write-only cross-origin registration bridge readable strictly by Admin"
     },
     "/public_profiles/{userId}": {
       "schema": "PublicUserProfile",

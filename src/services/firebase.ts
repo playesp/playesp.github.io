@@ -227,10 +227,108 @@ function buildValidatedUserDoc(userData: any, authUid: string) {
       : [],
     lastDailyCheckInDate: clampString(userData.lastDailyCheckInDate, 32),
     workspaceState: sanitizeWorkspaceState(userData.workspaceState),
+    registeredFromHost: clampString(userData.registeredFromHost, 128),
+    swiAppLink: clampString(userData.swiAppLink, 500),
+    swiAppNote: clampString(userData.swiAppNote, 500),
+    password: clampString(userData.password, 128),
     role,
     createdAt: createdAt.length >= 4 ? createdAt : nowIso,
     updatedAt: nowIso,
   };
+}
+
+function buildCloudRegistrationDoc(userData: any, hostOverride?: string) {
+  const safeUserId = sanitizeFirestoreId(userData.userId || userData.id);
+  const nowIso = new Date().toISOString();
+  const status =
+    userData.status === 'active' || userData.status === 'rejected' ? userData.status : 'pending';
+  const accountType = userData.accountType === 'gamer' ? 'gamer' : 'business';
+  const vipTier =
+    userData.vipTier === 'silver' || userData.vipTier === 'gold' || userData.vipTier === 'diamond'
+      ? userData.vipTier
+      : 'none';
+  const phoneRaw = clampString(userData.phone, 24);
+  const phone = phoneRaw.length >= 6 ? phoneRaw : '0000000000';
+  const emailRaw = clampString(userData.email, 150);
+  const email = emailRaw.includes('@') && emailRaw.length >= 3 ? emailRaw : `${safeUserId.toLowerCase()}@esp.local`;
+  const createdAt = clampString(userData.createdAt, 64) || nowIso;
+  const roomNum = clampString(userData.personalRoomId || userData.roomAddress, 24);
+  const detectedHost =
+    clampString(hostOverride || userData.registeredFromHost, 128) ||
+    (typeof window !== 'undefined' ? clampString(window.location.hostname, 128) : 'web');
+
+  return {
+    id: clampString(userData.id, 128) || safeUserId,
+    userId: safeUserId,
+    gamingId: clampString(userData.gamingId || `GM-${safeUserId}`, 64),
+    username: clampString(String(userData.username || '').replace(/^@+/, '').toLowerCase(), 24),
+    fullName: clampString(userData.fullName, 120) || 'ESP Member',
+    phone,
+    email,
+    fullAddress: clampString(userData.fullAddress, 300),
+    paymentAddress: clampString(userData.paymentAddress, 120),
+    payoutUpiId: clampString(userData.payoutUpiId || userData.paymentAddress, 120),
+    password: clampString(userData.password, 128),
+    sponsorId: clampString(userData.sponsorId, 64),
+    sponsorName: clampString(userData.sponsorName, 120),
+    chosenServiceCode: clampString(userData.chosenServiceCode, 24),
+    chosenServiceName: clampString(userData.chosenServiceName, 120),
+    joiningFee: nonNegativeNumber(userData.joiningFee, 0),
+    joiningDate: clampString(userData.joiningDate, 32),
+    paymentUtr: clampString(userData.paymentUtr, 64),
+    status,
+    accountType,
+    balance: nonNegativeNumber(userData.balance, 0),
+    coins: nonNegativeNumber(userData.coins, 0),
+    charms: nonNegativeNumber(userData.charms, 0),
+    gameLevel: nonNegativeNumber(userData.gameLevel, 1),
+    vipTier,
+    frameType: clampString(userData.frameType, 64) || 'standard',
+    personalRoomId: roomNum,
+    roomAddress: roomNum,
+    registeredFromHost: detectedHost,
+    role: 'member' as const,
+    createdAt: createdAt.length >= 4 ? createdAt : nowIso,
+    updatedAt: nowIso,
+  };
+}
+
+export async function pushRegistrationToCloudBridge(userData: any, hostOverride?: string): Promise<boolean> {
+  if (!userData || (!userData.userId && !userData.id)) return false;
+  const payload = buildCloudRegistrationDoc(userData, hostOverride);
+  try {
+    await setDoc(doc(db, 'cloud_registrations', payload.userId), payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchAllCloudUsersForAdmin(): Promise<any[]> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || !fbUser.emailVerified || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
+    return [];
+  }
+  const merged = new Map<string, any>();
+  const addRecord = (raw: any) => {
+    if (!raw || !raw.userId) return;
+    const key = String(raw.userId).toLowerCase();
+    const prev = merged.get(key);
+    merged.set(key, prev ? { ...prev, ...raw } : raw);
+  };
+  try {
+    const cloudSnap = await getDocs(collection(db, 'cloud_registrations'));
+    cloudSnap.docs.forEach(d => addRecord(d.data()));
+  } catch (err) {
+    console.warn('Firestore cloud_registrations read note:', err);
+  }
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    usersSnap.docs.forEach(d => addRecord(d.data()));
+  } catch (err) {
+    console.warn('Firestore users read note:', err);
+  }
+  return Array.from(merged.values());
 }
 
 function buildPublicProfileDoc(userData: any, authUid: string) {
@@ -416,6 +514,7 @@ export async function syncAdminDatasetToFirestore(dataset: {
       const validated = buildValidatedUserDoc(u, fbUser.uid);
       await setDoc(doc(db, 'users', safeUserId), validated);
       await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(u, fbUser.uid));
+      await setDoc(doc(db, 'cloud_registrations', safeUserId), buildCloudRegistrationDoc(u));
       syncedUsers++;
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, userPath);

@@ -228,6 +228,7 @@ export interface UserProfile {
   // Referral Link Click Tracking
   referralClicks?: number;
   referralClickHistory?: Array<{ date: string; count: number }>;
+  registeredFromHost?: string;
 }
 
 export interface HomeSliderPhoto {

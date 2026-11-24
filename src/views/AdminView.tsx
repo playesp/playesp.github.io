@@ -32,13 +32,20 @@ import {
   Laptop,
   Smartphone,
   Tablet,
-  LogOut
+  LogOut,
+  Globe,
+  Key,
+  MapPin,
+  Phone,
+  Mail,
+  Gamepad2,
+  Briefcase
 } from 'lucide-react';
 import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem, LiveTimeMeta, AdminSession, UserSession } from '../types/index.ts';
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
-import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore } from '../services/firebase.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, fetchAllCloudUsersForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
 import { CURATED_VIP_ROOM_NUMBERS, isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface AdminViewProps {
@@ -56,6 +63,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'members' | 'players_builder' | 'services' | 'payouts' | 'coin_recharges' | 'give_coins' | 'messages' | 'gift_cards' | 'vip_rooms' | 'weekly_clock' | 'multi_device' | 'settings' | 'audits' | 'slider_photos'>('members');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all');
+  const [accountTypeFilter, setAccountTypeFilter] = useState<'all' | 'business' | 'gamer'>('all');
+  const [originFilter, setOriginFilter] = useState<'all' | 'playesp'>('all');
   
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -172,6 +181,35 @@ export const AdminView: React.FC<AdminViewProps> = ({
     clanName: string;
   } | null>(null);
   const [savingPlayerEdit, setSavingPlayerEdit] = useState(false);
+
+  // Admin Total Control Center + Per-User Total Control System State
+  const [cloudConnectedEmail, setCloudConnectedEmail] = useState<string | null>(() => auth.currentUser?.email || null);
+  const [lastCloudSyncInfo, setLastCloudSyncInfo] = useState<{ imported: number; total: number; syncedAt: string } | null>(null);
+  const [adminControlCenterOpen, setAdminControlCenterOpen] = useState(false);
+  const [totalControlSearch, setTotalControlSearch] = useState('');
+  const [totalControlUser, setTotalControlUser] = useState<{
+    user: UserProfile;
+    accountType: 'business' | 'gamer';
+    status: 'pending' | 'active' | 'rejected';
+    fullName: string;
+    username: string;
+    phone: string;
+    email: string;
+    fullAddress: string;
+    paymentAddress: string;
+    password: string;
+    chosenServiceCode: string;
+    chosenServiceName: string;
+    joiningFee: string;
+    balance: string;
+    coins: string;
+    charms: string;
+    gameLevel: string;
+    vipTier: 'none' | 'silver' | 'gold' | 'diamond';
+    frameType: string;
+    clanName: string;
+  } | null>(null);
+  const [savingTotalControl, setSavingTotalControl] = useState(false);
 
   // Reusable React Confirmation & Input Modal (replaces browser confirm/prompt)
   const [actionModal, setActionModal] = useState<{
@@ -448,6 +486,44 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
       // Load Live 12 AM IST Clock & Weekly Rewards Stats
       loadAdminTimeStats();
+
+      // Auto-merge any cross-origin/localStorage backup registrations + Firebase Cloud Bridge
+      let mergedUsersList: UserProfile[] = data.users || [];
+      try {
+        const localBackups = api.getLocalBackupUsers();
+        let cloudBridgeUsers: any[] = [];
+        const fbUser = auth.currentUser;
+        if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
+          cloudBridgeUsers = await fetchAllCloudUsersForAdmin();
+        }
+        const combinedIncoming = [...localBackups, ...cloudBridgeUsers];
+        if (combinedIncoming.length > 0) {
+          const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming);
+          if (importRes?.success && Array.isArray(importRes.users)) {
+            mergedUsersList = importRes.users;
+            setUsers(importRes.users);
+            setLastCloudSyncInfo({
+              imported: importRes.importedCount || 0,
+              total: importRes.totalUsers || importRes.users.length,
+              syncedAt: new Date().toLocaleTimeString('en-IN'),
+            });
+            const refreshedOverview = await api.getAdminOverview(adminPassword);
+            if (refreshedOverview?.success && refreshedOverview.stats) {
+              setStats(refreshedOverview.stats);
+            }
+          }
+        }
+        // Keep Firestore updated with complete server user list if Admin Google Auth is active
+        if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL && mergedUsersList.length > 0) {
+          syncAdminDatasetToFirestore({
+            users: mergedUsersList,
+            payouts: data.payouts || [],
+            giftCards: [],
+          }).catch(() => {});
+        }
+      } catch (bridgeErr) {
+        console.warn('Cloud bridge auto-pull note:', bridgeErr);
+      }
     } catch {
       showToast('एडमिन सुरक्षा सत्यापन विफल रहा।', 'error');
       onLogoutAdmin();
@@ -464,17 +540,46 @@ export const AdminView: React.FC<AdminViewProps> = ({
       if (!fbUser || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
         fbUser = await signInWithGoogle();
       }
+      setCloudConnectedEmail(fbUser.email || null);
       if (fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
         showToast(`कृपया एडमिन ईमेल (${ADMIN_GOOGLE_EMAIL}) से Google साइन-इन करें।`, 'error');
         return;
       }
+
+      // Step 1: Pull ALL registrations from Firestore Cloud Bridge (playesp.github.io + all domains) & localStorage backups
+      const [cloudUsers, localBackups] = await Promise.all([
+        fetchAllCloudUsersForAdmin(),
+        Promise.resolve(api.getLocalBackupUsers()),
+      ]);
+      const combinedIncoming = [...localBackups, ...cloudUsers];
+
+      let finalUsers = users;
+      let importedCount = 0;
+      if (combinedIncoming.length > 0) {
+        const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming);
+        if (importRes?.success && Array.isArray(importRes.users)) {
+          finalUsers = importRes.users;
+          importedCount = importRes.importedCount || 0;
+          setUsers(importRes.users);
+        }
+      }
+
+      // Step 2: Push full merged dataset up to Firestore so all platforms stay 100% in sync
       const res = await syncAdminDatasetToFirestore({
-        users,
+        users: finalUsers,
         payouts,
         giftCards: giftCardRedemptions,
       });
+
+      setLastCloudSyncInfo({
+        imported: importedCount,
+        total: finalUsers.length,
+        syncedAt: new Date().toLocaleTimeString('en-IN'),
+      });
+
+      await loadAdminData();
       showToast(
-        `☁️ Firestore सिंक पूर्ण: ${res.syncedUsers} Members, ${res.syncedPayouts} Payouts, ${res.syncedGiftCards} Gift Cards!`,
+        `☁️ Cloud Bridge सिंक पूर्ण! ${importedCount} नए/playesp.github.io यूज़र जुड़े • कुल ${res.syncedUsers} Members सिंक हुए!`,
         'success'
       );
     } catch (err: any) {
@@ -617,6 +722,50 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   useEffect(() => {
     loadAdminData();
+    const unsubscribeAuth = onFirebaseAuthChange(fbUser => {
+      setCloudConnectedEmail(fbUser?.email || null);
+      if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
+        fetchAllCloudUsersForAdmin()
+          .then(async cloudUsers => {
+            if (cloudUsers.length > 0) {
+              const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers);
+              if (res?.success && Array.isArray(res.users)) {
+                setUsers(res.users);
+                setLastCloudSyncInfo({
+                  imported: res.importedCount || 0,
+                  total: res.totalUsers || res.users.length,
+                  syncedAt: new Date().toLocaleTimeString('en-IN'),
+                });
+                const ov = await api.getAdminOverview(adminPassword);
+                if (ov?.success && ov.stats) setStats(ov.stats);
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    });
+
+    const cloudPoll = setInterval(() => {
+      const fbUser = auth.currentUser;
+      if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
+        fetchAllCloudUsersForAdmin()
+          .then(async cloudUsers => {
+            if (cloudUsers.length > 0) {
+              const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers);
+              if (res?.success && res.importedCount > 0 && Array.isArray(res.users)) {
+                setUsers(res.users);
+                showToast(`☁️ ${res.importedCount} नया यूज़र playesp.github.io से स्वतः जुड़ गया!`, 'success');
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }, 15000);
+
+    return () => {
+      unsubscribeAuth();
+      clearInterval(cloudPoll);
+    };
   }, []);
 
   useEffect(() => {
@@ -836,6 +985,75 @@ export const AdminView: React.FC<AdminViewProps> = ({
       showToast(err?.message || 'त्रुटि हुई', 'error');
     } finally {
       setSavingPlayerEdit(false);
+    }
+  };
+
+  const openTotalControlModal = (u: UserProfile) => {
+    setTotalControlUser({
+      user: u,
+      accountType: u.accountType === 'gamer' ? 'gamer' : 'business',
+      status: (u.status as 'pending' | 'active' | 'rejected') || 'pending',
+      fullName: u.fullName || '',
+      username: u.username || '',
+      phone: u.phone || '',
+      email: u.email || '',
+      fullAddress: u.fullAddress || '',
+      paymentAddress: u.payoutUpiId || u.paymentAddress || '',
+      password: u.password || '',
+      chosenServiceCode: u.chosenServiceCode || (u.accountType === 'gamer' ? 'GAMING' : 'EMO'),
+      chosenServiceName: u.chosenServiceName || (u.accountType === 'gamer' ? 'ESP PLAY Gaming Only' : 'EARN MONEY ONLINE'),
+      joiningFee: String(u.joiningFee ?? 0),
+      balance: String(u.balance ?? 0),
+      coins: String(u.coins ?? 0),
+      charms: String(u.charms ?? 0),
+      gameLevel: String(u.gameLevel ?? 1),
+      vipTier: (u.vipTier as any) || 'none',
+      frameType: u.frameType || 'standard',
+      clanName: u.clanName || 'Royal Warriors ESP',
+    });
+  };
+
+  const handleSaveTotalControl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!totalControlUser) return;
+    setSavingTotalControl(true);
+    try {
+      const res = await api.editUserDetails(totalControlUser.user.userId, adminPassword, {
+        accountType: totalControlUser.accountType,
+        status: totalControlUser.status,
+        fullName: totalControlUser.fullName.trim(),
+        username: totalControlUser.username.trim(),
+        phone: totalControlUser.phone.trim(),
+        email: totalControlUser.email.trim(),
+        fullAddress: totalControlUser.fullAddress.trim(),
+        paymentAddress: totalControlUser.paymentAddress.trim(),
+        payoutUpiId: totalControlUser.paymentAddress.trim(),
+        password: totalControlUser.password.trim() || undefined,
+        chosenServiceCode: totalControlUser.chosenServiceCode.trim().toUpperCase(),
+        chosenServiceName: totalControlUser.chosenServiceName.trim(),
+        joiningFee: Number(totalControlUser.joiningFee) || 0,
+        balance: Number(totalControlUser.balance) || 0,
+        coins: Number(totalControlUser.coins) || 0,
+        charms: Number(totalControlUser.charms) || 0,
+        gameLevel: Number(totalControlUser.gameLevel) || 1,
+        vipTier: totalControlUser.vipTier,
+        frameType: totalControlUser.frameType,
+        clanName: totalControlUser.clanName.trim(),
+      });
+      if (res?.success) {
+        showToast(res.message || `⚙️ ${totalControlUser.fullName} का Total Control डेटा सेव हो गया!`, 'success');
+        if (res.user) {
+          setUsers(prev => prev.map(item => (item.userId === res.user.userId ? { ...item, ...res.user } : item)));
+        }
+        setTotalControlUser(null);
+        await loadAdminData();
+      } else {
+        showToast(res?.message || 'अपडेट करने में त्रुटि आई', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'नेटवर्क त्रुटि', 'error');
+    } finally {
+      setSavingTotalControl(false);
     }
   };
 
@@ -1134,14 +1352,32 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
   };
 
+  const businessUsersCount = users.filter(u => u.accountType !== 'gamer').length;
+  const gamerUsersCount = users.filter(u => u.accountType === 'gamer').length;
+  const playespUsersCount = users.filter(u => (u.registeredFromHost || '').toLowerCase().includes('playesp.github.io')).length;
+  const isCloudAdminConnected = Boolean(cloudConnectedEmail && cloudConnectedEmail.toLowerCase() === ADMIN_GOOGLE_EMAIL);
+
   const filteredUsers = users.filter(u => {
     if (statusFilter !== 'all' && u.status !== statusFilter) return false;
-    const q = (searchMember || '').toLowerCase();
+    if (accountTypeFilter === 'gamer' && u.accountType !== 'gamer') return false;
+    if (accountTypeFilter === 'business' && u.accountType === 'gamer') return false;
+    if (originFilter === 'playesp' && !(u.registeredFromHost || '').toLowerCase().includes('playesp.github.io')) return false;
+    const q = (searchMember || '').trim().toLowerCase();
+    if (!q) return true;
     return (
       (u.fullName || '').toLowerCase().includes(q) ||
       (u.userId || '').toLowerCase().includes(q) ||
-      (u.phone || '').includes(q) ||
-      (u.paymentUtr || '').toLowerCase().includes(q)
+      (u.gamingId || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.phone || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.sponsorId || '').toLowerCase().includes(q) ||
+      (u.sponsorName || '').toLowerCase().includes(q) ||
+      (u.chosenServiceCode || '').toLowerCase().includes(q) ||
+      (u.chosenServiceName || '').toLowerCase().includes(q) ||
+      (u.paymentUtr || '').toLowerCase().includes(q) ||
+      (u.roomAddress || '').toLowerCase().includes(q) ||
+      (u.registeredFromHost || '').toLowerCase().includes(q)
     );
   });
 
@@ -1154,25 +1390,41 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <Lock className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center flex-wrap gap-2">
               <h1 className="text-base sm:text-xl font-bold text-white">ESP Master Admin Panel</h1>
               <span className="text-[10px] bg-[#ffe500] text-[#212121] font-bold px-2 py-0.5 rounded-sm">
                 SECURE
               </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-sm border ${
+                isCloudAdminConnected
+                  ? 'bg-emerald-500/25 border-emerald-200 text-emerald-100'
+                  : 'bg-amber-400/25 border-amber-200 text-amber-100'
+              }`}>
+                {isCloudAdminConnected ? '● Cloud Bridge LIVE' : '○ Connect Cloud Bridge'}
+              </span>
             </div>
             <p className="text-xs text-blue-100 mt-0.5">
-              User approvals, UTR proof verification, service manager &amp; permanent database
+              Total Control System • playesp.github.io &amp; Live URL Sync • ESP Earning ({businessUsersCount}) + Free Gaming ({gamerUsersCount})
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
+            onClick={() => setAdminControlCenterOpen(true)}
+            className="px-4 py-2 rounded-sm text-xs font-extrabold text-white bg-[#fb641b] hover:bg-[#e8550f] border border-orange-300 transition cursor-pointer flex items-center gap-1.5"
+          >
+            <Settings className="w-4 h-4 animate-spin" style={{ animationDuration: '9s' }} />
+            <span>Control</span>
+          </button>
+          <button
             onClick={handleAdminCloudSync}
             disabled={cloudSyncing}
-            className="px-4 py-2 rounded-sm text-xs font-bold text-[#212121] bg-[#ffe500] hover:bg-yellow-300 transition cursor-pointer shadow-2xs disabled:opacity-60"
+            className="px-4 py-2 rounded-sm text-xs font-bold text-[#212121] bg-[#ffe500] hover:bg-yellow-300 transition cursor-pointer shadow-2xs disabled:opacity-60 flex items-center gap-1.5"
           >
-            {cloudSyncing ? '☁️ Syncing Cloud...' : '☁️ Sync Cloud (Firestore)'}
+            <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+            <span>{cloudSyncing ? 'Syncing playesp.github.io...' : '☁️ Sync Cloud (playesp.github.io)'}</span>
           </button>
           <button
             onClick={onLogoutAdmin}
@@ -1324,13 +1576,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
         <button
           onClick={() => setActiveTab('settings')}
-          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap ${
+          className={`px-3.5 py-2 rounded-sm transition cursor-pointer whitespace-nowrap flex items-center space-x-1.5 ${
             activeTab === 'settings'
               ? 'bg-[#2874f0] text-white'
               : 'text-[#212121] hover:bg-[#f1f3f6]'
           }`}
         >
-          UPI Gateway &amp; QR Settings
+          <Settings className="w-3.5 h-3.5" />
+          <span>Control Settings &amp; UPI QR</span>
         </button>
 
         <button
@@ -1702,15 +1955,118 @@ export const AdminView: React.FC<AdminViewProps> = ({
         );
       })()}
 
-      {/* ===================== TAB 1: MEMBERS AUDIT ===================== */}
+      {/* ===================== TAB 1: MEMBERS AUDIT & TOTAL CONTROL ===================== */}
       {activeTab === 'members' && (
         <div className="space-y-4">
+          {/* Cross-Origin Cloud Sync Banner (https://playesp.github.io/ -> Admin Panel) */}
+          <div className={`rounded-md p-3.5 sm:p-4 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
+            isCloudAdminConnected
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+              : 'bg-blue-50 border-blue-200 text-blue-950'
+          }`}>
+            <div className="flex items-start gap-2.5">
+              <Globe className={`w-5 h-5 shrink-0 mt-0.5 ${isCloudAdminConnected ? 'text-[#388e3c]' : 'text-[#2874f0]'}`} />
+              <div>
+                <p className="text-xs sm:text-sm font-bold">
+                  {isCloudAdminConnected
+                    ? `☁️ Cross-Origin Live Sync Active (${cloudConnectedEmail})`
+                    : '🌐 https://playesp.github.io/ यूज़र लिस्ट यहाँ लाइव देखने के लिए Cloud Bridge कनेक्ट करें'}
+                </p>
+                <p className="text-[11px] opacity-85 mt-0.5">
+                  {isCloudAdminConnected
+                    ? `playesp.github.io व Live URLs के सभी पुराने व नए यूज़र सुरक्षित रूप से सिंक हैं${lastCloudSyncInfo ? ` (Last Sync: ${lastCloudSyncInfo.syncedAt}, Total: ${lastCloudSyncInfo.total})` : ''}।`
+                    : `एक बार "${ADMIN_GOOGLE_EMAIL}" से Cloud Sync बटन दबाते ही https://playesp.github.io/ पर रजिस्टर हुए सभी ESP Earning व Free Gaming यूज़र तुरंत यहाँ आ जाएंगे।`}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAdminCloudSync}
+              disabled={cloudSyncing}
+              className="px-3.5 py-2 rounded-sm text-xs font-extrabold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer shrink-0 flex items-center gap-1.5 disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+              <span>{cloudSyncing ? 'Pulling Users...' : isCloudAdminConnected ? 'Refresh & Pull playesp.github.io' : 'Connect & Pull playesp.github.io'}</span>
+            </button>
+          </div>
+
+          {/* Dual Account-Type Filter Cards (ESP Earning vs Free Gaming) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <button
+              type="button"
+              onClick={() => { setAccountTypeFilter('all'); setOriginFilter('all'); }}
+              className={`p-3 rounded-md border text-left transition cursor-pointer ${
+                accountTypeFilter === 'all' && originFilter === 'all'
+                  ? 'bg-[#2874f0] text-white border-[#1c62d6] shadow-sm'
+                  : 'bg-white text-[#212121] border-slate-200 hover:border-[#2874f0]'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase opacity-90">
+                <span>All Registered</span>
+                <Users className="w-4 h-4" />
+              </div>
+              <div className="text-lg sm:text-xl font-black mt-1 tabular-nums">{users.length}</div>
+              <div className="text-[10px] opacity-80">0 Missing / Complete DB</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAccountTypeFilter('business'); setOriginFilter('all'); }}
+              className={`p-3 rounded-md border text-left transition cursor-pointer ${
+                accountTypeFilter === 'business'
+                  ? 'bg-[#388e3c] text-white border-[#2e7d32] shadow-sm'
+                  : 'bg-emerald-50 text-emerald-950 border-emerald-200 hover:border-[#388e3c]'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase opacity-90">
+                <span>ESP Earning (Income)</span>
+                <Briefcase className="w-4 h-4" />
+              </div>
+              <div className="text-lg sm:text-xl font-black mt-1 tabular-nums">{businessUsersCount}</div>
+              <div className="text-[10px] opacity-85">कमाई / प्लान जॉइनिंग यूज़र</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAccountTypeFilter('gamer'); setOriginFilter('all'); }}
+              className={`p-3 rounded-md border text-left transition cursor-pointer ${
+                accountTypeFilter === 'gamer'
+                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                  : 'bg-indigo-50 text-indigo-950 border-indigo-200 hover:border-indigo-500'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase opacity-90">
+                <span>Free Gaming Players</span>
+                <Gamepad2 className="w-4 h-4" />
+              </div>
+              <div className="text-lg sm:text-xl font-black mt-1 tabular-nums">{gamerUsersCount}</div>
+              <div className="text-[10px] opacity-85">मुफ़्त गेमिंग अकाउंट यूज़र</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAccountTypeFilter('all'); setOriginFilter(prev => prev === 'playesp' ? 'all' : 'playesp'); }}
+              className={`p-3 rounded-md border text-left transition cursor-pointer ${
+                originFilter === 'playesp'
+                  ? 'bg-[#fb641b] text-white border-orange-700 shadow-sm'
+                  : 'bg-amber-50 text-amber-950 border-amber-200 hover:border-[#fb641b]'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase opacity-90">
+                <span>playesp.github.io</span>
+                <Globe className="w-4 h-4" />
+              </div>
+              <div className="text-lg sm:text-xl font-black mt-1 tabular-nums">{playespUsersCount}</div>
+              <div className="text-[10px] opacity-85">GitHub Live Portal Origin</div>
+            </button>
+          </div>
+
           <div className="bg-white p-3.5 rounded-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="relative w-full sm:w-72">
+            <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search member, Roll No, UTR..."
+                placeholder="Search Name, ID, @username, Phone, Sponsor, Plan, UTR..."
                 value={searchMember}
                 onChange={e => setSearchMember(e.target.value)}
                 className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3.5 py-2 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
@@ -1725,7 +2081,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   statusFilter === 'all' ? 'bg-[#2874f0] text-white' : 'text-slate-600 hover:text-[#212121]'
                 }`}
               >
-                All ({users.length})
+                All Status ({users.length})
               </button>
               <button
                 onClick={() => setStatusFilter('pending')}
@@ -1759,93 +2115,195 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-600 uppercase text-[10px] bg-[#f9fafb]">
-                    <th className="py-2.5 px-3">Roll No</th>
-                    <th className="py-2.5 px-3">Member Name</th>
-                    <th className="py-2.5 px-3">Plan &amp; Fee</th>
-                    <th className="py-2.5 px-3">UTR Reference</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-right">Approve / Reject Action</th>
+                    <th className="py-2.5 px-3">User ID · Room · Mode</th>
+                    <th className="py-2.5 px-3">Complete Form Details</th>
+                    <th className="py-2.5 px-3">Password &amp; Sponsor</th>
+                    <th className="py-2.5 px-3">Selected Plan · UTR · Wallet</th>
+                    <th className="py-2.5 px-3">Status &amp; Devices</th>
+                    <th className="py-2.5 px-3 text-right">Total Control &amp; Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredUsers.map(u => (
-                    <tr key={u.id} className="hover:bg-[#f5f8ff]">
-                      <td className="py-2.5 px-3 font-mono font-bold text-[#2874f0]">{u.userId}</td>
-                      <td className="py-2.5 px-3">
-                        <span className="font-bold text-[#212121] block">{u.fullName}</span>
-                        <span className="text-[11px] text-slate-500">{u.phone}</span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="text-[#388e3c] font-bold">{u.chosenServiceCode}</span>
-                        <span className="text-slate-600 ml-1">(₹{u.joiningFee})</span>
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-[#212121] select-all font-semibold">
-                        {u.paymentUtr}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${
-                            u.status === 'active'
-                              ? 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
-                              : u.status === 'pending'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                              : 'bg-rose-50 text-rose-700 border border-rose-200'
-                          }`}
-                        >
-                          {u.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end flex-wrap gap-1.5">
-                          {u.status !== 'active' && (
-                            <button
-                              onClick={() => handleToggleUserStatus(u.userId, 'active')}
-                              className="px-2.5 py-1 rounded-sm text-[10px] font-bold bg-[#388e3c] hover:bg-[#2e7d32] text-white transition cursor-pointer shadow-2xs"
-                              title="Approve Member & Unlock ID Card"
-                            >
-                              Approve
-                            </button>
+                  {filteredUsers.map(u => {
+                    const isGamer = u.accountType === 'gamer';
+                    const isPlayEsp = (u.registeredFromHost || '').toLowerCase().includes('playesp.github.io');
+                    return (
+                      <tr key={u.id || u.userId} className="hover:bg-[#f5f8ff] align-top">
+                        {/* Identity + Room + Account Type + Host */}
+                        <td className="py-3 px-3 space-y-1 min-w-[155px]">
+                          <div className="font-mono font-black text-[#2874f0] select-all">{u.userId}</div>
+                          {u.gamingId && (
+                            <div className="font-mono text-[10px] text-indigo-700 font-semibold">
+                              🎮 {u.gamingId}
+                            </div>
                           )}
-                          {u.status === 'active' && (
-                            <button
-                              onClick={() => handleOpenSwiShareModal(u)}
-                              className={`px-2 py-1 rounded-sm text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 border ${
-                                u.swiAppLink
-                                  ? 'bg-blue-50 text-[#2874f0] border-blue-200 hover:bg-blue-100'
-                                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                              }`}
-                              title="Share 3.3% SWI Special App Link directly to user's Dashboard"
-                            >
-                              <span>{u.swiAppLink ? '📲 Link Sent ✓' : '📲 3.3% App Link'}</span>
-                            </button>
+                          <div className="font-mono text-[10px] text-slate-600">
+                            {u.username ? `@${u.username}` : 'No @user'} · Room #{u.personalRoomId || u.roomAddress || '—'}
+                          </div>
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase ${
+                              isGamer
+                                ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {isGamer ? '🎮 FREE GAMING' : '💼 ESP EARNING'}
+                            </span>
+                            {isPlayEsp && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-orange-100 text-orange-800 border border-orange-200">
+                                🌐 playesp.github.io
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Complete Form Details */}
+                        <td className="py-3 px-3 space-y-0.5 min-w-[190px]">
+                          <div className="font-bold text-[#212121] text-xs">{u.fullName}</div>
+                          <div className="text-[11px] text-slate-700 flex items-center gap-1 font-mono">
+                            <Phone className="w-3 h-3 text-[#2874f0] shrink-0" />
+                            <span className="select-all">{u.phone || '—'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-600 flex items-center gap-1 break-all">
+                            <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>{u.email || '—'}</span>
+                          </div>
+                          {u.fullAddress && (
+                            <div className="text-[10px] text-slate-500 flex items-start gap-1 max-w-[220px]">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                              <span className="line-clamp-2">{u.fullAddress}</span>
+                            </div>
                           )}
-                          {u.status !== 'rejected' && (
-                            <button
-                              onClick={() => handleToggleUserStatus(u.userId, 'rejected')}
-                              className="px-2 py-1 rounded-sm text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition cursor-pointer"
-                              title="Reject Fake / Invalid Proof"
-                            >
-                              Reject
-                            </button>
+                          {(u.payoutUpiId || u.paymentAddress) && (
+                            <div className="text-[10px] font-mono text-[#388e3c] font-semibold">
+                              UPI: {u.payoutUpiId || u.paymentAddress}
+                            </div>
                           )}
-                          <button
-                            onClick={() => handleOpenUserAudit(u.userId)}
-                            className="px-2 py-1 rounded-sm text-[10px] font-bold bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] border border-slate-300 transition cursor-pointer"
+                        </td>
+
+                        {/* Password & Joined Sponsor */}
+                        <td className="py-3 px-3 space-y-1 min-w-[165px]">
+                          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-amber-50 border border-amber-200 text-amber-900 font-mono text-[11px] font-bold select-all">
+                            <Key className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>{u.password || '—'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-600 pt-0.5">
+                            <span className="block text-[9px] uppercase font-bold text-slate-400">Joined Under (Sponsor):</span>
+                            <span className="font-bold text-[#212121] block">{u.sponsorName || 'Direct / Root'}</span>
+                            <span className="font-mono text-[#2874f0] font-semibold">{u.sponsorId || '—'}</span>
+                          </div>
+                          <div className="text-[9px] text-slate-400">
+                            {u.createdAt ? new Date(u.createdAt).toLocaleString('en-IN') : u.joiningDate || ''}
+                          </div>
+                        </td>
+
+                        {/* Selected Plan, UTR, Wallet & Coins */}
+                        <td className="py-3 px-3 space-y-1 min-w-[175px]">
+                          <div>
+                            <span className="text-[#388e3c] font-black">{u.chosenServiceCode || (isGamer ? 'GAMING' : 'EMO')}</span>
+                            <span className="text-slate-600 ml-1 font-semibold">(₹{u.joiningFee ?? 0})</span>
+                            {u.chosenServiceName && (
+                              <span className="block text-[10px] text-slate-500 line-clamp-1">{u.chosenServiceName}</span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[11px] text-[#212121] select-all font-semibold bg-slate-100 px-1.5 py-0.5 rounded-xs inline-block">
+                            UTR: {u.paymentUtr || '—'}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] font-mono pt-0.5">
+                            <span className="font-bold text-[#388e3c]">₹{u.balance || 0}</span>
+                            <span className="text-slate-300">|</span>
+                            <span className="font-bold text-[#fb641b]">🪙 {(u.coins || 0).toLocaleString()}</span>
+                            <span className="text-slate-300">|</span>
+                            <span className="font-bold text-[#2874f0]">Lv.{u.gameLevel || 1}</span>
+                          </div>
+                        </td>
+
+                        {/* Status & Devices */}
+                        <td className="py-3 px-3 space-y-1.5">
+                          <span
+                            className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-sm ${
+                              u.status === 'active'
+                                ? 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
+                                : u.status === 'pending'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}
                           >
-                            Audit
-                          </button>
-                          <button
-                            onClick={() => setViewingIdCardUser(u)}
-                            className="px-2 py-1 rounded-sm text-[10px] font-bold bg-[#2874f0] hover:bg-[#1e60d5] text-white transition cursor-pointer flex items-center space-x-1"
-                            title="View Verified Digital ID Card"
-                          >
-                            <CreditCard className="w-3 h-3" />
-                            <span>ID Card</span>
-                          </button>
-                        </div>
+                            {u.status.toUpperCase()}
+                          </span>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            📱 {(u.activeSessions || []).length}/4 Devices
+                          </div>
+                        </td>
+
+                        {/* Actions + Total Control Button */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end flex-wrap gap-1.5 max-w-[230px] ml-auto">
+                            <button
+                              type="button"
+                              onClick={() => openTotalControlModal(u)}
+                              className="px-2.5 py-1.5 rounded-sm text-[10px] font-extrabold bg-[#fb641b] hover:bg-[#e8550f] text-white transition cursor-pointer flex items-center gap-1"
+                              title="Open Full Total Control System for this User"
+                            >
+                              <Settings className="w-3 h-3" />
+                              <span>Control</span>
+                            </button>
+                            {u.status !== 'active' && (
+                              <button
+                                onClick={() => handleToggleUserStatus(u.userId, 'active')}
+                                className="px-2.5 py-1 rounded-sm text-[10px] font-bold bg-[#388e3c] hover:bg-[#2e7d32] text-white transition cursor-pointer shadow-2xs"
+                                title="Approve Member & Unlock ID Card"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {u.status === 'active' && (
+                              <button
+                                onClick={() => handleOpenSwiShareModal(u)}
+                                className={`px-2 py-1 rounded-sm text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 border ${
+                                  u.swiAppLink
+                                    ? 'bg-blue-50 text-[#2874f0] border-blue-200 hover:bg-blue-100'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                }`}
+                                title="Share 3.3% SWI Special App Link directly to user's Dashboard"
+                              >
+                                <span>{u.swiAppLink ? '📲 Link Sent ✓' : '📲 3.3% Link'}</span>
+                              </button>
+                            )}
+                            {u.status !== 'rejected' && (
+                              <button
+                                onClick={() => handleToggleUserStatus(u.userId, 'rejected')}
+                                className="px-2 py-1 rounded-sm text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition cursor-pointer"
+                                title="Reject Fake / Invalid Proof"
+                              >
+                                Reject
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenUserAudit(u.userId)}
+                              className="px-2 py-1 rounded-sm text-[10px] font-bold bg-[#f1f3f6] hover:bg-slate-200 text-[#212121] border border-slate-300 transition cursor-pointer"
+                            >
+                              Audit
+                            </button>
+                            <button
+                              onClick={() => setViewingIdCardUser(u)}
+                              className="px-2 py-1 rounded-sm text-[10px] font-bold bg-[#2874f0] hover:bg-[#1e60d5] text-white transition cursor-pointer flex items-center space-x-1"
+                              title="View Verified Digital ID Card"
+                            >
+                              <CreditCard className="w-3 h-3" />
+                              <span>ID Card</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-slate-500">
+                        कोई यूज़र इस फ़िल्टर में नहीं मिला। यदि यूज़र ने <strong>playesp.github.io</strong> पर रजिस्टर किया है तो ऊपर <strong>"☁️ Sync Cloud (playesp.github.io)"</strong> बटन दबाएँ।
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -4694,6 +5152,528 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-black cursor-pointer disabled:opacity-50"
               >
                 {savingPlayerEdit ? 'सेव हो रहा है...' : '💾 Save Credentials'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ===================== ADMIN MASTER CONTROL CENTER DRAWER/MODAL ===================== */}
+      {adminControlCenterOpen && (
+        <div
+          onClick={() => setAdminControlCenterOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-md p-5 sm:p-6 max-w-3xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto text-[#212121] text-xs"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-md bg-[#fb641b] text-white flex items-center justify-center shrink-0">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#212121]">
+                    ⚙️ ESP Admin Total Control Center
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    सभी यूज़र्स का डेटा, पासवर्ड, बैलेंस, रूम, डिवाइस और playesp.github.io सिंक कंट्रोल
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminControlCenterOpen(false)}
+                className="p-1.5 rounded-sm bg-[#f1f3f6] text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Live Counters + Cloud Pull */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 rounded-sm bg-blue-50 border border-blue-200">
+                <div className="text-[10px] font-bold uppercase text-blue-700">Total Database</div>
+                <div className="text-lg font-black text-[#2874f0]">{users.length} Users</div>
+              </div>
+              <div className="p-3 rounded-sm bg-emerald-50 border border-emerald-200">
+                <div className="text-[10px] font-bold uppercase text-emerald-700">ESP Earning</div>
+                <div className="text-lg font-black text-[#388e3c]">{businessUsersCount} Members</div>
+              </div>
+              <div className="p-3 rounded-sm bg-indigo-50 border border-indigo-200">
+                <div className="text-[10px] font-bold uppercase text-indigo-700">Free Gaming</div>
+                <div className="text-lg font-black text-indigo-700">{gamerUsersCount} Players</div>
+              </div>
+              <div className="p-3 rounded-sm bg-amber-50 border border-amber-200">
+                <div className="text-[10px] font-bold uppercase text-amber-800">playesp.github.io</div>
+                <div className="text-lg font-black text-[#fb641b]">{playespUsersCount} Synced</div>
+              </div>
+            </div>
+
+            {/* Module Navigation Shortcuts */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => { setActiveTab('members'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-[#2874f0] text-white font-bold text-left cursor-pointer"
+              >
+                👥 All Users &amp; Forms
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('players_builder'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-indigo-600 text-white font-bold text-left cursor-pointer"
+              >
+                🔑 Passwords &amp; VIP Builder
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('multi_device'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-[#388e3c] text-white font-bold text-left cursor-pointer"
+              >
+                📱 4-Device Sessions
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('settings'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-[#fb641b] text-white font-bold text-left cursor-pointer"
+              >
+                ⚙️ UPI, QR &amp; Links
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('give_coins'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-amber-500 text-[#212121] font-bold text-left cursor-pointer"
+              >
+                🪙 Grant / Deduct Coins
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('vip_rooms'); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-purple-600 text-white font-bold text-left cursor-pointer"
+              >
+                👑 VIP Room Numbers
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('weekly_clock'); loadAdminTimeStats(); setAdminControlCenterOpen(false); }}
+                className="p-2.5 rounded-sm bg-slate-800 text-white font-bold text-left cursor-pointer"
+              >
+                ⏰ 12 AM Clock Control
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAdminCloudSync()}
+                disabled={cloudSyncing}
+                className="p-2.5 rounded-sm bg-[#ffe500] text-[#212121] font-black text-left cursor-pointer disabled:opacity-60"
+              >
+                {cloudSyncing ? '☁️ Syncing...' : '☁️ Force Cloud Sync'}
+              </button>
+            </div>
+
+            {/* Quick Pick Any User for Instant Total Control */}
+            <div className="bg-[#f9fafb] border border-slate-200 rounded-sm p-3.5 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h4 className="font-black text-[#212121]">
+                  🎯 किसी भी यूज़र का तुरंत Total Control खोलें:
+                </h4>
+                <input
+                  type="text"
+                  value={totalControlSearch}
+                  onChange={e => setTotalControlSearch(e.target.value)}
+                  placeholder="ID, Name, @user, Phone या Sponsor खोजें..."
+                  className="w-full sm:w-64 bg-white border border-slate-300 rounded-sm px-3 py-1.5 text-xs outline-none focus:border-[#2874f0]"
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-200 bg-white border border-slate-200 rounded-sm">
+                {users
+                  .filter(u => {
+                    const q = totalControlSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      (u.fullName || '').toLowerCase().includes(q) ||
+                      (u.userId || '').toLowerCase().includes(q) ||
+                      (u.username || '').toLowerCase().includes(q) ||
+                      (u.phone || '').toLowerCase().includes(q) ||
+                      (u.sponsorId || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .slice(0, 25)
+                  .map(u => (
+                    <div key={u.userId} className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-[#f5f8ff]">
+                      <div className="min-w-0">
+                        <div className="font-bold text-[#212121] truncate flex items-center gap-1.5">
+                          <span>{u.fullName}</span>
+                          <span className="font-mono text-[10px] text-[#2874f0]">({u.userId})</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-xs font-bold ${
+                            u.accountType === 'gamer' ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {u.accountType === 'gamer' ? 'Gaming' : 'Income'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono truncate">
+                          Pass: {u.password || '—'} · Plan: {u.chosenServiceCode || '—'} · Sponsor: {u.sponsorId || 'ROOT'} · ₹{u.balance || 0}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminControlCenterOpen(false);
+                          openTotalControlModal(u);
+                        }}
+                        className="px-2.5 py-1 rounded-sm bg-[#fb641b] text-white font-bold text-[10px] cursor-pointer shrink-0 flex items-center gap-1"
+                      >
+                        <Settings className="w-3 h-3" />
+                        <span>Total Control</span>
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== PER-USER TOTAL CONTROL SYSTEM MODAL ===================== */}
+      {totalControlUser && (
+        <div
+          onClick={() => setTotalControlUser(null)}
+          className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+        >
+          <form
+            onClick={e => e.stopPropagation()}
+            onSubmit={handleSaveTotalControl}
+            className="bg-white border border-slate-200 rounded-md p-5 sm:p-6 max-w-3xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto text-[#212121] text-xs"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3 gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-md bg-[#fb641b] text-white flex items-center justify-center shrink-0">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-[#212121]">
+                    ⚙️ Total User Control: {totalControlUser.user.fullName}
+                  </h3>
+                  <p className="text-[11px] font-mono text-slate-500">
+                    Registered From: <strong>{totalControlUser.user.registeredFromHost || 'Direct Platform'}</strong> · Created: {totalControlUser.user.createdAt ? new Date(totalControlUser.user.createdAt).toLocaleString('en-IN') : totalControlUser.user.joiningDate || '—'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTotalControlUser(null)}
+                className="p-1.5 rounded-sm bg-[#f1f3f6] text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Strictly Locked Immutable Identities */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 border border-slate-200 rounded-sm p-3">
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-[#2874f0]" /> User ID (LOCKED)
+                </span>
+                <div className="font-mono font-black text-[#2874f0] text-xs select-all">{totalControlUser.user.userId}</div>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-indigo-700" /> Gaming ID (LOCKED)
+                </span>
+                <div className="font-mono font-black text-indigo-700 text-xs select-all">{totalControlUser.user.gamingId || `GM-${totalControlUser.user.userId}`}</div>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-purple-700" /> Room ID (LOCKED)
+                </span>
+                <div className="font-mono font-black text-purple-700 text-xs select-all">
+                  #{totalControlUser.user.personalRoomId || totalControlUser.user.roomAddress || 'UNIQUE'}
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-emerald-700" /> Joined Sponsor (LOCKED)
+                </span>
+                <div className="font-mono font-black text-emerald-700 text-xs truncate" title={`${totalControlUser.user.sponsorName} (${totalControlUser.user.sponsorId})`}>
+                  {totalControlUser.user.sponsorName || 'ROOT'} ({totalControlUser.user.sponsorId || '—'})
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Instant Controls Bar */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-[#f9fafb] border border-slate-200 rounded-sm p-2.5">
+              <button
+                type="button"
+                onClick={() => handleToggleUserStatus(totalControlUser.user.userId, 'active').then(() => setTotalControlUser(p => p && ({ ...p, status: 'active' })))}
+                className="px-2.5 py-1.5 rounded-sm bg-[#388e3c] text-white font-bold text-[10px] cursor-pointer"
+              >
+                ✓ Instant Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenSwiShareModal(totalControlUser.user)}
+                className="px-2.5 py-1.5 rounded-sm bg-blue-600 text-white font-bold text-[10px] cursor-pointer"
+              >
+                📲 Share 3.3% App Link
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingIdCardUser(totalControlUser.user)}
+                className="px-2.5 py-1.5 rounded-sm bg-indigo-600 text-white font-bold text-[10px] cursor-pointer"
+              >
+                🪪 Digital ID Card
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetUserWeeklyClaim(totalControlUser.user.userId)}
+                className="px-2.5 py-1.5 rounded-sm bg-amber-500 text-[#212121] font-bold text-[10px] cursor-pointer"
+              >
+                🔓 Reset Daily Reward Lock
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAdminTerminateUserDevice(totalControlUser.user.userId, undefined, true)}
+                className="px-2.5 py-1.5 rounded-sm bg-rose-600 text-white font-bold text-[10px] cursor-pointer"
+              >
+                📱 Logout All Devices ({(totalControlUser.user.activeSessions || []).length}/4)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const uid = totalControlUser.user.userId;
+                  setTotalControlUser(null);
+                  handleOpenUserAudit(uid);
+                }}
+                className="px-2.5 py-1.5 rounded-sm bg-slate-700 text-white font-bold text-[10px] cursor-pointer"
+              >
+                📜 Full Audit &amp; Downlines
+              </button>
+            </div>
+
+            {/* Editable Complete Registration & Account Control Fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-bold mb-1">Account Category (Type)</label>
+                <select
+                  value={totalControlUser.accountType}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, accountType: e.target.value as 'business' | 'gamer' }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-bold"
+                >
+                  <option value="business">💼 ESP Earning (Income)</option>
+                  <option value="gamer">🎮 Free Gaming Player</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Approval Status</label>
+                <select
+                  value={totalControlUser.status}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, status: e.target.value as any }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-bold"
+                >
+                  <option value="active">ACTIVE (Approved)</option>
+                  <option value="pending">PENDING</option>
+                  <option value="rejected">REJECTED</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold mb-1 text-amber-800">🔑 Login Password</label>
+                <input
+                  type="text"
+                  value={totalControlUser.password}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, password: e.target.value }))}
+                  className="w-full bg-amber-50 border border-amber-300 rounded-sm px-2.5 py-1.5 font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={totalControlUser.fullName}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, fullName: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">@Username</label>
+                <input
+                  type="text"
+                  value={totalControlUser.username}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, username: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Mobile Number</label>
+                <input
+                  type="text"
+                  value={totalControlUser.phone}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, phone: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Email</label>
+                <input
+                  type="email"
+                  value={totalControlUser.email}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, email: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Payout UPI Address</label>
+                <input
+                  type="text"
+                  value={totalControlUser.paymentAddress}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, paymentAddress: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Full Address (Form)</label>
+                <input
+                  type="text"
+                  value={totalControlUser.fullAddress}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, fullAddress: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Selected Plan Code</label>
+                <input
+                  type="text"
+                  value={totalControlUser.chosenServiceCode}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, chosenServiceCode: e.target.value.toUpperCase() }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Selected Service Name</label>
+                <input
+                  type="text"
+                  value={totalControlUser.chosenServiceName}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, chosenServiceName: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Joining Fee (₹)</label>
+                <input
+                  type="number"
+                  value={totalControlUser.joiningFee}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, joiningFee: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-[#388e3c]">Wallet Balance (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={totalControlUser.balance}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, balance: e.target.value }))}
+                  className="w-full bg-emerald-50 border border-emerald-300 rounded-sm px-2.5 py-1.5 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1 text-[#fb641b]">Gaming Coins (🪙)</label>
+                <input
+                  type="number"
+                  value={totalControlUser.coins}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, coins: e.target.value }))}
+                  className="w-full bg-orange-50 border border-orange-300 rounded-sm px-2.5 py-1.5 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Charms (✨)</label>
+                <input
+                  type="number"
+                  value={totalControlUser.charms}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, charms: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Game Level</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={totalControlUser.gameLevel}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, gameLevel: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-1">VIP Tier</label>
+                <select
+                  value={totalControlUser.vipTier}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, vipTier: e.target.value as any }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5 font-bold"
+                >
+                  <option value="none">Standard (No VIP)</option>
+                  <option value="silver">🛡️ Silver VIP</option>
+                  <option value="gold">👑 Gold VIP</option>
+                  <option value="diamond">💎 Diamond Royal VIP</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold mb-1">Clan / Family</label>
+                <input
+                  type="text"
+                  value={totalControlUser.clanName}
+                  onChange={e => setTotalControlUser(p => p && ({ ...p, clanName: e.target.value }))}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm px-2.5 py-1.5"
+                />
+              </div>
+            </div>
+
+            {/* Original UTR & Screenshot Verification Preview */}
+            <div className="bg-[#f9fafb] border border-slate-200 rounded-sm p-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-slate-500 block">Payment UTR Reference</span>
+                <span className="font-mono font-black text-sm text-[#fb641b] select-all">
+                  {totalControlUser.user.paymentUtr || 'NO UTR / FREE GAMING'}
+                </span>
+              </div>
+              {totalControlUser.user.paymentScreenshot && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreviewScreenshot({
+                      url: totalControlUser.user.paymentScreenshot!,
+                      title: `${totalControlUser.user.fullName} (${totalControlUser.user.userId})`,
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-sm bg-blue-50 text-[#2874f0] border border-blue-200 font-bold text-[11px] cursor-pointer"
+                >
+                  🖼️ View Payment Screenshot
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setTotalControlUser(null)}
+                className="px-4 py-2 rounded-sm bg-[#f1f3f6] font-bold cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="submit"
+                disabled={savingTotalControl}
+                className="px-5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-black cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingTotalControl ? 'Saving...' : 'Save Total Control Changes'}</span>
               </button>
             </div>
           </form>

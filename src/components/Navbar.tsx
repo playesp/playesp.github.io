@@ -24,6 +24,7 @@ import {
   Bell,
   Briefcase,
   Radio,
+  Settings,
 } from 'lucide-react';
 import type { UserProfile, PlatformSettings } from '../types/index.ts';
 import { ServicesPopUpModal } from './ServicesPopUpModal.tsx';
@@ -522,7 +523,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </button>
                   )}
                   <a
-                    href="https://ioisplatform.github.io/"
+                    href="https://playesp.github.io/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center justify-between font-medium"
@@ -547,6 +548,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Control Button with Settings Icon */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isAdmin) onSelectTab('admin');
+                else onOpenAdminLogin();
+              }}
+              aria-label="Admin Control System"
+              title={isAdmin ? 'Open Admin Total Control System' : 'Admin Control Login'}
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white border border-orange-300 text-[11px] min-[380px]:text-xs sm:text-sm font-extrabold cursor-pointer whitespace-nowrap min-h-[34px] shrink-0"
+            >
+              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Control</span>
+            </button>
           </div>
         </div>
 

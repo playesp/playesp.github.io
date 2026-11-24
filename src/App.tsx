@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import type { UserProfile, PlatformSettings, ServiceItem } from './types/index.ts';
+import type { UserProfile, PlatformSettings, ServiceItem, PublicSponsorPreview } from './types/index.ts';
 import { api } from './services/api.ts';
 import { syncUserToFirestore } from './services/firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
@@ -15,6 +15,7 @@ import { IdCardModal } from './components/IdCardModal.tsx';
 import { LegalComplianceModal } from './components/LegalComplianceModal.tsx';
 import { PostLoginProfileModal } from './components/PostLoginProfileModal.tsx';
 import { AiChatbot } from './components/AiChatbot.tsx';
+import { KnowIncomeAndUpgradeModal, KnowGamingSystemModal } from './components/SystemPopupModals.tsx';
 import { HomeView } from './views/HomeView.tsx';
 import { ServicesView } from './views/ServicesView.tsx';
 import { ServiceDetailView } from './views/ServiceDetailView.tsx';
@@ -125,13 +126,10 @@ export default function App() {
   });
   const [gamingNavPulse, setGamingNavPulse] = useState(0);
   const [initialRegMode, setInitialRegMode] = useState<'business' | 'gamer'>('business');
-  const [loginModalOpen, setLoginModalOpen] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('ref')) return false;
-    }
-    return !api.getStoredUser();
-  });
+  const [referralSponsor, setReferralSponsor] = useState<PublicSponsorPreview | null>(null);
+  const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
+  const [knowIncomeModalOpen, setKnowIncomeModalOpen] = useState<boolean>(false);
+  const [knowGamingModalOpen, setKnowGamingModalOpen] = useState<boolean>(false);
   const [adminLoginModalOpen, setAdminLoginModalOpen] = useState(false);
   const [idCardModalOpen, setIdCardModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
@@ -173,9 +171,14 @@ export default function App() {
         } catch {
           api.trackReferralClick(cleanRef).catch(() => {});
         }
-        // Only redirect to register if user is not already logged in
+        // Fetch live public non-PII sponsor preview so Referral Link Visitor sees a dedicated welcome view
+        api.getPublicSponsorPreview(cleanRef).then(preview => {
+          if (preview && preview.valid) {
+            setReferralSponsor(preview);
+          }
+        }).catch(() => {});
         if (!api.getStoredUser()) {
-          setCurrentTab('register');
+          setCurrentTab('home');
         }
       }
     }
@@ -602,6 +605,7 @@ export default function App() {
           isAdmin={isAdmin}
           settings={settings}
           currentTab={currentTab}
+          referralSponsor={referralSponsor}
           onSelectTab={handleTabChange}
           onSelectServiceCode={code => setSelectedServiceCode(code)}
           onOpenLogin={() => setLoginModalOpen(true)}
@@ -609,6 +613,8 @@ export default function App() {
           onLogout={handleUserLogout}
           onShowIdCard={() => setIdCardModalOpen(true)}
           onOpenLegalModal={() => setLegalModalOpen(true)}
+          onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
+          onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
         />
       )}
 
@@ -632,6 +638,7 @@ export default function App() {
             settings={settings}
             services={services}
             currentUser={currentUser}
+            referralSponsor={referralSponsor}
             isLoginModalOpen={loginModalOpen}
             onSelectTab={handleTabChange}
             onSelectServiceForRegistration={handleSelectServiceForRegistration}
@@ -641,6 +648,15 @@ export default function App() {
             onOpenLogin={() => {
               setLoginDestination('platform');
               setLoginModalOpen(true);
+            }}
+            onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
+            onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
+            onRegisterWithMode={(mode, code, fee) => {
+              setInitialRegMode(mode);
+              if (code) setInitialServiceCode(code);
+              if (fee) setInitialFee(fee);
+              setCurrentTab('register');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
         )}
@@ -745,6 +761,7 @@ export default function App() {
               onOpenEarningSetup={() => handleTabChange('dashboard')}
               onOpenServicesSetup={() => handleTabChange('services')}
               onOpenMomentsFeed={() => handleTabChange('moments')}
+              onOpenIncomeUpgrade={() => setKnowIncomeModalOpen(true)}
             />
           ) : (
             <div className="bg-white border border-slate-200 max-w-lg mx-auto my-10 p-6 sm:p-8 rounded-md text-center space-y-5 shadow-sm">
@@ -815,6 +832,8 @@ export default function App() {
             }}
             onNavigateToTab={tab => handleTabChange(tab)}
             onOpenBuyCoins={handleOpenBuyCoins}
+            onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
+            onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
           />
         )}
 
@@ -983,6 +1002,38 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Global Interactive Popups: Same-ID Earning Upgrade & Gaming System Guide */}
+      <KnowIncomeAndUpgradeModal
+        isOpen={knowIncomeModalOpen}
+        onClose={() => setKnowIncomeModalOpen(false)}
+        user={currentUser}
+        settings={settings}
+        services={services}
+        onUpgradeSubmitted={(msg) => {
+          showToast(msg || 'Same-ID अपग्रेड अनुरोध एडमिन वेरिफिकेशन के लिए भेज दिया गया है!', 'success');
+          if (currentUser?.userId) {
+            api.verifySession(currentUser.userId).then(check => {
+              if (check.valid && check.user) {
+                setCurrentUser(check.user);
+              }
+            }).catch(() => {});
+          }
+        }}
+        onVisitorJoinPlan={(code, fee) => {
+          handleSelectServiceForRegistration(code, fee);
+        }}
+        onOpenMorePlans={() => handleTabChange('services')}
+      />
+
+      <KnowGamingSystemModal
+        isOpen={knowGamingModalOpen}
+        onClose={() => setKnowGamingModalOpen(false)}
+        user={currentUser}
+        onEnterGamingRoom={() => handleTabChange('gaming-room')}
+        onOpenBuyCoins={handleOpenBuyCoins}
+        onOpenMore={() => handleTabChange('services')}
+      />
 
       {/* Clean Flipkart Toast Notification System */}
       <div

@@ -49,7 +49,10 @@ import {
   BadgeAlert,
   Briefcase,
   Gamepad2,
-  Crop
+  Crop,
+  Grid,
+  Layers,
+  ArrowRight,
 } from 'lucide-react';
 import type { 
   UserProfile, 
@@ -75,10 +78,12 @@ import { TopReferrersWidget } from '../components/TopReferrersWidget.tsx';
 import { DailyTopEarners } from '../components/DailyTopEarners.tsx';
 import { TransactionHistory } from '../components/TransactionHistory.tsx';
 import { FRAME_CATALOG, VIP_TIERS } from '../config/economy.ts';
+import { getPlanVisualTheme } from '../config/planThemes.ts';
 import { showToast } from '../services/toast.ts';
 import { auth, signInWithGoogle, syncUserToFirestore } from '../services/firebase.ts';
 import { UserProfileSheetModal, type RichProfileData } from '../components/UserProfileSheetModal.tsx';
 import { FacebookPhotoCropModal } from '../components/FacebookPhotoCropModal.tsx';
+import { MoreOptionsPopupModal, type MoreOptionItem } from '../components/SystemPopupModals.tsx';
 
 
 export type DashboardTabType =
@@ -102,6 +107,8 @@ interface DashboardViewProps {
   onUpdateUser: (updatedUser: UserProfile) => void;
   onNavigateToTab?: (tab: string) => void;
   onOpenBuyCoins?: () => void;
+  onOpenKnowIncome?: () => void;
+  onOpenKnowGaming?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -112,9 +119,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onUpdateUser,
   onNavigateToTab,
   onOpenBuyCoins,
+  onOpenKnowIncome,
+  onOpenKnowGaming,
 }) => {
   const [activeTab, setActiveTab] = useState<DashboardTabType>(initialSubTab || 'overview');
   const [idCardViewMode, setIdCardViewMode] = useState<'primary' | 'multicard'>('primary');
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
+  const planTheme = getPlanVisualTheme(user.chosenServiceCode, user.accountType);
   
   // NWI 3-Level Auto Tree State
   const [nwiTree, setNwiTree] = useState<NwiTreeRecord | null>(null);
@@ -776,10 +787,102 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
+  const dashboardMoreItems: MoreOptionItem[] = [
+    {
+      id: 'dash-gaming-guide',
+      label: 'Know & Enter Gaming (Same ID)',
+      subLabel: `Gaming ID: ${gamingId} · Room #${user.personalRoomId || user.roomAddress || 'Auto'}`,
+      icon: <Gamepad2 className="w-4 h-4 text-indigo-600" />,
+      badge: 'Same ID',
+      onClick: () => (onOpenKnowGaming ? onOpenKnowGaming() : onNavigateToTab?.('gaming-room')),
+    },
+    {
+      id: 'dash-upgrade-guide',
+      label: user.accountType === 'gamer' ? 'Upgrade Gaming ➔ Income (Same ID)' : 'Upgrade / Switch Plan (QR Popup)',
+      subLabel: 'SWI 3.3% App, NWI, OES — एक ही ID से अपग्रेड करें',
+      icon: <Zap className="w-4 h-4 text-[#fb641b]" />,
+      onClick: () => onOpenKnowIncome?.(),
+    },
+    {
+      id: 'dash-poster',
+      label: 'Promo Poster Studio',
+      subLabel: 'अपना बिज़नेस व शुभकामना HD पोस्टर बनाएं',
+      icon: <Sparkles className="w-4 h-4 text-pink-600" />,
+      onClick: () => setActiveTab('poster'),
+    },
+    {
+      id: 'dash-nwi',
+      label: 'NWI 3-Level Passive Tree',
+      subLabel: 'L1: 10% · L2: 15% · L3: 25% ऑटो पूल',
+      icon: <Trophy className="w-4 h-4 text-[#388e3c]" />,
+      onClick: () => setActiveTab('nwi_tree'),
+    },
+    {
+      id: 'dash-coins-ledger',
+      label: 'Coins Audit History',
+      subLabel: 'सभी कॉइन क्रेडिट व डेबिट का हिसाब',
+      icon: <Coins className="w-4 h-4 text-amber-600" />,
+      onClick: () => setActiveTab('coins_ledger'),
+    },
+    {
+      id: 'dash-complaints',
+      label: `Help & Complaints (${complaints.length})`,
+      subLabel: 'सपोर्ट टिकट दर्ज करें या स्थिति देखें',
+      icon: <BadgeAlert className="w-4 h-4 text-rose-600" />,
+      onClick: () => setActiveTab('complaints'),
+    },
+    {
+      id: 'dash-profile',
+      label: 'Profile, @Username & Privacy',
+      subLabel: 'प्रोफाइल, पासवर्ड व मोबाइल गोपनीयता सेटिंग्स',
+      icon: <UserIcon className="w-4 h-4 text-[#2874f0]" />,
+      onClick: () => setActiveTab('profile'),
+    },
+    {
+      id: 'dash-social-sheet',
+      label: 'ESP PLAY Social Profile Sheet',
+      subLabel: 'कवर फोटो, बायो और फ्रेम देखें',
+      icon: <Camera className="w-4 h-4 text-purple-600" />,
+      onClick: () => setProfileSheetOpen({ open: true, mode: 'view' }),
+    },
+    {
+      id: 'dash-devices',
+      label: `Multi-Device Sessions (${user.activeSessions?.length || 1}/4)`,
+      subLabel: 'लॉगिन किए गए सभी 4 डिवाइस प्रबंधित करें',
+      icon: <Monitor className="w-4 h-4 text-[#2874f0]" />,
+      onClick: () => setActiveTab('devices'),
+    },
+    {
+      id: 'dash-cloud-sync',
+      label: isSyncing ? 'Syncing Cloud...' : 'Cloud Sync (Google Firestore)',
+      subLabel: 'प्रोफाइल व वॉलेट डेटा क्लाउड में सुरक्षित करें',
+      icon: <RefreshCw className="w-4 h-4 text-[#388e3c]" />,
+      onClick: handleCloudSync,
+    },
+    {
+      id: 'dash-whatsapp',
+      label: 'Share Invite on WhatsApp',
+      subLabel: 'तुरंत व्हाट्सएप रेफरल संदेश भेजें',
+      icon: <Share2 className="w-4 h-4 text-[#388e3c]" />,
+      onClick: () => {
+        window.location.href = whatsappInviteUrl;
+      },
+    },
+    {
+      id: 'dash-portal',
+      label: 'Official Live Web Portal',
+      subLabel: 'playesp.github.io खोलें',
+      icon: <ExternalLink className="w-4 h-4 text-[#2874f0]" />,
+      onClick: () => {
+        window.location.href = 'https://playesp.github.io/';
+      },
+    },
+  ];
+
   return (
     <div className="space-y-5 py-4 pb-20 w-full overflow-x-hidden">
-      {/* ===================== FLIPKART TOP MEMBER HEADER ===================== */}
-      <div className="bg-[#2874f0] rounded-md p-4 sm:p-6 text-white shadow-xs space-y-5">
+      {/* ===================== PLAN-PERSONALIZED TOP MEMBER HEADER ===================== */}
+      <div className={`bg-gradient-to-r ${planTheme.heroGradient} rounded-xl p-4 sm:p-6 text-white shadow-sm space-y-4`}>
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <div className="relative group shrink-0">
@@ -791,7 +894,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 )}
               </div>
               <label
-                className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-[#ffe500] hover:bg-yellow-300 text-[#212121] shadow cursor-pointer transition border-2 border-[#2874f0]"
+                className="btn-3d absolute -bottom-1 -right-1 p-1.5 rounded-full bg-[#ffe500] hover:bg-yellow-300 text-[#212121] shadow cursor-pointer border-2 border-[#2874f0]"
                 title="फोटो अपलोड करें (Profile Photo Upload)"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -810,202 +913,151 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div className="space-y-1 text-center md:text-left">
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">{user.fullName}</h1>
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded uppercase ${planTheme.badgeClass}`}>
+                  {planTheme.icon} {planTheme.tierBadge}
+                </span>
                 {user.username && (
                   <span className="bg-cyan-400/20 text-[#ffe500] border border-cyan-300/40 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded">
                     @{user.username}
                   </span>
                 )}
-                <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2.5 py-0.5 rounded flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> VERIFIED MEMBER
+                <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> {user.status.toUpperCase()}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('profile')}
-                  className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2.5 py-0.5 rounded border border-white/30 flex items-center gap-1 cursor-pointer transition"
-                  title="प्रोफाइल टाइप बदलें या विवरण अपडेट करें"
-                >
-                  {user.accountType === 'gamer' ? (
-                    <>
-                      <Gamepad2 className="w-3 h-3 text-[#ffe500]" />
-                      <span>🎮 Gaming Profile</span>
-                    </>
-                  ) : (
-                    <>
-                      <Briefcase className="w-3 h-3 text-[#ffe500]" />
-                      <span>💼 Business Profile</span>
-                    </>
-                  )}
-                  <span className="underline ml-1 text-[#ffe500]">Edit</span>
-                </button>
               </div>
-              <p className="text-xs text-blue-100">
-                Plan: <strong className="text-[#ffe500]">{user.chosenServiceName} (₹{user.joiningFee})</strong> | Joined: {user.joiningDate}
+              <h1 className="text-fluid-title font-black text-white tracking-tight">{user.fullName}</h1>
+              <p className="text-xs text-white/90">
+                {planTheme.headline} · Joined: {user.joiningDate}
               </p>
-              <p className="text-[11px] text-blue-100">
-                EARNING SYSTEM PLATFORM (ESP) • ESP GAMING TIME
+              <p className="text-[11px] text-white/80">
+                {planTheme.hindiSubtitle}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center md:justify-end gap-1.5 sm:gap-2">
-            {user.accountType === 'gamer' && onNavigateToTab && (
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('gaming-room')}
-                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
-              >
-                <Gamepad2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span>Back to Game Setup</span>
-              </button>
+          {/* ONLY ESSENTIAL PRIMARY ACTION BUTTONS + MORE POPUP */}
+          <div className="flex flex-wrap items-center justify-center md:justify-end gap-2">
+            {user.accountType === 'gamer' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onNavigateToTab?.('gaming-room')}
+                  className="btn-3d bg-white text-[#2874f0] hover:bg-blue-50 px-3.5 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Gamepad2 className="w-4 h-4" />
+                  <span>Gaming Room</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenKnowIncome?.()}
+                  className="btn-3d bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Zap className="w-4 h-4 text-[#ffe500]" />
+                  <span>Upgrade Same ID</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => (onOpenKnowGaming ? onOpenKnowGaming() : onNavigateToTab?.('gaming-room'))}
+                  className="btn-3d bg-white text-[#2874f0] hover:bg-blue-50 px-3.5 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Gamepad2 className="w-4 h-4 text-[#fb641b]" />
+                  <span>Gaming (Same ID)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenKnowIncome?.()}
+                  className="btn-3d bg-[#fb641b] hover:bg-[#e8550f] text-white px-3.5 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Zap className="w-4 h-4 text-[#ffe500]" />
+                  <span>Upgrade Plan</span>
+                </button>
+              </>
             )}
+
             <button
+              type="button"
               onClick={() => onOpenBuyCoins?.()}
-              className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
-              title="रियल UPI से कॉइन्स खरीदें"
+              className="btn-3d bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <span>🪙 {(user.coins || 0).toLocaleString()} • Buy Coins</span>
+              <span>🪙 {(user.coins || 0).toLocaleString()}</span>
             </button>
 
             <button
+              type="button"
               onClick={handleShareReferralLink}
-              className="bg-[#fb641b] hover:bg-[#e5530d] text-white px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+              className="btn-3d bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Share Link</span>
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
             </button>
 
             <button
-              onClick={() => setProfileSheetOpen({ open: true, mode: 'view' })}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
-              title="कवर फोटो, यूनिक @Username और सोशल प्रोफाइल खोलें"
+              type="button"
+              onClick={() => setMoreToolsOpen(true)}
+              className="btn-3d bg-white/15 hover:bg-white/25 text-white border border-white/30 px-3 py-2 min-h-[38px] rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <UserIcon className="w-3.5 h-3.5 text-[#ffe500] shrink-0" />
-              <span>ESP PLAY Profile</span>
-            </button>
-
-            <button
-              onClick={() => onNavigateToTab?.('gaming-room')}
-              className="bg-white text-[#2874f0] hover:bg-blue-50 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
-            >
-              <span>🎮 GAMING TIME</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('idcard')}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <Award className="w-3.5 h-3.5 text-[#ffe500] shrink-0" />
-              <span>My ID Card</span>
-            </button>
-
-            <a
-              href={whatsappInviteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-[#388e3c] hover:bg-emerald-700 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span>WhatsApp</span>
-            </a>
-
-            <button
-              onClick={handleCloudSync}
-              disabled={isSyncing}
-              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 sm:px-3 py-1.5 sm:py-2 min-h-[36px] rounded-sm text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 cursor-pointer disabled:opacity-60 whitespace-nowrap"
-              title="Google से Firestore Cloud पर डेटा सिंक करें"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-[#ffe500] shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing...' : 'Cloud Sync'}</span>
+              <Grid className="w-3.5 h-3.5 text-[#ffe500]" />
+              <span>⋯ More</span>
             </button>
           </div>
         </div>
 
-        {/* Dual ID Architecture Cards */}
+        {/* Unified Single-ID Architecture Display */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-white/20">
-          <div className="bg-white rounded-md p-3.5 text-[#212121] flex flex-col justify-between space-y-2 shadow-2xs">
+          <div className="bg-white rounded-lg p-3.5 text-[#212121] flex flex-col justify-between space-y-1.5 shadow-2xs">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center space-x-1.5">
                   <span className="bg-[#388e3c] text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-                    ESP ID
+                    MAIN ESP ID
                   </span>
-                  <span className="text-[11px] font-bold text-[#388e3c]">Earning &amp; Sponsor ID</span>
+                  <span className="text-[11px] font-bold text-[#388e3c]">{planTheme.highlightMetricLabel}: {planTheme.highlightMetricValue}</span>
                 </div>
-                <p className="text-lg sm:text-xl font-black font-mono text-[#212121] tracking-wider pt-1 select-all break-all">
+                <p className="text-lg font-black font-mono text-[#212121] tracking-wider pt-0.5 select-all break-all">
                   {user.userId}
                 </p>
               </div>
               <button
                 onClick={handleCopyEspId}
-                className="px-2.5 py-1.5 rounded text-xs font-bold bg-[#f5f8ff] hover:bg-blue-50 text-[#2874f0] border border-blue-200 transition flex items-center space-x-1 cursor-pointer shrink-0"
+                className="btn-3d px-2.5 py-1.5 rounded text-xs font-bold bg-[#f5f8ff] hover:bg-blue-50 text-[#2874f0] border border-blue-200 flex items-center space-x-1 cursor-pointer shrink-0"
               >
                 {copiedEspId ? <Check className="w-3.5 h-3.5 text-[#388e3c]" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedEspId ? 'Copied!' : 'Copy ESP ID'}</span>
+                <span>{copiedEspId ? 'Copied!' : 'Copy'}</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-600">
-              10 अर्निंग सर्विसेज, स्पॉन्सर रेफरल लिंक, डाउनलाइन टीम और बैंक/UPI पेआउट के लिए उपयोगी।
+              10 अर्निंग सर्विसेज, रेफरल लिंक व UPI निकासी — सभी इसी स्थायी ID से चलते हैं।
             </p>
           </div>
 
-          <div className="bg-white rounded-md p-3.5 text-[#212121] flex flex-col justify-between space-y-2 shadow-2xs">
+          <div className="bg-white rounded-lg p-3.5 text-[#212121] flex flex-col justify-between space-y-1.5 shadow-2xs">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center space-x-1.5">
                   <span className="bg-[#2874f0] text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-                    GAMING ID
+                    LINKED GAMING ID
                   </span>
-                  <span className="text-[11px] font-bold text-[#2874f0]">ESP Gaming Time &amp; Club</span>
+                  <span className="text-[11px] font-bold text-[#2874f0]">Room #{user.personalRoomId || user.roomAddress || '10001'}</span>
                 </div>
-                <p className="text-lg sm:text-xl font-black font-mono text-[#2874f0] tracking-wider pt-1 select-all break-all">
+                <p className="text-lg font-black font-mono text-[#2874f0] tracking-wider pt-0.5 select-all break-all">
                   {gamingId}
                 </p>
               </div>
               <button
                 onClick={handleCopyGamingId}
-                className="px-2.5 py-1.5 rounded text-xs font-bold bg-[#f5f8ff] hover:bg-blue-50 text-[#2874f0] border border-blue-200 transition flex items-center space-x-1 cursor-pointer shrink-0"
+                className="btn-3d px-2.5 py-1.5 rounded text-xs font-bold bg-[#f5f8ff] hover:bg-blue-50 text-[#2874f0] border border-blue-200 flex items-center space-x-1 cursor-pointer shrink-0"
               >
                 {copiedGamingId ? <Check className="w-3.5 h-3.5 text-[#388e3c]" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedGamingId ? 'Copied!' : 'Copy Gaming ID'}</span>
+                <span>{copiedGamingId ? 'Copied!' : 'Copy'}</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-600">
-              ESP PLAY वॉइस स्टेज सीट, कॉइन गेम्स (लूडो, डाइस, कार्ड), गिफ्ट्स और चार्म्स के लिए उपयोगी।
+              वॉइस रूम, 12+ गेम्स व डेली कॉइन्स — आपके इसी अकाउंट से स्वतः सिंक हैं।
             </p>
           </div>
-        </div>
-
-        {/* Dual Hub Switcher */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div className="bg-white/15 p-1 rounded flex flex-wrap items-center gap-1">
-            <button
-              onClick={() => { setDashboardHubMode('earning'); setActiveTab('overview'); }}
-              className={`px-3.5 py-1.5 rounded text-xs font-bold transition cursor-pointer ${
-                dashboardHubMode === 'earning' ? 'bg-white text-[#2874f0] shadow-xs' : 'text-white hover:bg-white/10'
-              }`}
-            >
-              🎓 ESP Student Hub
-            </button>
-            <button
-              onClick={() => { setDashboardHubMode('gaming'); onNavigateToTab?.('gaming-room'); }}
-              className={`px-3.5 py-1.5 rounded text-xs font-bold transition cursor-pointer ${
-                dashboardHubMode === 'gaming' ? 'bg-white text-[#2874f0] shadow-xs' : 'text-white hover:bg-white/10'
-              }`}
-            >
-              🎮 ESP Gaming Time
-            </button>
-          </div>
-
-          <a
-            href="https://ioisplatform.github.io/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-[#ffe500] hover:bg-yellow-300 text-[#212121] px-3.5 py-1.5 rounded-sm text-xs font-extrabold transition shadow-xs inline-flex items-center space-x-1 cursor-pointer"
-          >
-            <span>🌐 ऑफिशियल पोर्टल</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
         </div>
       </div>
 
@@ -1110,34 +1162,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="bg-white border border-slate-200 rounded-md p-1.5 sm:p-2 flex overflow-x-auto gap-1.5 text-[11px] sm:text-xs font-bold no-scrollbar shadow-2xs">
+      {/* Clean Essential Tabs Navigation + More Tools Popup */}
+      <div className="bg-white border border-slate-200 rounded-xl p-2 flex overflow-x-auto items-center gap-1.5 text-[11px] sm:text-xs font-bold no-scrollbar shadow-2xs">
         {[
           { id: 'overview', label: 'Overview' },
-          { id: 'idcard', label: 'My Verified ID Card' },
-          { id: 'poster', label: 'Promo Posters' },
+          { id: 'idcard', label: 'My ID Card' },
           { id: 'referrals', label: `My Team (${referrals.length})` },
-          { id: 'nwi_tree', label: 'NWI 3-Level टीम' },
-          { id: 'wallet', label: 'Wallet & Payouts' },
-          { id: 'transactions', label: 'Transaction History (UTR)' },
-          { id: 'coins_ledger', label: 'Coins Audit History' },
-          { id: 'complaints', label: `Help & Complaints (${complaints.length})` },
-          { id: 'profile', label: 'Profile & Privacy' },
-          { id: 'devices', label: `Devices (${user.activeSessions?.length || 1}/4)` },
+          { id: 'wallet', label: 'Wallet & UPI' },
+          { id: 'transactions', label: 'UTR History' },
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-3 py-2 min-h-[36px] rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`btn-3d px-3 py-2 min-h-[36px] rounded-lg cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === tab.id
-                ? 'bg-[#2874f0] text-white font-extrabold shadow-2xs'
-                : 'text-slate-600 hover:text-[#212121] hover:bg-slate-100'
+                ? 'bg-[#2874f0] text-white font-extrabold'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
             }`}
           >
             {tab.label}
           </button>
         ))}
+
+        <button
+          type="button"
+          onClick={() => setMoreToolsOpen(true)}
+          className={`btn-3d px-3 py-2 min-h-[36px] rounded-lg cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
+            ['poster', 'nwi_tree', 'coins_ledger', 'complaints', 'profile', 'devices'].includes(activeTab)
+              ? 'bg-[#fb641b] text-white font-extrabold'
+              : 'bg-[#ffe500] text-[#212121] font-extrabold'
+          }`}
+        >
+          <Grid className="w-3.5 h-3.5" />
+          <span>
+            {['poster', 'nwi_tree', 'coins_ledger', 'complaints', 'profile', 'devices'].includes(activeTab)
+              ? `⋯ ${activeTab.replace('_', ' ').toUpperCase()}`
+              : '⋯ More Tools'}
+          </span>
+        </button>
       </div>
+
+      {/* Free Gamer Same-ID Upgrade Callout Banner (Only when gamer enters Earning Dashboard) */}
+      {user.accountType === 'gamer' && (
+        <div className="rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-[#fb641b]/40 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="space-y-0.5 text-center sm:text-left">
+            <h3 className="text-sm font-black text-[#212121] flex items-center justify-center sm:justify-start gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#fb641b]" />
+              <span>आप अभी Free Gaming Mode में हैं — Same ID ({user.userId}) से Earning शुरू करें!</span>
+            </h3>
+            <p className="text-xs text-slate-700">
+              कोई दूसरी ID बनाने की जरूरत नहीं है। सिर्फ ₹10+ प्लान चुनें और एडमिन वेरिफिकेशन के बाद आपकी यही ID पूर्ण बिज़नेस अकाउंट में बदल जाएगी।
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenKnowIncome?.()}
+            className="btn-3d px-4 py-2.5 rounded-lg bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span>Know Income &amp; Upgrade</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* ===================== TAB 1: OVERVIEW ===================== */}
       {activeTab === 'overview' && (
@@ -3499,6 +3585,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         onCancel={() => setPhotoCropState(prev => ({ ...prev, open: false }))}
         onConfirm={handleConfirmDashboardPhotoCrop}
         onChangeFile={(newFile) => handleDirectAvatarUpload(newFile, photoCropState.kind)}
+      />
+
+      <MoreOptionsPopupModal
+        isOpen={moreToolsOpen}
+        onClose={() => setMoreToolsOpen(false)}
+        title="Dashboard · More Tools & Systems"
+        subtitle={`${planTheme.code} · Same ID (${user.userId})`}
+        items={dashboardMoreItems}
       />
     </div>
   );

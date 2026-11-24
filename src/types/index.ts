@@ -329,15 +329,31 @@ export interface PlanUpgradeRequest {
   id: string;
   userId: string;
   userName: string;
+  fromAccountType?: 'business' | 'gamer';
+  upgradeType?: 'plan_upgrade' | 'gamer_to_business';
   fromServiceCode: string;
   fromFee: number;
   targetServiceCode: string;
   targetServiceName: string;
   upgradeFee: number;
   paymentUtr: string;
+  paymentScreenshot?: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   processedAt?: string;
+}
+
+export interface PublicSponsorPreview {
+  valid: boolean;
+  sponsorId: string;
+  sponsorUsername?: string;
+  sponsorName: string;
+  chosenServiceCode?: string;
+  chosenServiceName?: string;
+  vipTier?: string;
+  avatar?: string;
+  gameLevel?: number;
+  isOwner?: boolean;
 }
 
 export interface NwiMemberNode {

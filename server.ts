@@ -1718,6 +1718,58 @@ app.get('/api/sponsor/check', (req, res) => {
   });
 });
 
+// 3b. Public Non-PII Sponsor Preview for Referral Link Visitors (?ref=SPONSOR)
+app.get('/api/public/sponsor/:sponsorRef', (req, res) => {
+  const sponsorRef = String(req.params.sponsorRef || '').trim();
+  const owner = db.users.find(u => u.userId === db.settings.ownerSponsorId);
+  if (!sponsorRef || sponsorRef.toUpperCase() === db.settings.ownerSponsorId.toUpperCase()) {
+    return res.json({
+      success: true,
+      valid: true,
+      sponsorId: db.settings.ownerSponsorId,
+      sponsorUsername: owner?.username || '',
+      sponsorName: db.settings.ownerName,
+      chosenServiceCode: owner?.chosenServiceCode || 'EMO',
+      chosenServiceName: owner?.chosenServiceName || 'EARN MONEY ONLINE (EMO)',
+      vipTier: owner?.vipTier || 'diamond',
+      avatar: owner?.avatar || '',
+      gameLevel: owner?.gameLevel || 1,
+      isOwner: true,
+    });
+  }
+
+  const found = findUserBySponsorRef(db.users, sponsorRef);
+  if (found) {
+    return res.json({
+      success: true,
+      valid: true,
+      sponsorId: found.userId,
+      sponsorUsername: found.username || '',
+      sponsorName: found.fullName,
+      chosenServiceCode: found.chosenServiceCode || 'EMO',
+      chosenServiceName: found.chosenServiceName || 'EARN MONEY ONLINE (EMO)',
+      vipTier: found.vipTier || 'none',
+      avatar: found.avatar || '',
+      gameLevel: found.gameLevel || 1,
+      isOwner: found.userId === db.settings.ownerSponsorId,
+    });
+  }
+
+  return res.json({
+    success: true,
+    valid: false,
+    sponsorId: db.settings.ownerSponsorId,
+    sponsorUsername: owner?.username || '',
+    sponsorName: db.settings.ownerName,
+    chosenServiceCode: owner?.chosenServiceCode || 'EMO',
+    chosenServiceName: owner?.chosenServiceName || 'EARN MONEY ONLINE (EMO)',
+    vipTier: owner?.vipTier || 'diamond',
+    avatar: owner?.avatar || '',
+    gameLevel: owner?.gameLevel || 1,
+    isOwner: true,
+  });
+});
+
 function normalizePhoneDigits(phoneRaw: string): string {
   const digits = String(phoneRaw || '').replace(/\D/g, '');
   if (digits.length >= 10) return digits.slice(-10);
@@ -3780,10 +3832,10 @@ app.post('/api/admin/users/:userId/share-swi-app', (req, res) => {
   });
 });
 
-// Self Plan Upgrade Workflow (REFER & All Active Users - ₹100+)
+// Self Plan Upgrade & Same-ID Cross-Mode Conversion (Free Gaming -> Income OR Plan Upgrade)
 app.post('/api/users/upgrade-plan', (req, res) => {
-  const { userId, targetServiceCode, upgradeFee, paymentUtr } = req.body;
-  if (!userId || !targetServiceCode || !upgradeFee || !paymentUtr) {
+  const { userId, targetServiceCode, upgradeFee, paymentUtr, paymentScreenshot, upgradeType } = req.body || {};
+  if (!userId || !targetServiceCode || upgradeFee === undefined || !paymentUtr) {
     return res.status(400).json({ success: false, message: 'कृपया प्लान, अपग्रेड राशि और 12 अंकों का UTR नंबर भरें' });
   }
 
@@ -3792,17 +3844,37 @@ app.post('/api/users/upgrade-plan', (req, res) => {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const srv = db.services.find(s => s.code === targetServiceCode) || db.services[0];
+  const srv = db.services.find(s => s.code === String(targetServiceCode).toUpperCase()) || db.services[0];
+  const isGamerConversion = user.accountType === 'gamer' || upgradeType === 'gamer_to_business';
+  const minAllowedFee = isGamerConversion ? Math.max(10, srv?.defaultFee ? Math.min(10, srv.defaultFee) : 10) : 100;
+  const numericFee = Number(upgradeFee) || srv.defaultFee || 100;
+  if (numericFee < minAllowedFee) {
+    return res.status(400).json({
+      success: false,
+      message: `इस प्लान के लिए न्यूनतम अपग्रेड राशि ₹${minAllowedFee} है।`,
+    });
+  }
+
+  const cleanUtr = String(paymentUtr).trim();
+  if (cleanUtr.length < 6) {
+    return res.status(400).json({ success: false, message: 'कृपया मान्य UPI UTR नंबर दर्ज करें (कम से कम 6 अक्षर)।' });
+  }
+
   const reqItem: PlanUpgradeRequest = {
     id: `UPG-${Date.now().toString().slice(-6)}`,
     userId: user.userId,
     userName: user.fullName,
-    fromServiceCode: user.chosenServiceCode,
-    fromFee: user.joiningFee || 10,
+    fromAccountType: user.accountType || 'business',
+    upgradeType: isGamerConversion ? 'gamer_to_business' : 'plan_upgrade',
+    fromServiceCode: user.chosenServiceCode || (user.accountType === 'gamer' ? 'GAME' : 'EMO'),
+    fromFee: user.joiningFee || 0,
     targetServiceCode: srv.code,
     targetServiceName: srv.name,
-    upgradeFee: Number(upgradeFee) || 100,
-    paymentUtr: String(paymentUtr).trim(),
+    upgradeFee: numericFee,
+    paymentUtr: cleanUtr,
+    paymentScreenshot: typeof paymentScreenshot === 'string' && paymentScreenshot.startsWith('data:image/')
+      ? paymentScreenshot.slice(0, 600000)
+      : undefined,
     status: 'pending',
     createdAt: new Date().toISOString(),
   };
@@ -3813,8 +3885,10 @@ app.post('/api/users/upgrade-plan', (req, res) => {
   db.notifications.unshift({
     id: `notif-upg-${Date.now()}`,
     userId: user.userId,
-    title: '⏳ प्लान अपग्रेड अनुरोध सबमिट हुआ',
-    message: `आपका ${srv.code} (₹${reqItem.upgradeFee}) अपग्रेड अनुरोध (UTR: ${reqItem.paymentUtr}) एडमिन सत्यापन के लिए भेजा गया है।`,
+    title: isGamerConversion ? '🚀 Same-ID Earning Upgrade सबमिट हुआ' : '⏳ प्लान अपग्रेड अनुरोध सबमिट हुआ',
+    message: isGamerConversion
+      ? `आपकी वही ID (${user.userId}) पर ${srv.code} (₹${reqItem.upgradeFee}) अर्निंग एक्टिवेशन (UTR: ${reqItem.paymentUtr}) एडमिन सत्यापन के लिए भेजा गया है।`
+      : `आपका ${srv.code} (₹${reqItem.upgradeFee}) अपग्रेड अनुरोध (UTR: ${reqItem.paymentUtr}) एडमिन सत्यापन के लिए भेजा गया है।`,
     date: new Date().toISOString(),
     read: false,
     type: 'system',
@@ -3823,7 +3897,9 @@ app.post('/api/users/upgrade-plan', (req, res) => {
   saveDatabase(db);
   res.json({
     success: true,
-    message: 'प्लान अपग्रेड अनुरोध सफलतापूर्वक सबमिट हो गया! एडमिन वेरिफाई होते ही नया प्लान सक्रिय होगा।',
+    message: isGamerConversion
+      ? `🎉 आपकी वही ID (${user.userId}) के लिए ${srv.code} (₹${reqItem.upgradeFee}) अपग्रेड अनुरोध एडमिन को भेजा गया! सत्यापन के बाद नया अकाउंट बनाए बिना आपकी आय सेवा शुरू हो जाएगी।`
+      : 'प्लान अपग्रेड अनुरोध सफलतापूर्वक सबमिट हो गया! एडमिन वेरिफाई होते ही नया प्लान सक्रिय होगा।',
     request: reqItem,
   });
 });
@@ -3858,9 +3934,15 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
 
   const user = db.users.find(u => u.userId === upg.userId);
   if (user && upg.status === 'approved') {
+    const wasGamer = user.accountType === 'gamer' || upg.upgradeType === 'gamer_to_business';
+    // Preserve exact userId, gamingId, personalRoomId, roomAddress, sponsorId, username (ZERO new IDs created)
+    user.accountType = 'business';
+    user.status = 'active';
+    user.verifiedAt = user.verifiedAt || new Date().toISOString();
     user.chosenServiceCode = upg.targetServiceCode;
     user.chosenServiceName = upg.targetServiceName;
     user.joiningFee = upg.upgradeFee;
+    user.paymentUtr = upg.paymentUtr || user.paymentUtr;
 
     if (upg.targetServiceCode === 'SWI' && !user.swiAppLink && db.settings.swiSpecialAppLink) {
       user.swiAppLink = db.settings.swiSpecialAppLink;
@@ -3868,7 +3950,7 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
       user.swiAppNote = '3.3% स्पेशल रिचार्ज ऐप लिंक अपग्रेड पर सक्रिय किया गया।';
     }
 
-    // Credit 50% upgrade commission to direct sponsor
+    // Credit 50% upgrade/activation commission to direct sponsor
     if (user.sponsorId && user.sponsorId !== 'FOUNDER') {
       const sponsor = db.users.find(u => u.userId === user.sponsorId);
       if (sponsor) {
@@ -3876,12 +3958,30 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
         sponsor.balance += upgComm;
         sponsor.totalEarnings += upgComm;
         sponsor.referralEarnings += upgComm;
+
+        if (wasGamer && !db.referrals.some(r => r.downlineUserId === user.userId && r.status === 'credited')) {
+          db.referrals.unshift({
+            id: `ref-upg-${Date.now()}`,
+            sponsorUserId: sponsor.userId,
+            downlineUserId: user.userId,
+            downlineName: user.fullName,
+            downlinePhone: user.phone || '',
+            serviceCode: upg.targetServiceCode,
+            joiningFee: upg.upgradeFee,
+            commissionAmount: upgComm,
+            status: 'credited',
+            date: new Date().toISOString().split('T')[0],
+          });
+        }
+
         db.transactions.unshift({
           id: `tx-upg-${Date.now()}`,
           userId: sponsor.userId,
           amount: upgComm,
           type: 'plan_upgrade',
-          description: `50% Plan Upgrade Commission from ${user.fullName} (${upg.targetServiceCode} ₹${upg.upgradeFee})`,
+          description: wasGamer
+            ? `50% Same-ID Gaming->Income Commission from ${user.fullName} (${upg.targetServiceCode} ₹${upg.upgradeFee})`
+            : `50% Plan Upgrade Commission from ${user.fullName} (${upg.targetServiceCode} ₹${upg.upgradeFee})`,
           date: new Date().toISOString(),
           status: 'completed',
           referenceId: upg.id,
@@ -3890,7 +3990,7 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
           id: `notif-upg-sp-${Date.now()}`,
           userId: sponsor.userId,
           title: '🚀 प्लान अपग्रेड कमीशन प्राप्त!',
-          message: `आपके साथी ${user.fullName} ने ₹${upg.upgradeFee} में प्लान अपग्रेड किया — ₹${upgComm} (50%) आपके वॉलेट में जुड़े!`,
+          message: `आपके साथी ${user.fullName} ने ₹${upg.upgradeFee} में ${upg.targetServiceCode} सक्रिय किया — ₹${upgComm} (50%) आपके वॉलेट में जुड़े!`,
           date: new Date().toISOString(),
           read: false,
           type: 'referral',
@@ -3901,8 +4001,20 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
     db.notifications.unshift({
       id: `notif-upg-ok-${Date.now()}`,
       userId: user.userId,
-      title: '🎉 आपका प्लान अपग्रेड हो गया!',
-      message: `बधाई हो! आपका नया प्लान ${upg.targetServiceCode} (₹${upg.upgradeFee}) अब सक्रिय है।`,
+      title: wasGamer ? '🎉 आपकी Same-ID पर ESP Income सक्रिय हुई!' : '🎉 आपका प्लान अपग्रेड हो गया!',
+      message: wasGamer
+        ? `बधाई हो! आपकी वही ID (${user.userId}) अब ${upg.targetServiceCode} (₹${upg.upgradeFee}) के लिए वेरिफाइड हो गई है — गेमिंग व अर्निंग दोनों एक ही ID से चलेंगे!`
+        : `बधाई हो! आपका नया प्लान ${upg.targetServiceCode} (₹${upg.upgradeFee}) अब सक्रिय है।`,
+      date: new Date().toISOString(),
+      read: false,
+      type: 'system',
+    });
+  } else if (user && upg.status === 'rejected') {
+    db.notifications.unshift({
+      id: `notif-upg-rej-${Date.now()}`,
+      userId: user.userId,
+      title: '⚠️ अपग्रेड अनुरोध अस्वीकृत',
+      message: `आपका ${upg.targetServiceCode} (₹${upg.upgradeFee}, UTR: ${upg.paymentUtr}) अपग्रेड अनुरोध एडमिन द्वारा सत्यापित नहीं हो सका। कृपया सही UTR के साथ पुनः प्रयास करें।`,
       date: new Date().toISOString(),
       read: false,
       type: 'system',
@@ -3910,7 +4022,7 @@ app.post('/api/admin/upgrades/:upgradeId/status', (req, res) => {
   }
 
   saveDatabase(db);
-  res.json({ success: true, message: `Upgrade request ${upg.status}.`, upgrade: upg });
+  res.json({ success: true, message: `Upgrade request ${upg.status}.`, upgrade: upg, user });
 });
 
 app.post('/api/admin/payouts/:payoutId/approve', (req, res) => {

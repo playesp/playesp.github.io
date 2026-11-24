@@ -122,7 +122,8 @@
       "claimedFamilyTaskIds": [],
       "claimedGrowthTaskIds": [],
       "username": "santoshkumar01",
-      "maxDevices": 4
+      "maxDevices": 4,
+      "registeredFromHost": "playesp.github.io"
     },
     {
       "id": "usr-rahul",
@@ -1859,6 +1860,112 @@
       "claimedActivenessChests": [],
       "claimedFamilyTaskIds": [],
       "claimedGrowthTaskIds": [],
+      "maxDevices": 4
+    },
+    {
+      "id": "usr-1795504729302",
+      "userId": "ESPGTRA01",
+      "gamingId": "ESPGTRA01",
+      "username": "rainaksh02",
+      "fullName": "RAINAKSH",
+      "phone": "9999999999",
+      "email": "9999999999@espgaming.club",
+      "fullAddress": "",
+      "paymentAddress": "",
+      "payoutUpiId": "",
+      "password": "123456",
+      "sponsorId": "EMO-MOM-MMO",
+      "sponsorName": "SANTOSH KUMAR",
+      "chosenServiceCode": "GAME",
+      "chosenServiceName": "ESP GAMING & VOICE CLUB",
+      "joiningFee": 0,
+      "joiningDate": "2026-11-24",
+      "paymentUtr": "FREE_GAMING_USER",
+      "paymentScreenshot": "",
+      "status": "active",
+      "accountType": "gamer",
+      "balance": 0,
+      "totalEarnings": 0,
+      "referralEarnings": 0,
+      "promoEarnings": 0,
+      "totalWithdrawn": 0,
+      "coins": 15,
+      "charms": 0,
+      "gameLevel": 1,
+      "gameXp": 0,
+      "vipTier": "none",
+      "vipTitle": "",
+      "unlockedFrames": [
+        "standard"
+      ],
+      "frameType": "standard",
+      "unlockedRooms": [
+        "default_dark"
+      ],
+      "roomTheme": "default_dark",
+      "taskProgress": {},
+      "taskProgressDate": "2026-11-24",
+      "claimedTaskIds": [],
+      "claimedChestMilestones": [],
+      "tasksCompletedCount": 0,
+      "roomAddress": "10016",
+      "personalRoomId": "10016",
+      "followedRooms": [],
+      "houseName": "House of RAINAKSH",
+      "clanName": "Royal Warriors ESP",
+      "clanRole": "Member",
+      "loginStreak": 0,
+      "claimedDays": [],
+      "friendsCount": 0,
+      "visitorCount": 0,
+      "privacySettings": {
+        "showPhone": false,
+        "showEmail": false,
+        "showAddress": false
+      },
+      "activeSessions": [],
+      "terminatedTokens": [],
+      "initialFormData": {
+        "fullName": "RAINAKSH",
+        "phone": "9999999999",
+        "email": "9999999999@espgaming.club",
+        "fullAddress": "",
+        "paymentAddress": "",
+        "chosenServiceCode": "GAME",
+        "joiningFee": 0,
+        "joiningDate": "2026-11-24",
+        "paymentUtr": "FREE_GAMING_USER",
+        "paymentScreenshot": ""
+      },
+      "editHistory": [],
+      "role": "member",
+      "registeredFromHost": "playesp.github.io",
+      "createdAt": "2026-11-24T07:18:49.303Z",
+      "lastLogin": "2026-11-24T07:18:49.303Z",
+      "friendsList": [],
+      "receivedGifts": {},
+      "daysPlayed": [],
+      "totalDaysPlayed": 0,
+      "totalGamesPlayed": 0,
+      "totalGamesWon": 0,
+      "totalGamesLost": 0,
+      "totalCoinsWon": 0,
+      "totalCoinsSpent": 0,
+      "totalOnlineMinutes": 0,
+      "isOnline": false,
+      "ownedRelationshipTokens": [],
+      "activeRelationships": [],
+      "familyId": "",
+      "familyRole": "Member",
+      "familyCoinsContributed": 0,
+      "unlockedRoomTiers": [
+        "normal"
+      ],
+      "claimedEventIds": [],
+      "todayActiveness": 0,
+      "claimedActivenessChests": [],
+      "claimedGrowthTaskIds": [],
+      "claimedFamilyTaskIds": [],
       "maxDevices": 4
     }
   ],
@@ -5629,6 +5736,103 @@
       "audience": [
         "ESPGTSB03"
       ]
+    },
+    {
+      "id": "roompersonalespgtra01",
+      "title": "RAINAKSH's Voice Room",
+      "topic": "Welcome to RAINAKSH's Personal Fixed Voice Room",
+      "category": "gaming",
+      "roomAddress": "10016",
+      "roomNumber": "10016",
+      "isPersonalFixed": true,
+      "isVipRoom": false,
+      "vipRoomLabel": "",
+      "hostUserId": "ESPGTRA01",
+      "hostName": "RAINAKSH",
+      "hostUsername": "rainaksh02",
+      "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ESPGTRA01",
+      "hostLevel": 1,
+      "hostCharms": 0,
+      "wallpaperId": "castle_night",
+      "customWallpaperUrl": "",
+      "stageLayout": "classic_8",
+      "youtubeVideoUrl": "",
+      "youtubeVideoTitle": "",
+      "lockedSeats": [],
+      "followers": [],
+      "roomCharms": 0,
+      "createdAt": "2026-11-24T07:18:49.303Z",
+      "seats": [
+        {
+          "seatNumber": 1,
+          "seatNumberLabel": "1",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 2,
+          "seatNumberLabel": "2",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 3,
+          "seatNumberLabel": "3",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 4,
+          "seatNumberLabel": "4",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 5,
+          "seatNumberLabel": "5",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 6,
+          "seatNumberLabel": "6",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 7,
+          "seatNumberLabel": "7",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        },
+        {
+          "seatNumber": 8,
+          "seatNumberLabel": "8",
+          "isMuted": false,
+          "isSpeaking": false,
+          "charms": 0
+        }
+      ],
+      "chatMessages": [
+        {
+          "id": "msg-init-espgtra01",
+          "senderId": "SYSTEM",
+          "sender": "System",
+          "senderRoll": "STAGE",
+          "text": "🔔 System: RAINAKSH's personal fixed room (ID: 10016) is live! Invite friends to join & follow.",
+          "time": "Live"
+        }
+      ],
+      "audience": [
+        "ESPGTRA01"
+      ]
     }
   ],
   "services": [
@@ -6137,7 +6341,7 @@
       "os": "Windows PC",
       "ipAddress": "2001:4490:4021:8002:8118:8089:1850:e34",
       "loginTime": "2026-11-24T08:19:50.703Z",
-      "lastActive": "2026-11-24T08:34:25.736Z"
+      "lastActive": "2026-11-24T08:55:19.021Z"
     }
   ],
   "terminatedAdminTokens": []

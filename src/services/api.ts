@@ -352,6 +352,21 @@ export const api = {
     return await res.json();
   },
 
+  async getPublicSponsorPreview(sponsorRef: string): Promise<import('../types/index.ts').PublicSponsorPreview> {
+    try {
+      const res = await apiFetch(`/api/public/sponsor/${encodeURIComponent(sponsorRef)}`);
+      return await res.json();
+    } catch {
+      return {
+        valid: false,
+        sponsorId: 'EMO-MOM-MMO',
+        sponsorName: 'SANTOSH KUMAR',
+        chosenServiceCode: 'EMO',
+        isOwner: true,
+      };
+    }
+  },
+
   async register(formData: any) {
     const deviceInfo = detectClientDevice();
     const currentHost =
@@ -2186,17 +2201,25 @@ export const api = {
     return await res.json();
   },
 
-  // ---------------- REFER Self Plan Upgrade (₹100+) ----------------
+  // ---------------- REFER Self Plan Upgrade & Same-ID Gamer->Business Upgrade ----------------
   async submitPlanUpgrade(
     userId: string,
     targetServiceCode: string,
     upgradeFee: number,
-    paymentUtr: string
+    paymentUtr: string,
+    opts?: { paymentScreenshot?: string; upgradeType?: 'plan_upgrade' | 'gamer_to_business' }
   ): Promise<{ success: boolean; message: string; request?: PlanUpgradeRequest }> {
     const res = await apiFetch('/api/users/upgrade-plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, targetServiceCode, upgradeFee, paymentUtr }),
+      body: JSON.stringify({
+        userId,
+        targetServiceCode,
+        upgradeFee,
+        paymentUtr,
+        paymentScreenshot: opts?.paymentScreenshot,
+        upgradeType: opts?.upgradeType,
+      }),
     });
     return await res.json();
   },
@@ -2214,7 +2237,7 @@ export const api = {
     upgradeId: string,
     status: 'approved' | 'rejected',
     adminPassword: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; user?: UserProfile }> {
     const res = await apiFetch(`/api/admin/upgrades/${encodeURIComponent(upgradeId)}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

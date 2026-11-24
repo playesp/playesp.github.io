@@ -1,0 +1,191 @@
+export interface PlanVisualTheme {
+  code: string;
+  tierBadge: string;
+  headline: string;
+  hindiSubtitle: string;
+  heroGradient: string;
+  accentBg: string;
+  accentText: string;
+  accentBorder: string;
+  badgeClass: string;
+  highlightMetricLabel: string;
+  highlightMetricValue: string;
+  primaryActionLabel: string;
+  icon: string;
+}
+
+const PLAN_THEMES: Record<string, PlanVisualTheme> = {
+  EMO: {
+    code: 'EMO',
+    tierBadge: 'STARTER DIRECT TIER · ₹10+',
+    headline: 'Earn Money Online (EMO) Control Hub',
+    hindiSubtitle: 'मात्र ₹10 से शुरुआत · डायरेक्ट स्पॉन्सर 40%–50% आय और तुरंत UPI विड्रॉल।',
+    heroGradient: 'from-[#2874f0] via-[#1d5ed6] to-[#0f3f9c]',
+    accentBg: 'bg-blue-50',
+    accentText: 'text-[#2874f0]',
+    accentBorder: 'border-blue-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Referral Bonus Rate',
+    highlightMetricValue: '40%–50% Instant',
+    primaryActionLabel: 'Share Link & Earn',
+    icon: '⚡',
+  },
+  MMO: {
+    code: 'MMO',
+    tierBadge: 'PROMO BOOSTER TIER · ₹50+',
+    headline: 'Make Money Online (MMO) Growth Desk',
+    hindiSubtitle: '55% रेफरल प्रमोशन व HD बिज़नेस पोस्टर स्टूडियो एक्सेस।',
+    heroGradient: 'from-[#0284c7] via-[#0369a1] to-[#1e3a8a]',
+    accentBg: 'bg-sky-50',
+    accentText: 'text-sky-700',
+    accentBorder: 'border-sky-200',
+    badgeClass: 'bg-cyan-300 text-slate-900',
+    highlightMetricLabel: 'Promo Share Bonus',
+    highlightMetricValue: '55% Direct',
+    primaryActionLabel: 'Open Promo Studio',
+    icon: '🚀',
+  },
+  MOM: {
+    code: 'MOM',
+    tierBadge: 'DIGITAL KIT MATRIX · ₹100+',
+    headline: 'Make Online Money (MOM) Pro Suite',
+    hindiSubtitle: '70% तक डिजिटल प्रमोशन किट और हाई-वैल्यू टीम बिल्डिंग।',
+    heroGradient: 'from-[#ea580c] via-[#c2410c] to-[#9a3412]',
+    accentBg: 'bg-orange-50',
+    accentText: 'text-[#fb641b]',
+    accentBorder: 'border-orange-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Digital Kit Commission',
+    highlightMetricValue: 'Up to 70%',
+    primaryActionLabel: 'View Team Analytics',
+    icon: '🔥',
+  },
+  OES: {
+    code: 'OES',
+    tierBadge: 'EXECUTIVE 5-LEVEL · ₹500+',
+    headline: 'Online Earning System (OES) Executive Suite',
+    hindiSubtitle: '5-लेवल गहरी टीम संरचना और VIP लीडरशिप रॉयल्टी।',
+    heroGradient: 'from-[#7c2d12] via-[#991b1b] to-[#450a0a]',
+    accentBg: 'bg-rose-50',
+    accentText: 'text-rose-700',
+    accentBorder: 'border-rose-200',
+    badgeClass: 'bg-amber-300 text-slate-900',
+    highlightMetricLabel: 'Leadership Depth',
+    highlightMetricValue: '5-Level Matrix',
+    primaryActionLabel: 'Inspect 5-Level Team',
+    icon: '👑',
+  },
+  MMS: {
+    code: 'MMS',
+    tierBadge: '5-BRANCH EXPANSION · ₹100+',
+    headline: 'Money Making System (MMS) Branch Hub',
+    hindiSubtitle: '5-ब्रांच ऑटो ग्रोथ और मल्टी-चैनल रेफरल मॉनिटर।',
+    heroGradient: 'from-[#4f46e5] via-[#4338ca] to-[#312e81]',
+    accentBg: 'bg-indigo-50',
+    accentText: 'text-indigo-700',
+    accentBorder: 'border-indigo-200',
+    badgeClass: 'bg-amber-300 text-slate-900',
+    highlightMetricLabel: 'Branch Structure',
+    highlightMetricValue: '5-Branch Active',
+    primaryActionLabel: 'Expand Branches',
+    icon: '🌳',
+  },
+  NWI: {
+    code: 'NWI',
+    tierBadge: '3-LEVEL PASSIVE TREE · ₹200+',
+    headline: 'Non Working Income (NWI) 3-Level Auto Tree',
+    hindiSubtitle: 'असली 3-लेवल टीम आय (L1: 10% · L2: 15% · L3: 25%) — डायरेक्ट क्लेम वॉलेट।',
+    heroGradient: 'from-[#047857] via-[#065f46] to-[#064e3b]',
+    accentBg: 'bg-emerald-50',
+    accentText: 'text-[#388e3c]',
+    accentBorder: 'border-emerald-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: '3-Level Passive Pool',
+    highlightMetricValue: '10% · 15% · 25%',
+    primaryActionLabel: 'Open NWI 3-Level Tree',
+    icon: '💎',
+  },
+  SWI: {
+    code: 'SWI',
+    tierBadge: '3.3% RECHARGE APP · ₹300',
+    headline: 'Self Working Income (SWI) 3.3% Recharge Portal',
+    hindiSubtitle: 'हर मोबाइल/DTH रिचार्ज पर पक्का 3.3% कमीशन + रेफरल पर ₹150 (50%) बोनस!',
+    heroGradient: 'from-[#0d9488] via-[#0f766e] to-[#115e59]',
+    accentBg: 'bg-teal-50',
+    accentText: 'text-teal-700',
+    accentBorder: 'border-teal-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Recharge Commission',
+    highlightMetricValue: 'Flat 3.3% + 50% Ref',
+    primaryActionLabel: 'Open 3.3% Recharge App',
+    icon: '📱',
+  },
+  TWI: {
+    code: 'TWI',
+    tierBadge: 'ALL-PLAN TEAM HUB · ₹300',
+    headline: 'Team Working Income (TWI) Unified Network',
+    hindiSubtitle: 'सभी 10 प्लान के मेंबर्स से क्रॉस-प्लान टीम बोनस और रीयल-टाइम लीडरबोर्ड।',
+    heroGradient: 'from-[#7e22ce] via-[#6b21a8] to-[#3b0764]',
+    accentBg: 'bg-purple-50',
+    accentText: 'text-purple-700',
+    accentBorder: 'border-purple-200',
+    badgeClass: 'bg-amber-300 text-slate-900',
+    highlightMetricLabel: 'Cross-Plan Bonus',
+    highlightMetricValue: 'All 10 Plans',
+    primaryActionLabel: 'Open Team Hub',
+    icon: '🤝',
+  },
+  PROMOTE: {
+    code: 'PROMOTE',
+    tierBadge: 'CREATOR & POSTER STUDIO',
+    headline: 'Promote & Earn Marketing Command',
+    hindiSubtitle: 'बिज़नेस बैनर, पर्व शुभकामना कार्ड व रेफरल स्टोरी पोस्टर से डेली आय।',
+    heroGradient: 'from-[#db2777] via-[#be185d] to-[#831843]',
+    accentBg: 'bg-pink-50',
+    accentText: 'text-pink-700',
+    accentBorder: 'border-pink-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Creator Tools',
+    highlightMetricValue: 'HD Poster Studio',
+    primaryActionLabel: 'Create Promo Poster',
+    icon: '🎨',
+  },
+  REFER: {
+    code: 'REFER',
+    tierBadge: 'MASTER REFERRAL ENGINE',
+    headline: 'Refer & Earn Flat 50% Engine',
+    hindiSubtitle: 'अपने रोल नंबर और @username लिंक से किसी भी प्लान में रेफर करें — फ्लैट 50% तुरंत!',
+    heroGradient: 'from-[#1e40af] via-[#2874f0] to-[#0284c7]',
+    accentBg: 'bg-blue-50',
+    accentText: 'text-[#2874f0]',
+    accentBorder: 'border-blue-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Direct Referral Payout',
+    highlightMetricValue: 'Flat 50%',
+    primaryActionLabel: 'Share Referral Link',
+    icon: '🔗',
+  },
+  GAME: {
+    code: 'GAME',
+    tierBadge: 'FREE GAMING PLAYER PASS',
+    headline: 'ESP Gaming & Voice Stage Hub',
+    hindiSubtitle: '8-सीट लाइव वॉइस रूम, लूडो 3D, डेली स्ट्रीक कॉइन्स और Same-ID Income अपग्रेड सुविधा।',
+    heroGradient: 'from-[#6d28d9] via-[#4f46e5] to-[#2563eb]',
+    accentBg: 'bg-violet-50',
+    accentText: 'text-violet-700',
+    accentBorder: 'border-violet-200',
+    badgeClass: 'bg-[#ffe500] text-[#212121]',
+    highlightMetricLabel: 'Account Mode',
+    highlightMetricValue: 'Free Gaming · Upgrade Ready',
+    primaryActionLabel: 'Enter Gaming Lobby',
+    icon: '🎮',
+  },
+};
+
+export function getPlanVisualTheme(serviceCode?: string, accountType?: 'business' | 'gamer'): PlanVisualTheme {
+  if (accountType === 'gamer') {
+    return PLAN_THEMES.GAME;
+  }
+  const key = String(serviceCode || 'EMO').toUpperCase();
+  return PLAN_THEMES[key] || PLAN_THEMES.EMO;
+}

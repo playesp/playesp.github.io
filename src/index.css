@@ -2,8 +2,8 @@
 
 @layer base {
   html {
-    /* Fluid root scale: shrinks rem smoothly on 320px–390px mobile, maintains 16px+ on tablet/desktop */
-    font-size: clamp(13.25px, 2.15vw + 5.5px, 16px);
+    /* Fluid root scale: shrinks smoothly on 320px–420px phones, crisp 16px on desktop */
+    font-size: clamp(13px, 1.85vw + 6px, 16px);
     max-width: 100vw;
     overflow-x: hidden;
     margin: 0;
@@ -14,7 +14,13 @@
 
   @media (min-width: 640px) {
     html {
-      font-size: clamp(15.25px, 0.45vw + 12px, 16.5px);
+      font-size: clamp(14.75px, 0.5vw + 11.5px, 16.25px);
+    }
+  }
+
+  @media (min-width: 1280px) {
+    html {
+      font-size: clamp(15.5px, 0.25vw + 13px, 17px);
     }
   }
 
@@ -49,61 +55,92 @@
 
   /* ===================== GLOBAL 3D + CLICK ENLARGE & GLOW BUTTON SYSTEM ===================== */
   button:not(:disabled),
+  a.btn-3d,
   [role="button"]:not([aria-disabled="true"]),
   .btn-3d {
     position: relative;
     transition:
       transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
-      box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
       filter 0.18s ease,
       background-color 0.15s ease;
     transform-origin: center center;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.18),
-      0 3px 0 rgba(15, 23, 42, 0.24),
-      0 5px 10px -2px rgba(15, 23, 42, 0.16);
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+      inset 0 -2.5px 0 rgba(0, 0, 0, 0.22),
+      0 3px 0 rgba(15, 23, 42, 0.2),
+      0 6px 14px -3px rgba(15, 23, 42, 0.16);
     will-change: transform, box-shadow;
   }
 
   button:not(:disabled):hover,
+  a.btn-3d:hover,
   [role="button"]:not([aria-disabled="true"]):hover,
   .btn-3d:hover {
-    transform: translateY(-1.5px) scale(1.025);
+    transform: translateY(-2px) scale(1.03);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.45),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.2),
-      0 4px 0 rgba(15, 23, 42, 0.26),
-      0 8px 18px -2px rgba(40, 116, 240, 0.35);
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+      inset 0 -2.5px 0 rgba(0, 0, 0, 0.22),
+      0 5px 0 rgba(15, 23, 42, 0.22),
+      0 10px 22px -3px rgba(40, 116, 240, 0.38),
+      0 0 12px rgba(56, 189, 248, 0.25);
     filter: brightness(1.04);
   }
 
   button:not(:disabled):active,
   button:not(:disabled).esp-btn-glow-active,
+  a.btn-3d:active,
+  a.btn-3d.esp-btn-glow-active,
   [role="button"]:not([aria-disabled="true"]):active,
   [role="button"]:not([aria-disabled="true"]).esp-btn-glow-active,
   .btn-3d:active,
   .btn-3d.esp-btn-glow-active {
-    z-index: 20;
+    z-index: 25;
     transform: translateY(-2px) scale(1.08) !important;
     filter: brightness(1.12);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.65),
       0 0 0 2.5px rgba(255, 229, 0, 0.92),
       0 0 18px 4px rgba(56, 189, 248, 0.85),
       0 0 30px 6px rgba(251, 100, 27, 0.55) !important;
   }
 }
 
-/* Fluid Typography & Responsive Touch Utilities */
+/* Fluid Typography & Auto-Adjust Screen Utilities (320px -> 1440px+) */
+.text-fluid-hero {
+  font-size: clamp(1.25rem, 3.6vw + 0.35rem, 2.35rem);
+  line-height: 1.15;
+}
+
 .text-fluid-title {
-  font-size: clamp(1.125rem, 3.8vw, 1.875rem);
-  line-height: 1.2;
+  font-size: clamp(1.05rem, 2.8vw + 0.25rem, 1.75rem);
+  line-height: 1.22;
 }
 
 .text-fluid-card {
-  font-size: clamp(0.8125rem, 2.7vw, 1rem);
-  line-height: 1.25;
+  font-size: clamp(0.8125rem, 1.6vw + 0.3rem, 1rem);
+  line-height: 1.28;
+}
+
+.text-fluid-body {
+  font-size: clamp(0.75rem, 1.1vw + 0.45rem, 0.9375rem);
+  line-height: 1.5;
+}
+
+.esp-shell {
+  width: 100%;
+  max-width: min(1280px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: clamp(0.625rem, 2vw, 1.5rem);
+  padding-right: clamp(0.625rem, 2vw, 1.5rem);
+}
+
+.esp-popup-card {
+  width: 100%;
+  max-height: 90dvh;
+  border-radius: clamp(0.75rem, 2vw, 1.125rem);
+  box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
 .btn-responsive {
@@ -112,7 +149,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  font-size: clamp(0.6875rem, 2.3vw, 0.8125rem);
+  font-size: clamp(0.6875rem, 2.1vw, 0.8125rem);
   line-height: 1.2;
   white-space: nowrap;
 }

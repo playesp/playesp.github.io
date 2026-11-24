@@ -45,7 +45,7 @@ import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRec
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
-import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, fetchAllCloudUsersForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
 import { CURATED_VIP_ROOM_NUMBERS, isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface AdminViewProps {
@@ -1170,10 +1170,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
           const res = await api.approvePlanUpgrade(upgradeId, status, adminPassword);
           if (res.success) {
             showToast(
-              status === 'approved' ? 'प्लान अपग्रेड स्वीकृत हो गया व स्पॉन्सर बोनस क्रेडिट हो गया!' : 'अपग्रेड अनुरोध रद्द किया गया।',
+              status === 'approved' ? 'प्लान अपग्रेड व Same-ID सत्यापन पूर्ण हुआ — स्पॉन्सर बोनस क्रेडिट हो गया!' : 'अपग्रेड अनुरोध रद्द किया गया।',
               'success'
             );
             setPlanUpgrades(prev => prev.map(u => (u.id === upgradeId ? { ...u, status } : u)));
+            if (res.user && auth.currentUser?.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
+              syncUserToFirestore(res.user, true).catch(() => {});
+            }
             loadAdminData();
           } else {
             showToast(res.message || 'कार्रवाई विफल रही', 'error');
@@ -2309,90 +2312,120 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
           </div>
 
-          {/* Plan Upgrade Verification Section (₹100+ Self Upgrades) */}
-          {planUpgrades.length > 0 && (
-            <div className="bg-white rounded-md border border-slate-200 p-4 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h4 className="text-sm font-bold text-[#212121] flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#2874f0]" />
-                    <span>प्लान अपग्रेड अनुरोध (Plan Upgrades ₹100+)</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-600">
-                    Approve करने पर यूजर का नया प्लान सक्रिय होगा और स्पॉन्सर को 50% अपग्रेड कमीशन मिलेगा। SWI (₹300+) में डिफ़ॉल्ट 3.3% ऐप लिंक स्वतः जुड़ जाएगा।
-                  </p>
-                </div>
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-sm bg-blue-50 text-[#2874f0] border border-blue-200">
-                  {planUpgrades.filter(p => p.status === 'pending').length} Pending
-                </span>
+          {/* Plan Upgrade & Same-ID Gaming->Income Verification Section */}
+          <div className="bg-white rounded-md border border-slate-200 p-4 space-y-3 shadow-2xs">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-[#212121] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#2874f0]" />
+                  <span>Same-ID अपग्रेड व प्लान सत्यापन (Gaming ➔ Earning + Plan Upgrades)</span>
+                </h4>
+                <p className="text-[11px] text-slate-600">
+                  Approve करने पर यूजर की वही ID सक्रिय रहेगी (कोई दूसरी ID नहीं बनेगी), प्लान/अर्निंग डैशबोर्ड खुल जाएगा व स्पॉन्सर को 50% कमीशन मिलेगा। SWI (₹300) में 3.3% ऐप लिंक स्वतः जुड़ता है।
+                </p>
               </div>
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-sm bg-blue-50 text-[#2874f0] border border-blue-200">
+                {planUpgrades.filter(p => p.status === 'pending').length} Pending · {planUpgrades.length} Total
+              </span>
+            </div>
 
+            {planUpgrades.length === 0 ? (
+              <div className="text-xs text-slate-500 bg-[#f9fafb] border border-slate-200 rounded p-3 text-center">
+                अभी कोई लंबित Same-ID Gaming ➔ Earning या Plan Upgrade अनुरोध नहीं है।
+              </div>
+            ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-600 uppercase text-[10px] bg-[#f9fafb]">
-                      <th className="py-2 px-2">Member</th>
-                      <th className="py-2 px-2">Plan Switch</th>
+                      <th className="py-2 px-2">Member (Same ID)</th>
+                      <th className="py-2 px-2">Upgrade Type &amp; Switch</th>
                       <th className="py-2 px-2">Fee</th>
-                      <th className="py-2 px-2">UTR</th>
+                      <th className="py-2 px-2">UTR &amp; Proof</th>
                       <th className="py-2 px-2">Status</th>
                       <th className="py-2 px-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {planUpgrades.map(upg => (
-                      <tr key={upg.id} className="hover:bg-[#f5f8ff]">
-                        <td className="py-2 px-2">
-                          <span className="font-bold text-[#212121] block">{upg.userName}</span>
-                          <span className="font-mono text-[10px] text-[#2874f0] font-semibold">{upg.userId}</span>
-                        </td>
-                        <td className="py-2 px-2">
-                          <span className="text-slate-600">{upg.fromServiceCode} (₹{upg.fromFee})</span>
-                          <span className="mx-1 text-[#fb641b] font-bold">&rarr;</span>
-                          <strong className="text-[#388e3c]">{upg.targetServiceCode} (₹{upg.upgradeFee})</strong>
-                        </td>
-                        <td className="py-2 px-2 font-mono font-bold text-[#212121]">₹{upg.upgradeFee}</td>
-                        <td className="py-2 px-2 font-mono text-[#212121] select-all">{upg.paymentUtr}</td>
-                        <td className="py-2 px-2">
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm uppercase ${
-                            upg.status === 'approved'
-                              ? 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
-                              : upg.status === 'rejected'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-amber-50 text-amber-800 border border-amber-200'
-                          }`}>
-                            {upg.status}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-right">
-                          {upg.status === 'pending' ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => handleApprovePlanUpgrade(upg.id, 'approved')}
-                                disabled={upgradeProcessingId === upg.id}
-                                className="px-2.5 py-1 rounded-sm text-[10px] font-bold bg-[#388e3c] hover:bg-[#2e7d32] text-white cursor-pointer disabled:opacity-50"
-                              >
-                                Approve Upgrade
-                              </button>
-                              <button
-                                onClick={() => handleApprovePlanUpgrade(upg.id, 'rejected')}
-                                disabled={upgradeProcessingId === upg.id}
-                                className="px-2 py-1 rounded-sm text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer disabled:opacity-50"
-                              >
-                                Reject
-                              </button>
+                    {planUpgrades.map(upg => {
+                      const isCrossUpgrade = upg.upgradeType === 'gamer_to_business' || upg.fromAccountType === 'gamer';
+                      return (
+                        <tr key={upg.id} className="hover:bg-[#f5f8ff]">
+                          <td className="py-2 px-2">
+                            <span className="font-bold text-[#212121] block">{upg.userName}</span>
+                            <span className="font-mono text-[10px] text-[#2874f0] font-semibold">{upg.userId}</span>
+                          </td>
+                          <td className="py-2 px-2 space-y-1">
+                            {isCrossUpgrade && (
+                              <span className="inline-block text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                                🎮 Gaming ➔ 💼 Earning (Same ID)
+                              </span>
+                            )}
+                            <div>
+                              <span className="text-slate-600">{upg.fromServiceCode} (₹{upg.fromFee})</span>
+                              <span className="mx-1 text-[#fb641b] font-bold">&rarr;</span>
+                              <strong className="text-[#388e3c]">{upg.targetServiceCode} (₹{upg.upgradeFee})</strong>
                             </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-500">Processed</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-2 px-2 font-mono font-bold text-[#212121]">₹{upg.upgradeFee}</td>
+                          <td className="py-2 px-2 space-y-1">
+                            <div className="font-mono text-[#212121] select-all">{upg.paymentUtr}</div>
+                            {upg.paymentScreenshot && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewScreenshot({
+                                    url: upg.paymentScreenshot!,
+                                    title: `${upg.userName} (${upg.userId}) — ${upg.targetServiceCode} ₹${upg.upgradeFee}`,
+                                  })
+                                }
+                                className="btn-3d px-2 py-0.5 rounded bg-blue-50 text-[#2874f0] border border-blue-200 text-[10px] font-bold cursor-pointer"
+                              >
+                                🖼️ View Proof
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-2 px-2">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm uppercase ${
+                              upg.status === 'approved'
+                                ? 'bg-emerald-50 text-[#388e3c] border border-emerald-200'
+                                : upg.status === 'rejected'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {upg.status}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            {upg.status === 'pending' ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleApprovePlanUpgrade(upg.id, 'approved')}
+                                  disabled={upgradeProcessingId === upg.id}
+                                  className="btn-3d px-2.5 py-1 rounded-sm text-[10px] font-bold bg-[#388e3c] hover:bg-[#2e7d32] text-white cursor-pointer disabled:opacity-50"
+                                >
+                                  Approve Verify
+                                </button>
+                                <button
+                                  onClick={() => handleApprovePlanUpgrade(upg.id, 'rejected')}
+                                  disabled={upgradeProcessingId === upg.id}
+                                  className="btn-3d px-2 py-1 rounded-sm text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-500">Processed</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Full User Audit & Form Data Modal */}
           {selectedAuditUser && (

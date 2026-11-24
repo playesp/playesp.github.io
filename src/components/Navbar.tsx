@@ -7,11 +7,9 @@ import {
   Menu,
   X,
   Award,
-  Sparkles,
   ArrowRight,
   ExternalLink,
   ChevronDown,
-  BookOpen,
   Camera,
   MessageCircle,
   Layers,
@@ -19,22 +17,25 @@ import {
   Gamepad2,
   Crown,
   Home,
-  Smartphone,
   Scale,
   Bell,
   Briefcase,
   Radio,
   Settings,
+  Grid,
+  Coins,
 } from 'lucide-react';
-import type { UserProfile, PlatformSettings } from '../types/index.ts';
+import type { UserProfile, PlatformSettings, PublicSponsorPreview } from '../types/index.ts';
 import { ServicesPopUpModal } from './ServicesPopUpModal.tsx';
 import { HelplineModal } from './HelplineModal.tsx';
+import { MoreOptionsPopupModal, type MoreOptionItem } from './SystemPopupModals.tsx';
 
 interface NavbarProps {
   currentUser: UserProfile | null;
   isAdmin: boolean;
   settings: PlatformSettings;
   currentTab: string;
+  referralSponsor?: PublicSponsorPreview | null;
   onSelectTab: (tab: string) => void;
   onSelectServiceCode?: (code: string) => void;
   onOpenLogin: () => void;
@@ -42,6 +43,8 @@ interface NavbarProps {
   onLogout: () => void;
   onShowIdCard: () => void;
   onOpenLegalModal?: () => void;
+  onOpenKnowIncome?: () => void;
+  onOpenKnowGaming?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -49,6 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin,
   settings,
   currentTab,
+  referralSponsor,
   onSelectTab,
   onSelectServiceCode,
   onOpenLogin,
@@ -56,9 +60,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onShowIdCard,
   onOpenLegalModal,
+  onOpenKnowIncome,
+  onOpenKnowGaming,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [morePopupOpen, setMorePopupOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [noticeModalOpen, setNoticeModalOpen] = useState(false);
   const [servicesModalOpen, setServicesModalOpen] = useState(false);
@@ -68,18 +74,21 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [mobileEarningMenuOpen, setMobileEarningMenuOpen] = useState(false);
 
   const isGamerOnly = currentUser?.accountType === 'gamer';
+  const modePillLabel = currentUser
+    ? isGamerOnly
+      ? '🎮 Free Gaming'
+      : `💼 ${currentUser.chosenServiceCode || 'EMO'} Plan`
+    : referralSponsor
+    ? `🤝 Ref: ${referralSponsor.sponsorName.split(' ')[0]}`
+    : '✨ New Visitor';
 
   const searchRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
         setSearchFocused(false);
-      }
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
-        setMoreMenuOpen(false);
       }
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
         setAccountMenuOpen(false);
@@ -88,6 +97,93 @@ export const Navbar: React.FC<NavbarProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const morePopupItems: MoreOptionItem[] = [
+    {
+      id: 'more-services',
+      label: 'All 10 Earning Plans',
+      subLabel: 'EMO, MMO, SWI 3.3% App, NWI ₹10+',
+      icon: <Layers className="w-4 h-4" />,
+      badge: '10 Plans',
+      onClick: () => setServicesModalOpen(true),
+    },
+    {
+      id: 'more-nwi',
+      label: 'NWI 3-Level Passive',
+      subLabel: 'L1: 10% · L2: 15% · L3: 25% Auto Tree',
+      icon: <Crown className="w-4 h-4 text-[#fb641b]" />,
+      onClick: () => onSelectTab('nwi'),
+    },
+    {
+      id: 'more-moments',
+      label: 'Moments Feed',
+      subLabel: 'डेली स्टेटस व फोटो कम्युनिटी',
+      icon: <Camera className="w-4 h-4" />,
+      onClick: () => onSelectTab('moments'),
+    },
+    {
+      id: 'more-chat',
+      label: 'ESP Chat Club',
+      subLabel: 'चैनल, ग्रुप और फ्रेंड्स चैट',
+      icon: <MessageCircle className="w-4 h-4 text-[#388e3c]" />,
+      onClick: () => onSelectTab('chat-club'),
+    },
+    ...(currentUser
+      ? [
+          {
+            id: 'more-idcard',
+            label: 'Digital ID Card',
+            subLabel: `ID: ${currentUser.userId}`,
+            icon: <Award className="w-4 h-4 text-[#fb641b]" />,
+            onClick: () => onShowIdCard(),
+          },
+        ]
+      : []),
+    {
+      id: 'more-notices',
+      label: 'Notice Board',
+      subLabel: 'आधिकारिक सूचना व अपडेट्स',
+      icon: <Bell className="w-4 h-4" />,
+      onClick: () => setNoticeModalOpen(true),
+    },
+    {
+      id: 'more-helpline',
+      label: '24x7 Helpline',
+      subLabel: 'WhatsApp व कस्टमर सपोर्ट',
+      icon: <Phone className="w-4 h-4 text-[#388e3c]" />,
+      onClick: () => setHelplineModalOpen(true),
+    },
+    ...(onOpenLegalModal
+      ? [
+          {
+            id: 'more-legal',
+            label: 'Legal & Compliance',
+            subLabel: 'सरकारी नियम व पारदर्शिता रिपोर्ट',
+            icon: <Scale className="w-4 h-4" />,
+            onClick: () => onOpenLegalModal(),
+          },
+        ]
+      : []),
+    {
+      id: 'more-portal',
+      label: 'Official Portal (GitHub)',
+      subLabel: 'playesp.github.io लाइव वेब लिंक',
+      icon: <ExternalLink className="w-4 h-4" />,
+      onClick: () => {
+        window.location.href = 'https://playesp.github.io/';
+      },
+    },
+    {
+      id: 'more-admin',
+      label: isAdmin ? 'Open Admin Panel' : 'Admin Control Login',
+      subLabel: 'वेरिफिकेशन व टोटल कंट्रोल सिस्टम',
+      icon: <Lock className="w-4 h-4 text-[#fb641b]" />,
+      onClick: () => {
+        if (isAdmin) onSelectTab('admin');
+        else onOpenAdminLogin();
+      },
+    },
+  ];
 
   const tenServicesList = [
     { code: 'EMO', title: 'EARN MONEY ONLINE (EMO)', subtitle: '50% Direct / 55% Fast · ₹10+', fee: '₹10+', keywords: 'emo earn money online normal fast ₹10' },
@@ -220,6 +316,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="font-display text-base min-[380px]:text-lg sm:text-xl font-extrabold italic tracking-tight text-white whitespace-nowrap">
                   {isGamerOnly ? 'ESP Gaming' : 'ESP Platform'}
+                </span>
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black whitespace-nowrap">
+                  {modePillLabel}
                 </span>
               </div>
               <span className="text-[10px] sm:text-[11px] italic text-blue-100 leading-none flex items-center gap-1 whitespace-nowrap">
@@ -425,129 +524,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-2.5">
                 <button
                   type="button"
                   onClick={onOpenLogin}
-                  className="bg-white text-[#2874f0] hover:bg-blue-50 px-3 sm:px-6 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-bold shadow-xs cursor-pointer whitespace-nowrap min-h-[34px]"
+                  className="btn-3d bg-white text-[#2874f0] hover:bg-blue-50 px-3 sm:px-5 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-bold cursor-pointer whitespace-nowrap min-h-[34px]"
                 >
                   Login
                 </button>
                 <button
                   type="button"
                   onClick={() => onSelectTab('register')}
-                  className="inline-flex items-center gap-1 bg-[#fb641b] hover:bg-[#e8550f] sm:bg-transparent sm:hover:bg-transparent px-2.5 sm:px-1 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-bold text-white sm:text-[#ffe500] sm:hover:text-white transition cursor-pointer whitespace-nowrap min-h-[34px] shadow-xs sm:shadow-none"
+                  className="btn-3d inline-flex items-center gap-1 bg-[#ffe500] hover:bg-yellow-300 px-2.5 sm:px-4 py-1.5 rounded-xs text-[11px] min-[380px]:text-xs sm:text-sm font-black text-[#212121] cursor-pointer whitespace-nowrap min-h-[34px]"
                 >
                   <span>Join ₹10+</span>
                 </button>
               </div>
             )}
 
-            {!isGamerOnly ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('services')}
-                  className="hidden lg:inline-flex text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-                >
-                  10 Services
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('gaming-room')}
-                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-                >
-                  <Gamepad2 className="w-4 h-4 text-[#ffe500]" />
-                  <span>Gaming Time</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('gaming-room')}
-                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-                >
-                  <Gamepad2 className="w-4 h-4 text-[#ffe500]" />
-                  <span>Games Lobby</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab('gaming-voice')}
-                  className="hidden lg:inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-                >
-                  <Radio className="w-4 h-4 text-[#ffe500]" />
-                  <span>Voice Room</span>
-                </button>
-              </>
-            )}
-
-            {/* More Dropdown */}
-            <div ref={moreRef} className="relative hidden sm:block">
-              <button
-                type="button"
-                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-                className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-white hover:text-[#ffe500] transition cursor-pointer whitespace-nowrap"
-              >
-                <span>More</span>
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
-
-              {moreMenuOpen && (
-                <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-sm shadow-xl z-50 text-[#212121] py-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => { setNoticeModalOpen(true); setMoreMenuOpen(false); }}
-                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center gap-2.5 font-medium cursor-pointer"
-                  >
-                    <Bell className="w-4 h-4 text-[#2874f0]" />
-                    <span>Notice Board & Updates</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setHelplineModalOpen(true); setMoreMenuOpen(false); }}
-                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center gap-2.5 font-medium cursor-pointer"
-                  >
-                    <Phone className="w-4 h-4 text-[#388e3c]" />
-                    <span>24x7 Customer Helpline</span>
-                  </button>
-                  {onOpenLegalModal && (
-                    <button
-                      type="button"
-                      onClick={() => { onOpenLegalModal(); setMoreMenuOpen(false); }}
-                      className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center gap-2.5 font-medium cursor-pointer"
-                    >
-                      <Scale className="w-4 h-4 text-[#2874f0]" />
-                      <span>Legal & Compliance</span>
-                    </button>
-                  )}
-                  <a
-                    href="https://playesp.github.io/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center justify-between font-medium"
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <ExternalLink className="w-4 h-4 text-[#2874f0]" />
-                      <span>Official Portal</span>
-                    </span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isAdmin) onSelectTab('admin');
-                      else onOpenAdminLogin();
-                      setMoreMenuOpen(false);
-                    }}
-                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#f5f8ff] flex items-center gap-2.5 font-semibold border-t border-slate-100 text-[#fb641b] cursor-pointer"
-                  >
-                    <Lock className="w-4 h-4" />
-                    <span>{isAdmin ? 'Open Admin Panel' : 'Admin Login'}</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Clean More Options Popup Button (Shows all extra tools neatly inside a Popup!) */}
+            <button
+              type="button"
+              onClick={() => setMorePopupOpen(true)}
+              className="btn-3d inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 rounded-sm bg-white/15 hover:bg-white/25 text-white border border-white/25 text-[11px] min-[380px]:text-xs sm:text-sm font-bold cursor-pointer whitespace-nowrap min-h-[34px] shrink-0"
+              title="सभी अतिरिक्त विकल्प (More Options Popup)"
+            >
+              <Grid className="w-3.5 h-3.5 text-[#ffe500] shrink-0" />
+              <span>More</span>
+            </button>
 
             {/* Control Button with Settings Icon */}
             <button
@@ -558,10 +562,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               aria-label="Admin Control System"
               title={isAdmin ? 'Open Admin Total Control System' : 'Admin Control Login'}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white border border-orange-300 text-[11px] min-[380px]:text-xs sm:text-sm font-extrabold cursor-pointer whitespace-nowrap min-h-[34px] shrink-0"
+              className="btn-3d inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-sm bg-[#fb641b] hover:bg-[#e8550f] text-white border border-orange-300 text-[11px] min-[380px]:text-xs sm:text-sm font-extrabold cursor-pointer whitespace-nowrap min-h-[34px] shrink-0"
             >
               <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span>Control</span>
+              <span className="hidden min-[380px]:inline">Control</span>
             </button>
           </div>
         </div>
@@ -587,78 +591,94 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* ===================== CLEAN WHITE CATEGORY SHELF STRIP ===================== */}
+      {/* ===================== CLEAN ESSENTIAL BAR (MAX 4-5 KEY BUTTONS + MORE POPUP) ===================== */}
       <nav
-        aria-label="Primary categories"
+        aria-label="Essential quick actions"
         className="bg-white border-b border-slate-200 px-2 sm:px-6 overflow-x-auto no-scrollbar"
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 min-w-max py-1.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-3 min-w-max py-1.5">
           {isGamerOnly ? (
             <>
               <button
                 type="button"
                 onClick={() => onSelectTab('gaming-room')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   currentTab === 'gaming-room'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                    ? 'bg-[#2874f0] text-white'
+                    : 'bg-slate-50 text-[#212121] hover:text-[#2874f0]'
                 }`}
               >
-                <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
+                <Gamepad2 className="w-3.5 h-3.5" />
                 <span>Games Lobby</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => onSelectTab('gaming-voice')}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-slate-50 text-[#212121] hover:text-[#2874f0] cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Radio className="w-3.5 h-3.5 text-[#fb641b]" />
-                <span>Voice Rooms</span>
+                <span>Voice Room</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => onSelectTab('gaming-tasks')}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+                onClick={() => (onOpenKnowIncome ? onOpenKnowIncome() : onSelectTab('dashboard'))}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-extrabold flex items-center gap-1.5 bg-[#fb641b] text-white cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Daily Streak &amp; Tasks</span>
+                <Coins className="w-3.5 h-3.5" />
+                <span>Know Income &amp; Upgrade Same ID</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => onSelectTab('chat-club')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'chat-club'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                onClick={() => setMorePopupOpen(true)}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-blue-50 text-[#2874f0] border border-blue-200 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Grid className="w-3.5 h-3.5" />
+                <span>⋯ More</span>
+              </button>
+            </>
+          ) : currentUser ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onSelectTab('dashboard')}
+                className={`btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === 'dashboard'
+                    ? 'bg-[#2874f0] text-white'
+                    : 'bg-slate-50 text-[#212121] hover:text-[#2874f0]'
                 }`}
               >
-                <MessageCircle className="w-3.5 h-3.5 text-[#388e3c]" />
-                <span>Chat Club</span>
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>My Dashboard ({currentUser.chosenServiceCode || 'EMO'})</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => onSelectTab('moments')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'moments'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
+                onClick={() => setServicesModalOpen(true)}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-slate-50 text-[#212121] hover:text-[#2874f0] cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Camera className="w-3.5 h-3.5 text-[#2874f0]" />
-                <span>Moments</span>
+                <Layers className="w-3.5 h-3.5 text-[#2874f0]" />
+                <span>10 Plans Popup</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setHelplineModalOpen(true)}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+                onClick={() => (onOpenKnowGaming ? onOpenKnowGaming() : onSelectTab('gaming-room'))}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-extrabold flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-[#2874f0] text-white cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Phone className="w-3.5 h-3.5 text-[#388e3c]" />
-                <span>Helpline</span>
+                <Gamepad2 className="w-3.5 h-3.5 text-[#ffe500]" />
+                <span>Know &amp; Play Gaming (Same ID)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMorePopupOpen(true)}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-blue-50 text-[#2874f0] border border-blue-200 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Grid className="w-3.5 h-3.5" />
+                <span>⋯ More Tools</span>
               </button>
             </>
           ) : (
@@ -666,10 +686,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectTab('home')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   currentTab === 'home'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
+                    ? 'bg-[#2874f0] text-white'
+                    : 'bg-slate-50 text-[#212121] hover:text-[#2874f0]'
                 }`}
               >
                 <Home className="w-3.5 h-3.5" />
@@ -678,94 +698,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               <button
                 type="button"
-                onClick={() => setServicesModalOpen(true)}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'services' || currentTab === 'service-detail'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
+                onClick={() => (onOpenKnowIncome ? onOpenKnowIncome() : setServicesModalOpen(true))}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-extrabold flex items-center gap-1.5 bg-[#fb641b] text-white cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Layers className="w-3.5 h-3.5 text-[#2874f0]" />
-                <span>10 Services</span>
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>Income Plans (₹10+)</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleSelectService('SWI')}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
+                onClick={() => (onOpenKnowGaming ? onOpenKnowGaming() : onSelectTab('gaming-room'))}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Smartphone className="w-3.5 h-3.5 text-[#388e3c]" />
-                <span>SWI 3.3% App</span>
+                <Gamepad2 className="w-3.5 h-3.5" />
+                <span>Free Gaming System</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => onSelectTab('nwi')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'nwi'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
+                onClick={() => setMorePopupOpen(true)}
+                className="btn-3d px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 bg-blue-50 text-[#2874f0] border border-blue-200 cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Crown className="w-3.5 h-3.5 text-[#fb641b]" />
-                <span>NWI 3-Level</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onSelectTab('gaming-room')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'gaming-room'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
-              >
-                <Gamepad2 className="w-3.5 h-3.5 text-[#2874f0]" />
-                <span>ESP Gaming</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onSelectTab('chat-club')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'chat-club'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
-              >
-                <MessageCircle className="w-3.5 h-3.5 text-[#388e3c]" />
-                <span>Chat Club</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onSelectTab('moments')}
-                className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  currentTab === 'moments'
-                    ? 'border-[#2874f0] text-[#2874f0]'
-                    : 'border-transparent text-[#212121] hover:text-[#2874f0]'
-                }`}
-              >
-                <Camera className="w-3.5 h-3.5 text-[#2874f0]" />
-                <span>Moments</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onShowIdCard}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Award className="w-3.5 h-3.5 text-[#fb641b]" />
-                <span>Digital ID</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setHelplineModalOpen(true)}
-                className="px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 border-transparent text-[#212121] hover:text-[#2874f0] transition cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Phone className="w-3.5 h-3.5 text-[#388e3c]" />
-                <span>Helpline</span>
+                <Grid className="w-3.5 h-3.5" />
+                <span>⋯ More</span>
               </button>
             </>
           )}
@@ -1096,6 +1051,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         isOpen={helplineModalOpen}
         onClose={() => setHelplineModalOpen(false)}
         settings={settings}
+      />
+
+      <MoreOptionsPopupModal
+        isOpen={morePopupOpen}
+        onClose={() => setMorePopupOpen(false)}
+        title="ESP Portal · More Options"
+        subtitle={modePillLabel}
+        items={morePopupItems}
       />
     </header>
   );

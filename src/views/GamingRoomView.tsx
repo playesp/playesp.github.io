@@ -128,6 +128,7 @@ interface GamingRoomViewProps {
   subTabPulse?: number;
   onSubTabChange?: (subTab: 'games' | 'voice_room' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks') => void;
   onOpenMomentsFeed?: () => void;
+  onOpenIncomeUpgrade?: () => void;
 }
 
 const LUXURY_GIFTS: RoomGift[] = [
@@ -165,6 +166,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
   subTabPulse = 0,
   onSubTabChange,
   onOpenMomentsFeed,
+  onOpenIncomeUpgrade,
 }) => {
   // Navigation tabs within ESP Gaming Room (Default: 'games', or 'voice_room' when deep-linked)
   const [activeTab, setActiveTab] = useState<'voice_room' | 'games' | 'recharge_convert' | 'clan_friends' | 'rewards_tasks'>(
@@ -2117,16 +2119,28 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
 
               <button
                 onClick={() => setActiveTab('recharge_convert')}
-                className="bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center space-x-1 transition cursor-pointer shadow-xs whitespace-nowrap"
+                className="btn-3d bg-[#fb641b] hover:bg-[#e8550f] text-white px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center space-x-1 cursor-pointer whitespace-nowrap"
               >
                 <PlusCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>Recharge</span>
               </button>
 
+              {onOpenIncomeUpgrade && (
+                <button
+                  type="button"
+                  onClick={onOpenIncomeUpgrade}
+                  className="btn-3d bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold flex items-center space-x-1 cursor-pointer whitespace-nowrap"
+                  title="Know Income Platform & Upgrade Same ID"
+                >
+                  <span>💰</span>
+                  <span>{user.accountType === 'gamer' ? 'Income (Same ID)' : 'Upgrade Plan'}</span>
+                </button>
+              )}
+
               {/* Native Full Screen Toggle */}
               <button
                 onClick={toggleFullScreen}
-                className="px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white transition cursor-pointer shadow-xs flex items-center space-x-1 whitespace-nowrap"
+                className="btn-3d px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-md text-[10.5px] sm:text-xs font-bold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer flex items-center space-x-1 whitespace-nowrap"
                 title={isFullscreen ? 'नॉर्मल स्क्रीन करें' : 'फ़ुल स्क्रीन (Full Screen) करें'}
               >
                 {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 shrink-0" />}
@@ -2671,6 +2685,7 @@ export const GamingRoomView: React.FC<GamingRoomViewProps> = ({
               onOpenGiftCards={() => setShowDigitalGiftCardsModal(true)}
               onOpenEarningSetup={onOpenEarningSetup}
               onOpenServicesSetup={onOpenServicesSetup}
+              onOpenIncomeUpgrade={onOpenIncomeUpgrade}
               onOpenClans={() => {
                 setActiveTab('clan_friends');
                 setShowTopClansModal(true);

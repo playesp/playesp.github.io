@@ -1383,6 +1383,42 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     };
   }
 
+  if (path.startsWith('/api/public/sponsor/')) {
+    const sponsorRef = decodeURIComponent(path.replace('/api/public/sponsor/', '')).trim();
+    const owner = db.users.find(u => u.userId === db.settings.ownerSponsorId);
+    const sp = sponsorRef && sponsorRef.toUpperCase() !== db.settings.ownerSponsorId.toUpperCase()
+      ? findStaticSponsorUser(db.users, sponsorRef)
+      : undefined;
+    if (sp) {
+      return {
+        success: true,
+        valid: true,
+        sponsorId: sp.userId,
+        sponsorUsername: sp.username || '',
+        sponsorName: sp.fullName,
+        chosenServiceCode: sp.chosenServiceCode || 'EMO',
+        chosenServiceName: sp.chosenServiceName || 'EARN MONEY ONLINE (EMO)',
+        vipTier: sp.vipTier || 'none',
+        avatar: sp.avatar || '',
+        gameLevel: sp.gameLevel || 1,
+        isOwner: sp.userId === db.settings.ownerSponsorId,
+      };
+    }
+    return {
+      success: true,
+      valid: !sponsorRef || sponsorRef.toUpperCase() === db.settings.ownerSponsorId.toUpperCase(),
+      sponsorId: db.settings.ownerSponsorId,
+      sponsorUsername: owner?.username || '',
+      sponsorName: db.settings.ownerName,
+      chosenServiceCode: owner?.chosenServiceCode || 'EMO',
+      chosenServiceName: owner?.chosenServiceName || 'EARN MONEY ONLINE (EMO)',
+      vipTier: owner?.vipTier || 'diamond',
+      avatar: owner?.avatar || '',
+      gameLevel: owner?.gameLevel || 1,
+      isOwner: true,
+    };
+  }
+
   // Auth: Register, Login, Restore, Forget ID, Forget Password, Verify Session
   if (path === '/api/auth/register' && method === 'POST') {
     const isGamer = body.accountType === 'gamer';
@@ -1974,26 +2010,37 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, message: `NWI ₹${user.joiningFee} सक्रिय हुआ!`, tree: buildNwiTree(db, user), user };
   }
 
-  // Upgrade Plan
+  // Upgrade Plan & Same-ID Gamer -> Business Conversion
   if (path === '/api/users/upgrade-plan' && method === 'POST') {
     const user = findUser(db, body.userId);
     if (!user) return { success: false, message: 'User not found' };
+    const isGamerConv = user.accountType === 'gamer' || body.upgradeType === 'gamer_to_business';
+    const srv = db.services.find(s => s.code === String(body.targetServiceCode || 'EMO').toUpperCase()) || db.services[0];
     const reqObj: PlanUpgradeRequest = {
       id: `UPG-${Date.now().toString().slice(-6)}`,
       userId: user.userId,
       userName: user.fullName,
-      fromServiceCode: user.chosenServiceCode,
-      fromFee: user.joiningFee,
-      targetServiceCode: body.targetServiceCode,
-      targetServiceName: db.services.find(s => s.code === body.targetServiceCode)?.name || body.targetServiceCode,
-      upgradeFee: Number(body.upgradeFee) || 100,
-      paymentUtr: body.paymentUtr || 'UTR',
+      fromAccountType: user.accountType || 'business',
+      upgradeType: isGamerConv ? 'gamer_to_business' : 'plan_upgrade',
+      fromServiceCode: user.chosenServiceCode || (user.accountType === 'gamer' ? 'GAME' : 'EMO'),
+      fromFee: user.joiningFee || 0,
+      targetServiceCode: srv.code,
+      targetServiceName: srv.name,
+      upgradeFee: Number(body.upgradeFee) || (isGamerConv ? 10 : 100),
+      paymentUtr: String(body.paymentUtr || '').trim() || 'UTR',
+      paymentScreenshot: body.paymentScreenshot || undefined,
       status: 'pending',
       createdAt: new Date().toISOString().slice(0, 10),
     };
     db.planUpgrades.unshift(reqObj);
     saveDb(db);
-    return { success: true, message: 'प्लान अपग्रेड अनुरोध Admin को भेजा गया!', request: reqObj };
+    return {
+      success: true,
+      message: isGamerConv
+        ? `🎉 आपकी वही ID (${user.userId}) पर ${srv.code} अपग्रेड अनुरोध एडमिन को भेजा गया!`
+        : 'प्लान अपग्रेड अनुरोध Admin को भेजा गया!',
+      request: reqObj,
+    };
   }
 
   // Moments, Chat, Contacts
@@ -3929,9 +3976,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       if (body.status === 'approved') {
         const u = findUser(db, upg.userId);
         if (u) {
+          u.accountType = 'business';
+          u.status = 'active';
+          u.verifiedAt = u.verifiedAt || new Date().toISOString();
           u.chosenServiceCode = upg.targetServiceCode;
           u.chosenServiceName = upg.targetServiceName;
           u.joiningFee = upg.upgradeFee;
+          if (upg.targetServiceCode === 'SWI' && !u.swiAppLink && db.settings.swiSpecialAppLink) {
+            u.swiAppLink = db.settings.swiSpecialAppLink;
+            u.swiAppSharedAt = new Date().toISOString();
+          }
         }
       }
       saveDb(db);

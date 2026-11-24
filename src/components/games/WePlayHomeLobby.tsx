@@ -48,6 +48,7 @@ interface WePlayHomeLobbyProps {
   onOpenGiftCards?: () => void;
   onOpenEarningSetup?: () => void;
   onOpenServicesSetup?: () => void;
+  onOpenIncomeUpgrade?: () => void;
   onOpenClans?: () => void;
   onOpenRelationships?: () => void;
   onOpenFamily?: () => void;
@@ -143,6 +144,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
   onOpenGiftCards,
   onOpenEarningSetup,
   onOpenServicesSetup,
+  onOpenIncomeUpgrade,
   onOpenClans,
   onOpenRelationships,
   onOpenFamily,
@@ -384,17 +386,45 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
         </button>
       </div>
 
-      {/* 3. GAMES SECTION HEADER: "Games" + "Game Rooms" */}
-      <div className="flex items-center justify-between pt-2 pb-2.5 px-1">
+      {/* 3. GAMES SECTION HEADER: "Games" + Same-ID Income Pill + "Game Rooms" */}
+      <div className="flex items-center justify-between gap-2 pt-2 pb-2.5 px-1">
         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Games</h2>
-        <button
-          type="button"
-          onClick={onOpenVoiceRoom}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 hover:border-[#2874f0] text-[11px] sm:text-xs font-bold text-slate-700 hover:text-[#2874f0] shadow-xs transition cursor-pointer whitespace-nowrap min-h-[34px]"
-        >
-          <DoorOpen className="w-4 h-4" />
-          <span>Game Rooms</span>
-        </button>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {(onOpenIncomeUpgrade || onOpenEarningSetup) && (
+            <button
+              type="button"
+              onClick={() => {
+                sound8D.play8DChime(540, 'click');
+                if (user.accountType === 'gamer') {
+                  (onOpenIncomeUpgrade || onOpenEarningSetup)?.();
+                } else {
+                  onOpenEarningSetup?.();
+                }
+              }}
+              className={`btn-3d flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-extrabold cursor-pointer whitespace-nowrap min-h-[34px] ${
+                user.accountType === 'gamer'
+                  ? 'bg-gradient-to-r from-[#fb641b] to-amber-500 text-white'
+                  : 'bg-[#2874f0] text-white'
+              }`}
+              title={
+                user.accountType === 'gamer'
+                  ? 'बिना दूसरी ID बनाए इसी ID से Income शुरू करें'
+                  : 'अपने Earning Dashboard पर जाएं'
+              }
+            >
+              <Briefcase className="w-3.5 h-3.5 shrink-0" />
+              <span>{user.accountType === 'gamer' ? 'Earn ₹10+ (Same ID)' : 'Dashboard'}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenVoiceRoom}
+            className="btn-3d flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 hover:border-[#2874f0] text-[11px] sm:text-xs font-bold text-slate-700 hover:text-[#2874f0] cursor-pointer whitespace-nowrap min-h-[34px]"
+          >
+            <DoorOpen className="w-4 h-4" />
+            <span>Game Rooms</span>
+          </button>
+        </div>
       </div>
 
       {/* 4. SYMMETRICALLY LINED-UP GAMES GRID (EXACT SCREENSHOT LAYOUT) */}
@@ -803,12 +833,30 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
                 )}
               </div>
 
-              {/* Earning Setup Optional Menu Section */}
-              {(onOpenEarningSetup || onOpenServicesSetup) && (
+              {/* Earning Setup & Same-ID Upgrade Section */}
+              {(onOpenIncomeUpgrade || onOpenEarningSetup || onOpenServicesSetup) && (
                 <div className="pt-2 border-t border-slate-200 space-y-2">
                   <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700 px-1">
-                    💼 Earning Setup (Optional Menu)
+                    💼 Earning Platform (Same ID: {user.userId})
                   </div>
+                  {onOpenIncomeUpgrade && user.accountType === 'gamer' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMeMenuModal(false);
+                        onOpenIncomeUpgrade();
+                      }}
+                      className="btn-3d w-full p-3 rounded-xl bg-gradient-to-r from-[#fb641b] to-amber-500 text-white text-left flex items-center justify-between cursor-pointer"
+                    >
+                      <div>
+                        <div className="text-xs font-black">💰 Know Income &amp; Upgrade Same ID</div>
+                        <div className="text-[10px] text-amber-100 font-semibold">
+                          कोई नई ID नहीं — इसी ID से ₹10+ में कमाई शुरू करें
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 shrink-0" />
+                    </button>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     {onOpenEarningSetup && (
                       <button
@@ -817,7 +865,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
                           setShowMeMenuModal(false);
                           onOpenEarningSetup();
                         }}
-                        className="p-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-left cursor-pointer transition"
+                        className="btn-3d p-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-left cursor-pointer"
                       >
                         <Briefcase className="w-4 h-4 text-emerald-700 mb-1" />
                         <div className="text-xs font-black text-emerald-950">Earning Dashboard</div>
@@ -832,7 +880,7 @@ export const WePlayHomeLobby: React.FC<WePlayHomeLobbyProps> = ({
                           setShowMeMenuModal(false);
                           onOpenServicesSetup();
                         }}
-                        className="p-3 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-left cursor-pointer transition"
+                        className="btn-3d p-3 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-left cursor-pointer"
                       >
                         <Layers className="w-4 h-4 text-[#2874f0] mb-1" />
                         <div className="text-xs font-black text-blue-950">10 Earning Plans</div>

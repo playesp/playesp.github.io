@@ -2211,10 +2211,28 @@ app.post('/api/auth/register', (req, res) => {
     const serviceObj = isGamer 
       ? { code: 'GAME', name: 'ESP GAMING & VOICE CLUB' }
       : (db.services.find(s => s.code === chosenServiceCode) || db.services[0]);
-    const newUserId = isGamer 
+    const prefUserId = String(req.body?.preferredUserId || '').trim();
+    const prefUserIdFree =
+      prefUserId &&
+      /^[a-zA-Z0-9_-]{3,48}$/.test(prefUserId) &&
+      !isAnyIdTaken(prefUserId);
+    const newUserId = prefUserIdFree
+      ? prefUserId
+      : isGamer
       ? generateUniqueGamerUserId(cleanFullName)
       : generateUniqueUserId(cleanFullName, serviceObj.code);
-    let newGamingId = isGamer ? newUserId : generateUniqueGamerUserId(cleanFullName);
+
+    const prefGamingId = String(req.body?.preferredGamingId || '').trim();
+    const prefGamingIdFree =
+      prefGamingId &&
+      /^[a-zA-Z0-9_-]{3,48}$/.test(prefGamingId) &&
+      (isGamer || prefGamingId.toLowerCase() !== newUserId.toLowerCase()) &&
+      !isAnyIdTaken(prefGamingId);
+    let newGamingId = isGamer
+      ? newUserId
+      : prefGamingIdFree
+      ? prefGamingId
+      : generateUniqueGamerUserId(cleanFullName);
     if (!isGamer && newGamingId.toLowerCase() === newUserId.toLowerCase()) {
       newGamingId = `${newGamingId}G`;
     }
@@ -2234,7 +2252,13 @@ app.post('/api/auth/register', (req, res) => {
       paymentScreenshot: paymentScreenshot || '',
     };
 
-    const newRoomAddress = generateUniqueRoomId(cleanFullName, db.users, db.customVoiceRooms || []);
+    const prefRoom = String(req.body?.preferredRoomAddress || '').trim();
+    const prefRoomFree =
+      /^\d{3,10}$/.test(prefRoom) &&
+      !isRoomAddressTaken(prefRoom, db.users, db.customVoiceRooms || []);
+    const newRoomAddress = prefRoomFree
+      ? prefRoom
+      : generateUniqueRoomId(cleanFullName, db.users, db.customVoiceRooms || []);
 
     // Gamer accounts are instant active! Business accounts are pending until admin approval.
     const newUser: UserProfile = {
@@ -2473,6 +2497,49 @@ app.post('/api/auth/restore-account', (req, res) => {
           sessionTerminated: true,
           message: 'आपका यह डिवाइस किसी अन्य डिवाइस से रिमोटली लॉगआउट कर दिया गया है।',
         });
+      }
+      if (req.body?.forceCloudMerge) {
+        const inTime = Date.parse(String(backupUser.updatedAt || backupUser.createdAt || '')) || 0;
+        const curTime = Date.parse(String((existing as any).updatedAt || existing.lastLogin || existing.createdAt || '')) || 0;
+        const statusPromoted = existing.status === 'pending' && (backupUser.status === 'active' || backupUser.status === 'rejected');
+        if (inTime >= curTime || statusPromoted) {
+          if (backupUser.status === 'active' || backupUser.status === 'pending' || backupUser.status === 'rejected') {
+            existing.status = backupUser.status;
+          }
+          if (typeof backupUser.balance === 'number' && Number.isFinite(backupUser.balance)) existing.balance = Math.max(0, backupUser.balance);
+          if (typeof backupUser.coins === 'number' && Number.isFinite(backupUser.coins)) existing.coins = Math.max(0, backupUser.coins);
+          if (typeof backupUser.totalEarnings === 'number' && Number.isFinite(backupUser.totalEarnings)) existing.totalEarnings = Math.max(0, backupUser.totalEarnings);
+          if (typeof backupUser.referralEarnings === 'number' && Number.isFinite(backupUser.referralEarnings)) existing.referralEarnings = Math.max(0, backupUser.referralEarnings);
+          if (typeof backupUser.promoEarnings === 'number' && Number.isFinite(backupUser.promoEarnings)) existing.promoEarnings = Math.max(0, backupUser.promoEarnings);
+          if (typeof backupUser.totalWithdrawn === 'number' && Number.isFinite(backupUser.totalWithdrawn)) existing.totalWithdrawn = Math.max(0, backupUser.totalWithdrawn);
+          if (typeof backupUser.charms === 'number' && Number.isFinite(backupUser.charms)) existing.charms = Math.max(0, backupUser.charms);
+          if (typeof backupUser.gameLevel === 'number' && Number.isFinite(backupUser.gameLevel)) existing.gameLevel = Math.max(1, backupUser.gameLevel);
+          if (typeof backupUser.gameXp === 'number' && Number.isFinite(backupUser.gameXp)) existing.gameXp = Math.max(0, backupUser.gameXp);
+          if (backupUser.vipTier) existing.vipTier = backupUser.vipTier;
+          if (backupUser.vipTitle !== undefined) existing.vipTitle = String(backupUser.vipTitle);
+          if (backupUser.frameType) existing.frameType = String(backupUser.frameType);
+          if (Array.isArray(backupUser.unlockedFrames) && backupUser.unlockedFrames.length > 0) existing.unlockedFrames = backupUser.unlockedFrames;
+          if (backupUser.chosenServiceCode) existing.chosenServiceCode = String(backupUser.chosenServiceCode);
+          if (backupUser.chosenServiceName) existing.chosenServiceName = String(backupUser.chosenServiceName);
+          if (typeof backupUser.joiningFee === 'number') existing.joiningFee = Math.max(0, backupUser.joiningFee);
+          if (backupUser.accountType === 'business' || backupUser.accountType === 'gamer') existing.accountType = backupUser.accountType;
+          if (backupUser.swiAppLink !== undefined) existing.swiAppLink = String(backupUser.swiAppLink || '');
+          if (backupUser.swiAppNote !== undefined) existing.swiAppNote = String(backupUser.swiAppNote || '');
+          if (typeof backupUser.isVipRoom === 'boolean') existing.isVipRoom = backupUser.isVipRoom;
+          if (backupUser.vipRoomLabel !== undefined) existing.vipRoomLabel = String(backupUser.vipRoomLabel || '');
+          if (backupUser.roomAddress && /^\d{3,10}$/.test(String(backupUser.roomAddress))) {
+            existing.roomAddress = String(backupUser.roomAddress);
+            existing.personalRoomId = String(backupUser.roomAddress);
+          }
+          if (backupUser.fullName) existing.fullName = String(backupUser.fullName);
+          if (backupUser.payoutUpiId !== undefined) existing.payoutUpiId = String(backupUser.payoutUpiId || '');
+          if (backupUser.paymentAddress !== undefined) existing.paymentAddress = String(backupUser.paymentAddress || '');
+          if (backupUser.clanName !== undefined) existing.clanName = String(backupUser.clanName || '');
+          if (backupUser.workspaceState && typeof backupUser.workspaceState === 'object') {
+            existing.workspaceState = backupUser.workspaceState;
+          }
+          (existing as any).updatedAt = backupUser.updatedAt || new Date().toISOString();
+        }
       }
       const sessionRes = createSessionForUser(existing, req, {
         preferredToken,
@@ -3628,17 +3695,59 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
         existingUser.status = raw.status;
         touched = true;
       }
-      if (incomingIsNewer && Number(raw.coins) > (Number(existingUser.coins) || 0)) {
-        existingUser.coins = Number(raw.coins);
-        touched = true;
-      }
-      if (incomingIsNewer && Number(raw.balance) > (Number(existingUser.balance) || 0)) {
-        existingUser.balance = Number(raw.balance);
-        touched = true;
-      }
-      if (incomingIsNewer && Number(raw.gameLevel) > (Number(existingUser.gameLevel) || 1)) {
-        existingUser.gameLevel = Number(raw.gameLevel);
-        touched = true;
+      if (incomingIsNewer) {
+        const numFields: Array<keyof UserProfile> = [
+          'coins', 'balance', 'totalEarnings', 'referralEarnings', 'promoEarnings', 'totalWithdrawn', 'charms', 'gameXp',
+        ];
+        for (const fk of numFields) {
+          if (typeof raw[fk] === 'number' && Number.isFinite(raw[fk]) && Number(raw[fk]) !== Number((existingUser as any)[fk] || 0)) {
+            (existingUser as any)[fk] = Math.max(0, Number(raw[fk]));
+            touched = true;
+          }
+        }
+        if (typeof raw.gameLevel === 'number' && Number.isFinite(raw.gameLevel) && Number(raw.gameLevel) >= 1 && Number(raw.gameLevel) !== Number(existingUser.gameLevel || 1)) {
+          existingUser.gameLevel = Number(raw.gameLevel);
+          touched = true;
+        }
+        if (raw.vipTier && raw.vipTier !== existingUser.vipTier) {
+          existingUser.vipTier = raw.vipTier;
+          touched = true;
+        }
+        if (raw.vipTitle !== undefined && raw.vipTitle !== existingUser.vipTitle) {
+          existingUser.vipTitle = String(raw.vipTitle || '');
+          touched = true;
+        }
+        if (raw.frameType && raw.frameType !== existingUser.frameType) {
+          existingUser.frameType = String(raw.frameType);
+          if (!Array.isArray(existingUser.unlockedFrames)) existingUser.unlockedFrames = ['standard'];
+          if (!existingUser.unlockedFrames.includes(existingUser.frameType)) {
+            existingUser.unlockedFrames.push(existingUser.frameType);
+          }
+          touched = true;
+        }
+        if (typeof raw.isVipRoom === 'boolean' && raw.isVipRoom !== existingUser.isVipRoom) {
+          existingUser.isVipRoom = raw.isVipRoom;
+          touched = true;
+        }
+        if (raw.vipRoomLabel !== undefined && raw.vipRoomLabel !== existingUser.vipRoomLabel) {
+          existingUser.vipRoomLabel = String(raw.vipRoomLabel || '');
+          touched = true;
+        }
+        if (raw.roomAddress && /^\d{3,10}$/.test(String(raw.roomAddress)) && String(raw.roomAddress) !== String(existingUser.roomAddress || '')) {
+          existingUser.roomAddress = String(raw.roomAddress);
+          existingUser.personalRoomId = String(raw.roomAddress);
+          touched = true;
+        }
+        if (raw.chosenServiceCode && raw.chosenServiceCode !== existingUser.chosenServiceCode) {
+          existingUser.chosenServiceCode = String(raw.chosenServiceCode).slice(0, 24);
+          if (raw.chosenServiceName) existingUser.chosenServiceName = String(raw.chosenServiceName).slice(0, 120);
+          touched = true;
+        }
+        if (raw.verifiedAt && raw.verifiedAt !== existingUser.verifiedAt) {
+          existingUser.verifiedAt = String(raw.verifiedAt);
+          touched = true;
+        }
+        (existingUser as any).updatedAt = String(raw.updatedAt || new Date().toISOString());
       }
       if (raw.workspaceState && typeof raw.workspaceState === 'object') {
         const wsIn = Date.parse(String(raw.workspaceState.updatedAt || '')) || 0;
@@ -3728,13 +3837,16 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
       gameLevel: Math.max(1, Number(raw.gameLevel) || 1),
       gameXp: Math.max(0, Number(raw.gameXp) || 0),
       vipTier: raw.vipTier === 'silver' || raw.vipTier === 'gold' || raw.vipTier === 'diamond' ? raw.vipTier : 'none',
-      vipTitle: '',
+      vipTitle: String(raw.vipTitle || ''),
       unlockedFrames: Array.isArray(raw.unlockedFrames) && raw.unlockedFrames.length > 0 ? raw.unlockedFrames : ['standard'],
       frameType: String(raw.frameType || 'standard'),
       unlockedRooms: Array.isArray(raw.unlockedRooms) && raw.unlockedRooms.length > 0 ? raw.unlockedRooms : ['default_dark'],
       roomTheme: String(raw.roomTheme || 'default_dark'),
+      isVipRoom: Boolean(raw.isVipRoom),
+      vipRoomLabel: raw.vipRoomLabel ? String(raw.vipRoomLabel) : '',
       swiAppLink: raw.swiAppLink ? String(raw.swiAppLink) : undefined,
       swiAppNote: raw.swiAppNote ? String(raw.swiAppNote) : undefined,
+      verifiedAt: raw.verifiedAt ? String(raw.verifiedAt) : undefined,
       taskProgress: {},
       taskProgressDate: getTodayDateString(),
       claimedTaskIds: [],
@@ -3777,16 +3889,67 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
     importedCount++;
   }
 
-  if (incomingUpgrades.length > 0) {
-    if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
-    for (const upg of incomingUpgrades) {
-      if (!upg || !upg.id) continue;
-      const existingUpg = db.planUpgrades.find(x => x.id === upg.id);
-      if (!existingUpg) {
-        db.planUpgrades.unshift(upg);
+  const mergeQueueById = (targetArr: any[], incomingArr: any[], resolvedStatuses: string[]) => {
+    for (const item of incomingArr) {
+      if (!item || !item.id) continue;
+      const idx = targetArr.findIndex(x => x.id === item.id);
+      if (idx === -1) {
+        targetArr.unshift(item);
         updatedCount++;
+      } else {
+        const cur = targetArr[idx];
+        const curResolved = resolvedStatuses.includes(String(cur.status || ''));
+        const inResolved = resolvedStatuses.includes(String(item.status || ''));
+        const inTs = Date.parse(String(item.updatedAt || item.processedDate || item.processedAt || item.fulfilledAt || item.resolvedAt || '')) || 0;
+        const curTs = Date.parse(String(cur.updatedAt || cur.processedDate || cur.processedAt || cur.fulfilledAt || cur.resolvedAt || '')) || 0;
+        if ((!curResolved && inResolved) || (inTs > curTs)) {
+          targetArr[idx] = { ...cur, ...item };
+          updatedCount++;
+        }
       }
     }
+  };
+
+  if (incomingUpgrades.length > 0) {
+    if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
+    mergeQueueById(db.planUpgrades, incomingUpgrades, ['approved', 'rejected']);
+  }
+  if (Array.isArray(req.body?.payouts) && req.body.payouts.length > 0) {
+    if (!Array.isArray(db.payouts)) db.payouts = [];
+    mergeQueueById(db.payouts, req.body.payouts, ['approved', 'rejected']);
+  }
+  if (Array.isArray(req.body?.coinRecharges) && req.body.coinRecharges.length > 0) {
+    if (!Array.isArray(db.coinRecharges)) db.coinRecharges = [];
+    mergeQueueById(db.coinRecharges, req.body.coinRecharges, ['approved', 'rejected']);
+  }
+  if (Array.isArray(req.body?.giftCardRedemptions) && req.body.giftCardRedemptions.length > 0) {
+    if (!Array.isArray(db.giftCardRedemptions)) db.giftCardRedemptions = [];
+    mergeQueueById(db.giftCardRedemptions, req.body.giftCardRedemptions, ['fulfilled', 'rejected']);
+  }
+  if (Array.isArray(req.body?.complaints) && req.body.complaints.length > 0) {
+    if (!Array.isArray(db.complaints)) db.complaints = [];
+    mergeQueueById(db.complaints, req.body.complaints, ['resolved', 'rejected']);
+  }
+  if (Array.isArray(req.body?.contactMessages) && req.body.contactMessages.length > 0) {
+    if (!Array.isArray(db.contactMessages)) db.contactMessages = [];
+    mergeQueueById(db.contactMessages, req.body.contactMessages, ['replied', 'read']);
+  }
+  if (Array.isArray(req.body?.referrals) && req.body.referrals.length > 0) {
+    if (!Array.isArray(db.referrals)) db.referrals = [];
+    mergeQueueById(db.referrals, req.body.referrals, ['credited', 'rejected']);
+  }
+  if (req.body?.settings && typeof req.body.settings === 'object') {
+    db.settings = { ...db.settings, ...req.body.settings };
+    updatedCount++;
+  }
+  if (Array.isArray(req.body?.services) && req.body.services.length > 0) {
+    db.services = req.body.services;
+    updatedCount++;
+  }
+  if (Array.isArray(req.body?.homeSliderPhotos)) {
+    db.homeSliderPhotos = req.body.homeSliderPhotos.slice(0, 7);
+    db.settings = { ...db.settings, homeSliderPhotos: db.homeSliderPhotos };
+    updatedCount++;
   }
 
   if (importedCount > 0 || updatedCount > 0) {

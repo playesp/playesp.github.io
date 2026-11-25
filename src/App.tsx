@@ -6,7 +6,8 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile, PlatformSettings, ServiceItem, PublicSponsorPreview } from './types/index.ts';
 import { api } from './services/api.ts';
-import { syncUserToFirestore } from './services/firebase.ts';
+import { syncUserToFirestore, subscribeToPlatformConfig } from './services/firebase.ts';
+import { applyStaticCloudConfig } from './services/staticFallback.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { Footer } from './components/Footer.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
@@ -210,6 +211,26 @@ export default function App() {
     api.getServices().then(setServices);
     api.syncLocalBackupsToCloudBridge().catch(() => {});
 
+    const unsubPlatformConfig = subscribeToPlatformConfig(
+      cfg => {
+        if (cfg.settings && typeof cfg.settings === 'object') {
+          setSettings(prev => ({
+            ...prev,
+            ...cfg.settings,
+            adminQrCodeUrl: cfg.settings.adminQrCodeUrl || prev.adminQrCodeUrl || '',
+            ...(Array.isArray(cfg.homeSliderPhotos) && cfg.homeSliderPhotos.length > 0
+              ? { homeSliderPhotos: cfg.homeSliderPhotos }
+              : {}),
+          }));
+        }
+        if (Array.isArray(cfg.services) && cfg.services.length > 0) {
+          setServices(cfg.services);
+        }
+        applyStaticCloudConfig(cfg.settings || null, cfg.services || null, cfg.homeSliderPhotos);
+      },
+      () => {}
+    );
+
     // Global 3D click enlarge + glow pulse for every button across desktop & mobile
     const handleGlobalButtonPulse = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null;
@@ -254,6 +275,7 @@ export default function App() {
     const sessionPoll = setInterval(verifyCurrentSession, 20000);
     return () => {
       clearInterval(sessionPoll);
+      unsubPlatformConfig();
       document.removeEventListener('pointerdown', handleGlobalButtonPulse);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('esp-toast', handleToastEvent);

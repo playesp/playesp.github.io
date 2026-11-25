@@ -58,6 +58,11 @@
         "registeredFromHost": { "type": "string", "maxLength": 128 },
         "swiAppLink": { "type": "string", "maxLength": 500 },
         "swiAppNote": { "type": "string", "maxLength": 500 },
+        "isVipRoom": { "type": "boolean" },
+        "vipRoomLabel": { "type": "string", "maxLength": 64 },
+        "vipTitle": { "type": "string", "maxLength": 64 },
+        "promoEarnings": { "type": "number" },
+        "verifiedAt": { "type": "string", "maxLength": 64 },
         "password": { "type": "string", "maxLength": 128 },
         "role": { "type": "string", "enum": ["member", "admin"] },
         "createdAt": { "type": "string", "maxLength": 64 },
@@ -102,6 +107,11 @@
         "registeredFromHost": { "type": "string", "maxLength": 128 },
         "swiAppLink": { "type": "string", "maxLength": 500 },
         "swiAppNote": { "type": "string", "maxLength": 500 },
+        "isVipRoom": { "type": "boolean" },
+        "vipRoomLabel": { "type": "string", "maxLength": 64 },
+        "vipTitle": { "type": "string", "maxLength": 64 },
+        "promoEarnings": { "type": "number" },
+        "verifiedAt": { "type": "string", "maxLength": 64 },
         "role": { "type": "string", "enum": ["member"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
@@ -183,6 +193,11 @@
         "registeredFromHost": { "type": "string", "maxLength": 128 },
         "swiAppLink": { "type": "string", "maxLength": 500 },
         "swiAppNote": { "type": "string", "maxLength": 500 },
+        "isVipRoom": { "type": "boolean" },
+        "vipRoomLabel": { "type": "string", "maxLength": 64 },
+        "vipTitle": { "type": "string", "maxLength": 64 },
+        "promoEarnings": { "type": "number" },
+        "verifiedAt": { "type": "string", "maxLength": 64 },
         "password": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
@@ -214,16 +229,162 @@
     },
     "PlatformConfig": {
       "title": "PlatformConfig",
-      "description": "Global platform configuration and active service catalog synced by Admin across all URLs",
+      "description": "Global platform configuration, home slider gallery, and active service catalog synced by Admin across all URLs",
       "type": "object",
       "properties": {
         "configId": { "type": "string", "maxLength": 64 },
         "settings": { "type": "object" },
         "services": { "type": "array" },
+        "homeSliderPhotos": { "type": "array" },
         "updatedAt": { "type": "string", "maxLength": 64 },
         "updatedBy": { "type": "string", "maxLength": 150 }
       },
       "required": ["configId", "updatedAt"]
+    },
+    "PublicSponsor": {
+      "title": "PublicSponsor",
+      "description": "Zero-PII public sponsor verification card resolvable by userId, gamingId, or username across all origins",
+      "type": "object",
+      "properties": {
+        "sponsorKey": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "sponsorId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "gamingId": { "type": "string", "maxLength": 64 },
+        "username": { "type": "string", "maxLength": 24 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "chosenServiceCode": { "type": "string", "maxLength": 24 },
+        "chosenServiceName": { "type": "string", "maxLength": 120 },
+        "vipTier": { "type": "string", "enum": ["none", "silver", "gold", "diamond"] },
+        "gameLevel": { "type": "number" },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "active", "rejected"] },
+        "isOwner": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["sponsorKey", "sponsorId", "fullName", "updatedAt"]
+    },
+    "CloudPayout": {
+      "title": "CloudPayout",
+      "description": "Cross-origin withdrawal request synchronized between member browsers and Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userPhone": { "type": "string", "maxLength": 24 },
+        "amount": { "type": "number" },
+        "payoutAddress": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requestDate": { "type": "string", "maxLength": 64 },
+        "processedDate": { "type": "string", "maxLength": 64 },
+        "transactionRef": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "userId", "amount", "payoutAddress", "status", "requestDate"]
+    },
+    "CloudCoinRecharge": {
+      "title": "CloudCoinRecharge",
+      "description": "Cross-origin coin recharge UTR submission bridged to Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userPhone": { "type": "string", "maxLength": 24 },
+        "packId": { "type": "string", "maxLength": 64 },
+        "coins": { "type": "number" },
+        "bonusCoins": { "type": "number" },
+        "amount": { "type": "number" },
+        "paymentUtr": { "type": "string", "maxLength": 64 },
+        "paymentScreenshot": { "type": "string", "maxLength": 250000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "processedAt": { "type": "string", "maxLength": 64 },
+        "rejectionReason": { "type": "string", "maxLength": 240 }
+      },
+      "required": ["id", "userId", "coins", "amount", "status", "createdAt"]
+    },
+    "CloudGiftCard": {
+      "title": "CloudGiftCard",
+      "description": "Cross-origin gift card voucher redemption bridged to Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userPhone": { "type": "string", "maxLength": 24 },
+        "catalogId": { "type": "string", "maxLength": 64 },
+        "brand": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 120 },
+        "denomination": { "type": "number" },
+        "coinsSpent": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending_fulfillment", "fulfilled", "rejected"] },
+        "voucherCode": { "type": "string", "maxLength": 128 },
+        "voucherPin": { "type": "string", "maxLength": 64 },
+        "rejectionReason": { "type": "string", "maxLength": 200 },
+        "requestedAt": { "type": "string", "maxLength": 64 },
+        "fulfilledAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "catalogId", "userId", "coinsSpent", "status", "requestedAt"]
+    },
+    "CloudComplaint": {
+      "title": "CloudComplaint",
+      "description": "Cross-origin support complaint ticket bridged to Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userPhone": { "type": "string", "maxLength": 24 },
+        "userRoll": { "type": "string", "maxLength": 64 },
+        "category": { "type": "string", "maxLength": 64 },
+        "categoryLabel": { "type": "string", "maxLength": 120 },
+        "subject": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "proofScreenshot": { "type": "string", "maxLength": 250000 },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "rejected"] },
+        "adminResponse": { "type": "string", "maxLength": 1000 },
+        "adminResolvedBy": { "type": "string", "maxLength": 120 },
+        "refundCoins": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "resolvedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "category", "subject", "description", "status", "createdAt"]
+    },
+    "CloudContactMessage": {
+      "title": "CloudContactMessage",
+      "description": "Cross-origin contact inquiry bridged to Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 24 },
+        "telegramUsername": { "type": "string", "maxLength": 64 },
+        "subject": { "type": "string", "maxLength": 160 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["unread", "read", "replied"] },
+        "adminReply": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "name", "subject", "message", "status", "createdAt"]
+    },
+    "CloudReferral": {
+      "title": "CloudReferral",
+      "description": "Cross-origin downline referral record synchronized with Admin Panel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "sponsorUserId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "downlineUserId": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "downlineName": { "type": "string", "maxLength": 120 },
+        "downlinePhone": { "type": "string", "maxLength": 24 },
+        "serviceCode": { "type": "string", "maxLength": 24 },
+        "joiningFee": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["credited", "pending", "rejected"] },
+        "date": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "sponsorUserId", "downlineUserId", "commissionAmount", "status", "date"]
     },
     "PublicUserProfile": {
       "title": "PublicUserProfile",
@@ -434,7 +595,35 @@
     },
     "/platform_config/{configId}": {
       "schema": "PlatformConfig",
-      "description": "Global platform UPI, Welcome Banner & Services catalog synced by Admin"
+      "description": "Global platform UPI, Welcome Banner, Slider Gallery & Services catalog synced by Admin"
+    },
+    "/public_sponsors/{sponsorKey}": {
+      "schema": "PublicSponsor",
+      "description": "Zero-PII public sponsor verification cards keyed by lowercase ID/username"
+    },
+    "/cloud_payouts/{payoutId}": {
+      "schema": "CloudPayout",
+      "description": "Cross-origin payout requests bridged strictly to Admin Panel"
+    },
+    "/cloud_coin_recharges/{rechargeId}": {
+      "schema": "CloudCoinRecharge",
+      "description": "Cross-origin coin recharge requests bridged strictly to Admin Panel"
+    },
+    "/cloud_gift_cards/{redemptionId}": {
+      "schema": "CloudGiftCard",
+      "description": "Cross-origin gift card redemptions bridged strictly to Admin Panel"
+    },
+    "/cloud_complaints/{complaintId}": {
+      "schema": "CloudComplaint",
+      "description": "Cross-origin complaints bridged strictly to Admin Panel"
+    },
+    "/cloud_contact_messages/{msgId}": {
+      "schema": "CloudContactMessage",
+      "description": "Cross-origin contact inquiries bridged strictly to Admin Panel"
+    },
+    "/cloud_referrals/{referralId}": {
+      "schema": "CloudReferral",
+      "description": "Cross-origin downline referral sync records for Admin Panel"
     },
     "/public_profiles/{userId}": {
       "schema": "PublicUserProfile",

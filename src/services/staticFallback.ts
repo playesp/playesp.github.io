@@ -1292,11 +1292,23 @@ function buildNwiTree(db: StaticDb, user: UserProfile): NwiTreeRecord {
   };
 }
 
-export function applyStaticCloudConfig(settings?: Partial<PlatformSettings> | null, services?: ServiceItem[] | null) {
+export function applyStaticCloudConfig(
+  settings?: Partial<PlatformSettings> | null,
+  services?: ServiceItem[] | null,
+  homeSliderPhotos?: HomeSliderPhoto[] | null
+) {
   const db = getDb();
   let changed = false;
   if (settings && typeof settings === 'object') {
     db.settings = { ...db.settings, ...settings };
+    if (Array.isArray(settings.homeSliderPhotos)) {
+      db.homeSliderPhotos = settings.homeSliderPhotos.slice(0, 7);
+    }
+    changed = true;
+  }
+  if (Array.isArray(homeSliderPhotos)) {
+    db.homeSliderPhotos = homeSliderPhotos.slice(0, 7);
+    db.settings = { ...db.settings, homeSliderPhotos: db.homeSliderPhotos };
     changed = true;
   }
   if (Array.isArray(services) && services.length > 0) {
@@ -1529,10 +1541,28 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     const srv = isGamer
       ? { code: 'GAME', name: 'ESP GAMING & VOICE CLUB' }
       : (db.services.find(s => s.code === body.chosenServiceCode) || db.services[0]);
-    const userId = isGamer
+    const prefUserId = String(body.preferredUserId || '').trim();
+    const prefUserIdFree =
+      prefUserId &&
+      /^[a-zA-Z0-9_-]{3,48}$/.test(prefUserId) &&
+      !db.users.some(u => (u.userId || '').toLowerCase() === prefUserId.toLowerCase());
+    const userId = prefUserIdFree
+      ? prefUserId
+      : isGamer
       ? generateStaticGamerId(db.users, fullName)
       : generateStaticIncomeId(db.users, fullName, srv.code);
-    let gamingId = isGamer ? userId : generateStaticGamerId(db.users, fullName);
+
+    const prefGamingId = String(body.preferredGamingId || '').trim();
+    const prefGamingIdFree =
+      prefGamingId &&
+      /^[a-zA-Z0-9_-]{3,48}$/.test(prefGamingId) &&
+      (isGamer || prefGamingId.toLowerCase() !== userId.toLowerCase()) &&
+      !db.users.some(u => (u.gamingId || '').toLowerCase() === prefGamingId.toLowerCase());
+    let gamingId = isGamer
+      ? userId
+      : prefGamingIdFree
+      ? prefGamingId
+      : generateStaticGamerId(db.users, fullName);
     if (!isGamer && gamingId.toLowerCase() === userId.toLowerCase()) {
       gamingId = `${gamingId}G`;
     }
@@ -1540,7 +1570,13 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     const sponsor = findStaticSponsorUser(db.users, body.sponsorId || db.settings.ownerSponsorId);
     const sessionToken = `esp_static_${Date.now()}`;
 
-    const roomAddress = generateStaticRoomId(db.users, db.customVoiceRooms || [], fullName);
+    const prefRoom = String(body.preferredRoomAddress || '').trim();
+    const prefRoomFree =
+      /^\d{3,10}$/.test(prefRoom) &&
+      !findStaticRoomConflict(db.users, db.customVoiceRooms || [], prefRoom).conflict;
+    const roomAddress = prefRoomFree
+      ? prefRoom
+      : generateStaticRoomId(db.users, db.customVoiceRooms || [], fullName);
 
     const newUser: UserProfile = normalizeStaticUser({
       id: `usr-${Date.now()}`,
@@ -1785,6 +1821,50 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       existing = normalizeStaticUser({ ...backup });
       db.users.push(existing);
       saveDb(db);
+    } else if (body.forceCloudMerge) {
+      const inTime = Date.parse(String(backup.updatedAt || backup.createdAt || '')) || 0;
+      const curTime = Date.parse(String((existing as any).updatedAt || existing.lastLogin || existing.createdAt || '')) || 0;
+      const statusPromoted = existing.status === 'pending' && (backup.status === 'active' || backup.status === 'rejected');
+      if (inTime >= curTime || statusPromoted) {
+        if (backup.status === 'active' || backup.status === 'pending' || backup.status === 'rejected') {
+          existing.status = backup.status;
+        }
+        if (typeof backup.balance === 'number' && Number.isFinite(backup.balance)) existing.balance = Math.max(0, backup.balance);
+        if (typeof backup.coins === 'number' && Number.isFinite(backup.coins)) existing.coins = Math.max(0, backup.coins);
+        if (typeof backup.totalEarnings === 'number' && Number.isFinite(backup.totalEarnings)) existing.totalEarnings = Math.max(0, backup.totalEarnings);
+        if (typeof backup.referralEarnings === 'number' && Number.isFinite(backup.referralEarnings)) existing.referralEarnings = Math.max(0, backup.referralEarnings);
+        if (typeof backup.promoEarnings === 'number' && Number.isFinite(backup.promoEarnings)) existing.promoEarnings = Math.max(0, backup.promoEarnings);
+        if (typeof backup.totalWithdrawn === 'number' && Number.isFinite(backup.totalWithdrawn)) existing.totalWithdrawn = Math.max(0, backup.totalWithdrawn);
+        if (typeof backup.charms === 'number' && Number.isFinite(backup.charms)) existing.charms = Math.max(0, backup.charms);
+        if (typeof backup.gameLevel === 'number' && Number.isFinite(backup.gameLevel)) existing.gameLevel = Math.max(1, backup.gameLevel);
+        if (typeof backup.gameXp === 'number' && Number.isFinite(backup.gameXp)) existing.gameXp = Math.max(0, backup.gameXp);
+        if (backup.vipTier) existing.vipTier = backup.vipTier;
+        if (backup.vipTitle !== undefined) existing.vipTitle = String(backup.vipTitle);
+        if (backup.frameType) existing.frameType = String(backup.frameType);
+        if (Array.isArray(backup.unlockedFrames) && backup.unlockedFrames.length > 0) existing.unlockedFrames = backup.unlockedFrames;
+        if (backup.chosenServiceCode) existing.chosenServiceCode = String(backup.chosenServiceCode);
+        if (backup.chosenServiceName) existing.chosenServiceName = String(backup.chosenServiceName);
+        if (typeof backup.joiningFee === 'number') existing.joiningFee = Math.max(0, backup.joiningFee);
+        if (backup.accountType === 'business' || backup.accountType === 'gamer') existing.accountType = backup.accountType;
+        if (backup.swiAppLink !== undefined) existing.swiAppLink = String(backup.swiAppLink || '');
+        if (backup.swiAppNote !== undefined) existing.swiAppNote = String(backup.swiAppNote || '');
+        if (typeof backup.isVipRoom === 'boolean') existing.isVipRoom = backup.isVipRoom;
+        if (backup.vipRoomLabel !== undefined) existing.vipRoomLabel = String(backup.vipRoomLabel || '');
+        if (backup.roomAddress && /^\d{3,10}$/.test(String(backup.roomAddress))) {
+          existing.roomAddress = String(backup.roomAddress);
+          existing.personalRoomId = String(backup.roomAddress);
+        }
+        if (backup.fullName) existing.fullName = String(backup.fullName);
+        if (backup.payoutUpiId !== undefined) existing.payoutUpiId = String(backup.payoutUpiId || '');
+        if (backup.paymentAddress !== undefined) existing.paymentAddress = String(backup.paymentAddress || '');
+        if (backup.clanName !== undefined) existing.clanName = String(backup.clanName || '');
+        if (backup.workspaceState && typeof backup.workspaceState === 'object') {
+          existing.workspaceState = backup.workspaceState;
+        }
+        (existing as any).updatedAt = backup.updatedAt || new Date().toISOString();
+        normalizeStaticUser(existing);
+        saveDb(db);
+      }
     }
     const resSess = createStaticUserSession(existing, body, body.preferredToken);
     if (resSess.limitReached) {
@@ -3910,17 +3990,59 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
           existingUser.status = raw.status;
           touched = true;
         }
-        if (incomingIsNewer && Number(raw.coins) > (Number(existingUser.coins) || 0)) {
-          existingUser.coins = Number(raw.coins);
-          touched = true;
-        }
-        if (incomingIsNewer && Number(raw.balance) > (Number(existingUser.balance) || 0)) {
-          existingUser.balance = Number(raw.balance);
-          touched = true;
-        }
-        if (incomingIsNewer && Number(raw.gameLevel) > (Number(existingUser.gameLevel) || 1)) {
-          existingUser.gameLevel = Number(raw.gameLevel);
-          touched = true;
+        if (incomingIsNewer) {
+          const numFields: Array<keyof UserProfile> = [
+            'coins', 'balance', 'totalEarnings', 'referralEarnings', 'promoEarnings', 'totalWithdrawn', 'charms', 'gameXp',
+          ];
+          for (const fk of numFields) {
+            if (typeof raw[fk] === 'number' && Number.isFinite(raw[fk]) && Number(raw[fk]) !== Number((existingUser as any)[fk] || 0)) {
+              (existingUser as any)[fk] = Math.max(0, Number(raw[fk]));
+              touched = true;
+            }
+          }
+          if (typeof raw.gameLevel === 'number' && Number.isFinite(raw.gameLevel) && Number(raw.gameLevel) >= 1 && Number(raw.gameLevel) !== Number(existingUser.gameLevel || 1)) {
+            existingUser.gameLevel = Number(raw.gameLevel);
+            touched = true;
+          }
+          if (raw.vipTier && raw.vipTier !== existingUser.vipTier) {
+            existingUser.vipTier = raw.vipTier;
+            touched = true;
+          }
+          if (raw.vipTitle !== undefined && raw.vipTitle !== existingUser.vipTitle) {
+            existingUser.vipTitle = String(raw.vipTitle || '');
+            touched = true;
+          }
+          if (raw.frameType && raw.frameType !== existingUser.frameType) {
+            existingUser.frameType = String(raw.frameType);
+            if (!Array.isArray(existingUser.unlockedFrames)) existingUser.unlockedFrames = ['standard'];
+            if (!existingUser.unlockedFrames.includes(existingUser.frameType)) {
+              existingUser.unlockedFrames.push(existingUser.frameType);
+            }
+            touched = true;
+          }
+          if (typeof raw.isVipRoom === 'boolean' && raw.isVipRoom !== existingUser.isVipRoom) {
+            existingUser.isVipRoom = raw.isVipRoom;
+            touched = true;
+          }
+          if (raw.vipRoomLabel !== undefined && raw.vipRoomLabel !== existingUser.vipRoomLabel) {
+            existingUser.vipRoomLabel = String(raw.vipRoomLabel || '');
+            touched = true;
+          }
+          if (raw.roomAddress && /^\d{3,10}$/.test(String(raw.roomAddress)) && String(raw.roomAddress) !== String(existingUser.roomAddress || '')) {
+            existingUser.roomAddress = String(raw.roomAddress);
+            existingUser.personalRoomId = String(raw.roomAddress);
+            touched = true;
+          }
+          if (raw.chosenServiceCode && raw.chosenServiceCode !== existingUser.chosenServiceCode) {
+            existingUser.chosenServiceCode = String(raw.chosenServiceCode).slice(0, 24);
+            if (raw.chosenServiceName) existingUser.chosenServiceName = String(raw.chosenServiceName).slice(0, 120);
+            touched = true;
+          }
+          if (raw.verifiedAt && raw.verifiedAt !== existingUser.verifiedAt) {
+            existingUser.verifiedAt = String(raw.verifiedAt);
+            touched = true;
+          }
+          (existingUser as any).updatedAt = String(raw.updatedAt || new Date().toISOString());
         }
         if (raw.workspaceState && typeof raw.workspaceState === 'object') {
           const wsIn = Date.parse(String(raw.workspaceState.updatedAt || '')) || 0;
@@ -3980,13 +4102,21 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         status: raw.status === 'active' || raw.status === 'rejected' ? raw.status : isGamer ? 'active' : 'pending',
         accountType: isGamer ? 'gamer' : 'business',
         balance: Math.max(0, Number(raw.balance) || 0),
+        totalEarnings: Math.max(0, Number(raw.totalEarnings) || 0),
+        referralEarnings: Math.max(0, Number(raw.referralEarnings) || 0),
+        promoEarnings: Math.max(0, Number(raw.promoEarnings) || 0),
+        totalWithdrawn: Math.max(0, Number(raw.totalWithdrawn) || 0),
         coins: Math.max(0, Number(raw.coins) || 0),
         charms: Math.max(0, Number(raw.charms) || 0),
         gameLevel: Math.max(1, Number(raw.gameLevel) || 1),
         vipTier: raw.vipTier || 'none',
+        vipTitle: raw.vipTitle || '',
         frameType: raw.frameType || 'standard',
+        isVipRoom: Boolean(raw.isVipRoom),
+        vipRoomLabel: raw.vipRoomLabel ? String(raw.vipRoomLabel) : '',
         swiAppLink: raw.swiAppLink ? String(raw.swiAppLink) : undefined,
         swiAppNote: raw.swiAppNote ? String(raw.swiAppNote) : undefined,
+        verifiedAt: raw.verifiedAt ? String(raw.verifiedAt) : undefined,
         roomAddress,
         personalRoomId: roomAddress,
         registeredFromHost: String(raw.registeredFromHost || 'playesp.github.io'),
@@ -3997,15 +4127,66 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       ensureStaticPersonalRoom(db, newUser);
       importedCount++;
     }
-    if (incomingUpgrades.length > 0) {
-      if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
-      for (const upg of incomingUpgrades) {
-        if (!upg || !upg.id) continue;
-        if (!db.planUpgrades.some(x => x.id === upg.id)) {
-          db.planUpgrades.unshift(upg);
+    const mergeQueueById = (targetArr: any[], incomingArr: any[], resolvedStatuses: string[]) => {
+      for (const item of incomingArr) {
+        if (!item || !item.id) continue;
+        const idx = targetArr.findIndex(x => x.id === item.id);
+        if (idx === -1) {
+          targetArr.unshift(item);
           updatedCount++;
+        } else {
+          const cur = targetArr[idx];
+          const curResolved = resolvedStatuses.includes(String(cur.status || ''));
+          const inResolved = resolvedStatuses.includes(String(item.status || ''));
+          const inTs = Date.parse(String(item.updatedAt || item.processedDate || item.processedAt || item.fulfilledAt || item.resolvedAt || '')) || 0;
+          const curTs = Date.parse(String(cur.updatedAt || cur.processedDate || cur.processedAt || cur.fulfilledAt || cur.resolvedAt || '')) || 0;
+          if ((!curResolved && inResolved) || (inTs > curTs)) {
+            targetArr[idx] = { ...cur, ...item };
+            updatedCount++;
+          }
         }
       }
+    };
+    if (incomingUpgrades.length > 0) {
+      if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
+      mergeQueueById(db.planUpgrades, incomingUpgrades, ['approved', 'rejected']);
+    }
+    if (Array.isArray(body.payouts) && body.payouts.length > 0) {
+      if (!Array.isArray(db.payouts)) db.payouts = [];
+      mergeQueueById(db.payouts, body.payouts, ['approved', 'rejected']);
+    }
+    if (Array.isArray(body.coinRecharges) && body.coinRecharges.length > 0) {
+      if (!Array.isArray(db.coinRecharges)) db.coinRecharges = [];
+      mergeQueueById(db.coinRecharges, body.coinRecharges, ['approved', 'rejected']);
+    }
+    if (Array.isArray(body.giftCardRedemptions) && body.giftCardRedemptions.length > 0) {
+      if (!Array.isArray(db.giftCardRedemptions)) db.giftCardRedemptions = [];
+      mergeQueueById(db.giftCardRedemptions, body.giftCardRedemptions, ['fulfilled', 'rejected']);
+    }
+    if (Array.isArray(body.complaints) && body.complaints.length > 0) {
+      if (!Array.isArray(db.complaints)) db.complaints = [];
+      mergeQueueById(db.complaints, body.complaints, ['resolved', 'rejected']);
+    }
+    if (Array.isArray(body.contactMessages) && body.contactMessages.length > 0) {
+      if (!Array.isArray(db.contactMessages)) db.contactMessages = [];
+      mergeQueueById(db.contactMessages, body.contactMessages, ['replied', 'read']);
+    }
+    if (Array.isArray(body.referrals) && body.referrals.length > 0) {
+      if (!Array.isArray(db.referrals)) db.referrals = [];
+      mergeQueueById(db.referrals, body.referrals, ['credited', 'rejected']);
+    }
+    if (body.settings && typeof body.settings === 'object') {
+      db.settings = { ...db.settings, ...body.settings };
+      updatedCount++;
+    }
+    if (Array.isArray(body.services) && body.services.length > 0) {
+      db.services = body.services;
+      updatedCount++;
+    }
+    if (Array.isArray(body.homeSliderPhotos)) {
+      db.homeSliderPhotos = body.homeSliderPhotos.slice(0, 7);
+      db.settings = { ...db.settings, homeSliderPhotos: db.homeSliderPhotos };
+      updatedCount++;
     }
     if (importedCount > 0 || updatedCount > 0) saveDb(db);
     return { success: true, importedCount, updatedCount, totalUsers: db.users.length, users: db.users };

@@ -53,7 +53,18 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         setErrorMsg(`कृपया केवल अधिकृत एडमिन Google खाता (${ADMIN_GOOGLE_EMAIL}) चुनें।`);
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Google Cloud Sync कनेक्ट करने में त्रुटि आई');
+      const code = String(err?.code || '');
+      const rawMsg = String(err?.message || '');
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+      if (code === 'auth/unauthorized-domain' || rawMsg.includes('unauthorized-domain')) {
+        setErrorMsg(
+          `⚠️ डोमेन "${host}" Firebase Authentication में Authorized नहीं है। Firebase Console -> Authentication -> Settings -> Authorized domains में "${host}" जोड़ें। (आप नीचे Master Password से स्थानीय Admin Panel अभी भी खोल सकते हैं)`
+        );
+      } else if (code === 'auth/popup-blocked' || rawMsg.includes('popup-blocked')) {
+        setErrorMsg('ब्राउज़र ने Google Sign-In Popup ब्लॉक कर दिया है। कृपया Popups Allow करें और पुनः प्रयास करें।');
+      } else {
+        setErrorMsg(rawMsg || 'Google Cloud Sync कनेक्ट करने में त्रुटि आई');
+      }
     } finally {
       setCloudConnecting(false);
     }

@@ -89,6 +89,7 @@ export interface UserProfile {
   paymentScreenshot?: string;
   status: 'active' | 'pending' | 'rejected';
   verifiedAt?: string;
+  updatedAt?: string;
   
   // Wallet
   balance: number;

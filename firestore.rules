@@ -64,14 +64,14 @@ service cloud.firestore {
           'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
           'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'totalEarnings',
-          'referralEarnings', 'totalWithdrawn', 'coins', 'charms',
-          'gameLevel', 'gameXp', 'vipTier', 'unlockedFrames', 'frameType',
+          'referralEarnings', 'promoEarnings', 'totalWithdrawn', 'coins', 'charms',
+          'gameLevel', 'gameXp', 'vipTier', 'vipTitle', 'unlockedFrames', 'frameType',
           'tasksCompletedCount', 'totalGamesPlayed', 'totalGamesWon', 'unlockedRooms', 'roomTheme',
           'clanName', 'avatar', 'coverPhoto', 'bio',
           'gender', 'location', 'friendsList', 'gamingId', 'personalRoomId',
-          'roomAddress', 'todayActiveness', 'loginStreak', 'claimedDays',
+          'roomAddress', 'isVipRoom', 'vipRoomLabel', 'todayActiveness', 'loginStreak', 'claimedDays',
           'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost',
-          'swiAppLink', 'swiAppNote', 'role', 'createdAt', 'updatedAt'
+          'swiAppLink', 'swiAppNote', 'verifiedAt', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.authUid, 1, 128) &&
@@ -98,12 +98,14 @@ service cloud.firestore {
         (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
         (!('totalEarnings' in data) || (data.totalEarnings is number && data.totalEarnings >= 0)) &&
         (!('referralEarnings' in data) || (data.referralEarnings is number && data.referralEarnings >= 0)) &&
+        (!('promoEarnings' in data) || (data.promoEarnings is number && data.promoEarnings >= 0)) &&
         (!('totalWithdrawn' in data) || (data.totalWithdrawn is number && data.totalWithdrawn >= 0)) &&
         (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
         (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
         (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
         (!('gameXp' in data) || (data.gameXp is number && data.gameXp >= 0)) &&
         (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('vipTitle' in data) || isValidString(data.vipTitle, 0, 64)) &&
         (!('unlockedFrames' in data) || (data.unlockedFrames is list && data.unlockedFrames.size() >= 1 && data.unlockedFrames.size() <= 20 && data.unlockedFrames[0] is string)) &&
         (!('frameType' in data) || isValidString(data.frameType, 1, 64)) &&
         (!('tasksCompletedCount' in data) || (data.tasksCompletedCount is number && data.tasksCompletedCount >= 0)) &&
@@ -121,6 +123,8 @@ service cloud.firestore {
         (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
         (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
         (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('isVipRoom' in data) || data.isVipRoom is bool) &&
+        (!('vipRoomLabel' in data) || isValidString(data.vipRoomLabel, 0, 64)) &&
         (!('todayActiveness' in data) || (data.todayActiveness is number && data.todayActiveness >= 0)) &&
         (!('loginStreak' in data) || (data.loginStreak is number && data.loginStreak >= 0)) &&
         (!('claimedDays' in data) || (data.claimedDays is list && data.claimedDays.size() <= 7)) &&
@@ -129,6 +133,7 @@ service cloud.firestore {
         (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
         (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
         (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
+        (!('verifiedAt' in data) || isValidString(data.verifiedAt, 0, 64)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -138,9 +143,10 @@ service cloud.firestore {
           'id', 'userId', 'gamingId', 'username', 'fullName', 'phone', 'email', 'fullAddress',
           'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
-          'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'coins', 'charms',
-          'gameLevel', 'vipTier', 'frameType', 'personalRoomId', 'roomAddress',
-          'registeredFromHost', 'swiAppLink', 'swiAppNote', 'role', 'createdAt', 'updatedAt'
+          'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'promoEarnings',
+          'coins', 'charms', 'gameLevel', 'vipTier', 'vipTitle', 'frameType', 'personalRoomId',
+          'roomAddress', 'isVipRoom', 'vipRoomLabel', 'registeredFromHost', 'swiAppLink',
+          'swiAppNote', 'verifiedAt', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.fullName, 1, 120) &&
@@ -166,16 +172,21 @@ service cloud.firestore {
         (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
         (!('paymentScreenshot' in data) || isValidString(data.paymentScreenshot, 0, 250000)) &&
         (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
+        (!('promoEarnings' in data) || (data.promoEarnings is number && data.promoEarnings >= 0)) &&
         (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
         (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
         (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
         (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('vipTitle' in data) || isValidString(data.vipTitle, 0, 64)) &&
         (!('frameType' in data) || isValidString(data.frameType, 0, 64)) &&
         (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
         (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('isVipRoom' in data) || data.isVipRoom is bool) &&
+        (!('vipRoomLabel' in data) || isValidString(data.vipRoomLabel, 0, 64)) &&
         (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
         (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
         (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
+        (!('verifiedAt' in data) || isValidString(data.verifiedAt, 0, 64)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -195,16 +206,16 @@ service cloud.firestore {
       return data.keys().hasAll(['vaultKey', 'userId', 'updatedAt']) &&
         data.keys().hasOnly([
           'vaultKey', 'isPointer', 'pointerTargetKey', 'userId', 'gamingId',
-          'personalRoomId', 'roomAddress', 'sponsorId', 'sponsorName', 'username',
-          'fullName', 'phone', 'email', 'fullAddress', 'paymentAddress', 'payoutUpiId',
+          'personalRoomId', 'roomAddress', 'isVipRoom', 'vipRoomLabel', 'sponsorId', 'sponsorName',
+          'username', 'fullName', 'phone', 'email', 'fullAddress', 'paymentAddress', 'payoutUpiId',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate', 'paymentUtr',
-          'status', 'accountType', 'role', 'balance', 'totalEarnings', 'referralEarnings',
-          'totalWithdrawn', 'coins', 'charms', 'gameLevel', 'gameXp', 'vipTier', 'frameType',
+          'status', 'accountType', 'role', 'balance', 'totalEarnings', 'referralEarnings', 'promoEarnings',
+          'totalWithdrawn', 'coins', 'charms', 'gameLevel', 'gameXp', 'vipTier', 'vipTitle', 'frameType',
           'unlockedFrames', 'tasksCompletedCount', 'totalGamesPlayed', 'totalGamesWon',
           'unlockedRooms', 'roomTheme', 'clanName', 'avatar', 'coverPhoto', 'bio',
           'gender', 'location', 'friendsList', 'todayActiveness', 'loginStreak', 'claimedDays',
           'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost', 'swiAppLink',
-          'swiAppNote', 'password', 'createdAt', 'updatedAt'
+          'swiAppNote', 'verifiedAt', 'password', 'createdAt', 'updatedAt'
         ]) &&
         isValidShaKey(data.vaultKey) &&
         isValidId(data.userId) &&
@@ -214,6 +225,8 @@ service cloud.firestore {
         (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
         (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
         (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('isVipRoom' in data) || data.isVipRoom is bool) &&
+        (!('vipRoomLabel' in data) || isValidString(data.vipRoomLabel, 0, 64)) &&
         (!('sponsorId' in data) || isValidString(data.sponsorId, 0, 64)) &&
         (!('sponsorName' in data) || isValidString(data.sponsorName, 0, 120)) &&
         (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
@@ -234,12 +247,14 @@ service cloud.firestore {
         (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
         (!('totalEarnings' in data) || (data.totalEarnings is number && data.totalEarnings >= 0)) &&
         (!('referralEarnings' in data) || (data.referralEarnings is number && data.referralEarnings >= 0)) &&
+        (!('promoEarnings' in data) || (data.promoEarnings is number && data.promoEarnings >= 0)) &&
         (!('totalWithdrawn' in data) || (data.totalWithdrawn is number && data.totalWithdrawn >= 0)) &&
         (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
         (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
         (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
         (!('gameXp' in data) || (data.gameXp is number && data.gameXp >= 0)) &&
         (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('vipTitle' in data) || isValidString(data.vipTitle, 0, 64)) &&
         (!('frameType' in data) || isValidString(data.frameType, 0, 64)) &&
         (!('unlockedFrames' in data) || (data.unlockedFrames is list && data.unlockedFrames.size() <= 20 && (data.unlockedFrames.size() == 0 || data.unlockedFrames[0] is string))) &&
         (!('tasksCompletedCount' in data) || (data.tasksCompletedCount is number && data.tasksCompletedCount >= 0)) &&
@@ -262,6 +277,7 @@ service cloud.firestore {
         (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
         (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
         (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
+        (!('verifiedAt' in data) || isValidString(data.verifiedAt, 0, 64)) &&
         (!('password' in data) || isValidString(data.password, 0, 128)) &&
         (!('createdAt' in data) || isValidString(data.createdAt, 0, 64));
     }
@@ -292,12 +308,161 @@ service cloud.firestore {
 
     function isValidPlatformConfig(data) {
       return data.keys().hasAll(['configId', 'updatedAt']) &&
-        data.keys().hasOnly(['configId', 'settings', 'services', 'updatedAt', 'updatedBy']) &&
+        data.keys().hasOnly(['configId', 'settings', 'services', 'homeSliderPhotos', 'updatedAt', 'updatedBy']) &&
         isValidId(data.configId) &&
         isValidString(data.updatedAt, 4, 64) &&
         (!('settings' in data) || data.settings is map) &&
         (!('services' in data) || (data.services is list && data.services.size() <= 40 && (data.services.size() == 0 || data.services[0] is map))) &&
+        (!('homeSliderPhotos' in data) || (data.homeSliderPhotos is list && data.homeSliderPhotos.size() <= 7 && (data.homeSliderPhotos.size() == 0 || data.homeSliderPhotos[0] is map))) &&
         (!('updatedBy' in data) || isValidString(data.updatedBy, 0, 150));
+    }
+
+    function isValidPublicSponsor(data) {
+      return data.keys().hasAll(['sponsorKey', 'sponsorId', 'fullName', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'sponsorKey', 'sponsorId', 'gamingId', 'username', 'fullName',
+          'chosenServiceCode', 'chosenServiceName', 'vipTier', 'gameLevel',
+          'avatar', 'status', 'isOwner', 'updatedAt'
+        ]) &&
+        isValidId(data.sponsorKey) &&
+        isValidId(data.sponsorId) &&
+        isValidString(data.fullName, 1, 120) &&
+        isValidString(data.updatedAt, 4, 64) &&
+        (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
+        (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
+        (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24)) &&
+        (!('chosenServiceName' in data) || isValidString(data.chosenServiceName, 0, 120)) &&
+        (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
+        (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
+        (!('status' in data) || data.status in ['pending', 'active', 'rejected']) &&
+        (!('isOwner' in data) || data.isOwner is bool);
+    }
+
+    function isValidCloudPayout(data) {
+      return data.keys().hasAll(['id', 'userId', 'amount', 'payoutAddress', 'status', 'requestDate']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'userName', 'userPhone', 'amount',
+          'payoutAddress', 'status', 'requestDate', 'processedDate', 'transactionRef'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        data.amount is number && data.amount >= 10 &&
+        isValidString(data.payoutAddress, 3, 120) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.requestDate, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('userPhone' in data) || isValidString(data.userPhone, 0, 24)) &&
+        (!('processedDate' in data) || isValidString(data.processedDate, 0, 64)) &&
+        (!('transactionRef' in data) || isValidString(data.transactionRef, 0, 128));
+    }
+
+    function isValidCloudCoinRecharge(data) {
+      return data.keys().hasAll(['id', 'userId', 'coins', 'amount', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'userName', 'userPhone', 'packId', 'coins', 'bonusCoins',
+          'amount', 'paymentUtr', 'paymentScreenshot', 'status', 'createdAt', 'processedAt', 'rejectionReason'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        data.coins is number && data.coins >= 0 &&
+        data.amount is number && data.amount >= 1 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('userPhone' in data) || isValidString(data.userPhone, 0, 24)) &&
+        (!('packId' in data) || isValidString(data.packId, 0, 64)) &&
+        (!('bonusCoins' in data) || (data.bonusCoins is number && data.bonusCoins >= 0)) &&
+        (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('paymentScreenshot' in data) || isValidString(data.paymentScreenshot, 0, 250000)) &&
+        (!('processedAt' in data) || isValidString(data.processedAt, 0, 64)) &&
+        (!('rejectionReason' in data) || isValidString(data.rejectionReason, 0, 240));
+    }
+
+    function isValidCloudGiftCard(data) {
+      return data.keys().hasAll(['id', 'catalogId', 'userId', 'coinsSpent', 'status', 'requestedAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'userName', 'userPhone', 'catalogId', 'brand', 'title',
+          'denomination', 'coinsSpent', 'status', 'voucherCode', 'voucherPin',
+          'rejectionReason', 'requestedAt', 'fulfilledAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.catalogId) &&
+        isValidId(data.userId) &&
+        data.coinsSpent is number && data.coinsSpent >= 10 &&
+        data.status in ['pending_fulfillment', 'fulfilled', 'rejected'] &&
+        isValidString(data.requestedAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('userPhone' in data) || isValidString(data.userPhone, 0, 24)) &&
+        (!('brand' in data) || isValidString(data.brand, 0, 64)) &&
+        (!('title' in data) || isValidString(data.title, 0, 120)) &&
+        (!('denomination' in data) || (data.denomination is number && data.denomination >= 0)) &&
+        (!('voucherCode' in data) || isValidString(data.voucherCode, 0, 128)) &&
+        (!('voucherPin' in data) || isValidString(data.voucherPin, 0, 64)) &&
+        (!('rejectionReason' in data) || isValidString(data.rejectionReason, 0, 200)) &&
+        (!('fulfilledAt' in data) || isValidString(data.fulfilledAt, 0, 64));
+    }
+
+    function isValidCloudComplaint(data) {
+      return data.keys().hasAll(['id', 'userId', 'category', 'subject', 'description', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'userName', 'userPhone', 'userRoll', 'category', 'categoryLabel',
+          'subject', 'description', 'proofScreenshot', 'status', 'adminResponse',
+          'adminResolvedBy', 'refundCoins', 'createdAt', 'updatedAt', 'resolvedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.category, 1, 64) &&
+        isValidString(data.subject, 1, 160) &&
+        isValidString(data.description, 1, 2000) &&
+        data.status in ['open', 'in_progress', 'resolved', 'rejected'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('userPhone' in data) || isValidString(data.userPhone, 0, 24)) &&
+        (!('userRoll' in data) || isValidString(data.userRoll, 0, 64)) &&
+        (!('categoryLabel' in data) || isValidString(data.categoryLabel, 0, 120)) &&
+        (!('proofScreenshot' in data) || isValidString(data.proofScreenshot, 0, 250000)) &&
+        (!('adminResponse' in data) || isValidString(data.adminResponse, 0, 1000)) &&
+        (!('adminResolvedBy' in data) || isValidString(data.adminResolvedBy, 0, 120)) &&
+        (!('refundCoins' in data) || (data.refundCoins is number && data.refundCoins >= 0)) &&
+        (!('updatedAt' in data) || isValidString(data.updatedAt, 0, 64)) &&
+        (!('resolvedAt' in data) || isValidString(data.resolvedAt, 0, 64));
+    }
+
+    function isValidCloudContactMessage(data) {
+      return data.keys().hasAll(['id', 'name', 'subject', 'message', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'name', 'email', 'phone', 'telegramUsername',
+          'subject', 'message', 'createdAt', 'status', 'adminReply'
+        ]) &&
+        isValidId(data.id) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.subject, 1, 160) &&
+        isValidString(data.message, 1, 2000) &&
+        data.status in ['unread', 'read', 'replied'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('email' in data) || isValidString(data.email, 0, 150)) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 24)) &&
+        (!('telegramUsername' in data) || isValidString(data.telegramUsername, 0, 64)) &&
+        (!('adminReply' in data) || isValidString(data.adminReply, 0, 1000));
+    }
+
+    function isValidCloudReferral(data) {
+      return data.keys().hasAll(['id', 'sponsorUserId', 'downlineUserId', 'commissionAmount', 'status', 'date']) &&
+        data.keys().hasOnly([
+          'id', 'sponsorUserId', 'downlineUserId', 'downlineName', 'downlinePhone',
+          'serviceCode', 'joiningFee', 'commissionAmount', 'status', 'date'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.sponsorUserId) &&
+        isValidId(data.downlineUserId) &&
+        data.commissionAmount is number && data.commissionAmount >= 0 &&
+        data.status in ['credited', 'pending', 'rejected'] &&
+        isValidString(data.date, 4, 64) &&
+        (!('downlineName' in data) || isValidString(data.downlineName, 0, 120)) &&
+        (!('downlinePhone' in data) || isValidString(data.downlinePhone, 0, 24)) &&
+        (!('serviceCode' in data) || isValidString(data.serviceCode, 0, 24)) &&
+        (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0));
     }
 
     function isValidPublicProfile(data) {
@@ -575,7 +740,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 3f. Global Platform Config (UPI, QR, Welcome Popup & Services Catalog - Admin Controlled)
+    // 3f. Global Platform Config (UPI, QR, Welcome Popup, Slider Gallery & Services Catalog - Admin Controlled)
     match /platform_config/{configId} {
       allow get: if isValidId(configId);
       allow list: if false;
@@ -583,6 +748,87 @@ service cloud.firestore {
         isValidId(configId) &&
         isValidPlatformConfig(incoming()) &&
         incoming().configId == configId;
+      allow delete: if false;
+    }
+
+    // 3g. Zero-PII Public Sponsor Lookup (Cross-Origin ?ref= & Sponsor Verification)
+    match /public_sponsors/{sponsorKey} {
+      allow get: if isValidId(sponsorKey);
+      allow list: if false;
+      allow create: if isValidId(sponsorKey) &&
+        isValidPublicSponsor(incoming()) &&
+        incoming().sponsorKey == sponsorKey &&
+        !exists(/databases/$(database)/documents/public_sponsors/$(sponsorKey));
+      allow update: if isAdmin() &&
+        isValidId(sponsorKey) &&
+        isValidPublicSponsor(incoming()) &&
+        incoming().sponsorKey == sponsorKey;
+      allow delete: if false;
+    }
+
+    // 3h. Cross-Origin Operational Queues (Write-Only Intake from Any Host, Admin-Only Management)
+    match /cloud_payouts/{payoutId} {
+      allow get: if isAdmin() && isValidId(payoutId);
+      allow list: if isAdmin();
+      allow create: if isValidId(payoutId) &&
+        isValidCloudPayout(incoming()) &&
+        incoming().id == payoutId &&
+        incoming().status == 'pending';
+      allow update: if isAdmin() && isValidId(payoutId) && isValidCloudPayout(incoming());
+      allow delete: if false;
+    }
+
+    match /cloud_coin_recharges/{rechargeId} {
+      allow get: if isAdmin() && isValidId(rechargeId);
+      allow list: if isAdmin();
+      allow create: if isValidId(rechargeId) &&
+        isValidCloudCoinRecharge(incoming()) &&
+        incoming().id == rechargeId &&
+        incoming().status == 'pending';
+      allow update: if isAdmin() && isValidId(rechargeId) && isValidCloudCoinRecharge(incoming());
+      allow delete: if false;
+    }
+
+    match /cloud_gift_cards/{redemptionId} {
+      allow get: if isAdmin() && isValidId(redemptionId);
+      allow list: if isAdmin();
+      allow create: if isValidId(redemptionId) &&
+        isValidCloudGiftCard(incoming()) &&
+        incoming().id == redemptionId &&
+        incoming().status == 'pending_fulfillment';
+      allow update: if isAdmin() && isValidId(redemptionId) && isValidCloudGiftCard(incoming());
+      allow delete: if false;
+    }
+
+    match /cloud_complaints/{complaintId} {
+      allow get: if isAdmin() && isValidId(complaintId);
+      allow list: if isAdmin();
+      allow create: if isValidId(complaintId) &&
+        isValidCloudComplaint(incoming()) &&
+        incoming().id == complaintId &&
+        incoming().status == 'open';
+      allow update: if isAdmin() && isValidId(complaintId) && isValidCloudComplaint(incoming());
+      allow delete: if false;
+    }
+
+    match /cloud_contact_messages/{msgId} {
+      allow get: if isAdmin() && isValidId(msgId);
+      allow list: if isAdmin();
+      allow create: if isValidId(msgId) &&
+        isValidCloudContactMessage(incoming()) &&
+        incoming().id == msgId &&
+        incoming().status == 'unread';
+      allow update: if isAdmin() && isValidId(msgId) && isValidCloudContactMessage(incoming());
+      allow delete: if false;
+    }
+
+    match /cloud_referrals/{referralId} {
+      allow get: if isAdmin() && isValidId(referralId);
+      allow list: if isAdmin();
+      allow create: if isValidId(referralId) &&
+        isValidCloudReferral(incoming()) &&
+        incoming().id == referralId;
+      allow update: if isAdmin() && isValidId(referralId) && isValidCloudReferral(incoming());
       allow delete: if false;
     }
 

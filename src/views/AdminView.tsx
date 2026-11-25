@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShieldCheck, 
   Lock, 
@@ -45,7 +45,7 @@ import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRec
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
-import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, fetchAllCloudUpgradesForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, fetchAllCloudUpgradesForAdmin, fetchAllCloudQueuesForAdmin, onFirebaseAuthChange, subscribeToAdminLiveUsers, subscribeToAdminLiveUpgrades, subscribeToAdminCloudQueues, subscribeToPlatformConfig, type AdminCloudQueuesBundle } from '../services/firebase.ts';
 import { CURATED_VIP_ROOM_NUMBERS, isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface AdminViewProps {
@@ -184,7 +184,31 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   // Admin Total Control Center + Per-User Total Control System State
   const [cloudConnectedEmail, setCloudConnectedEmail] = useState<string | null>(() => auth.currentUser?.email || null);
-  const [lastCloudSyncInfo, setLastCloudSyncInfo] = useState<{ imported: number; total: number; syncedAt: string } | null>(null);
+  const [lastCloudSyncInfo, setLastCloudSyncInfo] = useState<{
+    imported: number;
+    updated?: number;
+    cloudTotal?: number;
+    total: number;
+    syncedAt: string;
+  } | null>(null);
+  const [realtimeStreamLive, setRealtimeStreamLive] = useState(false);
+  const [liveStreamUpdatedAt, setLiveStreamUpdatedAt] = useState<string | null>(null);
+  const [livePendingAlerts, setLivePendingAlerts] = useState<
+    Array<{
+      userId: string;
+      fullName: string;
+      phone?: string;
+      chosenServiceCode: string;
+      chosenServiceName?: string;
+      joiningFee: number;
+      paymentUtr?: string;
+      paymentScreenshot?: string;
+      registeredFromHost?: string;
+      detectedAt: string;
+    }>
+  >([]);
+  const knownPendingBizIdsRef = useRef<Set<string>>(new Set());
+  const livePendingSeededRef = useRef(false);
   const [adminControlCenterOpen, setAdminControlCenterOpen] = useState(false);
   const [totalControlSearch, setTotalControlSearch] = useState('');
   const [totalControlUser, setTotalControlUser] = useState<{
@@ -438,20 +462,24 @@ export const AdminView: React.FC<AdminViewProps> = ({
       }
 
       // Load coin recharge requests (supports both Array return & { success, recharges } return)
+      let loadedRecharges: CoinRechargeRequest[] = data.coinRecharges || [];
       try {
         const rcData: any = await api.getCoinRecharges(adminPassword);
         const rcList = Array.isArray(rcData)
           ? rcData
           : (rcData?.recharges || rcData?.coinRecharges || []);
+        loadedRecharges = rcList;
         setCoinRecharges(rcList);
       } catch (err) {
         console.error('Failed to load coin recharges', err);
       }
 
       // Load contact messages & coin alert messages
+      let loadedMessages: ContactMessage[] = data.contactMessages || [];
       try {
         const msgList = await api.getAdminContactMessages(adminPassword);
         if (Array.isArray(msgList)) {
+          loadedMessages = msgList;
           setContactMessages(msgList);
         }
       } catch (err) {
@@ -459,27 +487,33 @@ export const AdminView: React.FC<AdminViewProps> = ({
       }
 
       // Load slider photos
+      let loadedSliders: HomeSliderPhoto[] = [];
       try {
         const sp = await api.getHomeSliderPhotos();
+        loadedSliders = sp;
         setSliderPhotos(sp);
       } catch (err) {
         console.error('Failed to load slider photos', err);
       }
 
       // Load Plan Upgrade Requests (₹100+)
+      let loadedUpgrades: PlanUpgradeRequest[] = [];
       try {
         const upgData = await api.getPlanUpgrades(adminPassword);
         if (upgData.success) {
-          setPlanUpgrades(upgData.upgrades || []);
+          loadedUpgrades = upgData.upgrades || [];
+          setPlanUpgrades(loadedUpgrades);
         }
       } catch (err) {
         console.error('Failed to load plan upgrades', err);
       }
 
       // Load Gift Card Redemptions
+      let loadedGiftCards: GiftCardRedemption[] = [];
       try {
         const gcList = await api.getGiftCardRedemptions(undefined, adminPassword);
-        setGiftCardRedemptions(gcList || []);
+        loadedGiftCards = gcList || [];
+        setGiftCardRedemptions(loadedGiftCards);
       } catch (err) {
         console.error('Failed to load gift card redemptions', err);
       }
@@ -487,22 +521,53 @@ export const AdminView: React.FC<AdminViewProps> = ({
       // Load Live 12 AM IST Clock & Weekly Rewards Stats
       loadAdminTimeStats();
 
-      // Auto-merge any cross-origin/localStorage backup registrations + Firebase Cloud Bridge (Users & Upgrades)
+      // Auto-merge any cross-origin/localStorage backup registrations + Firebase Cloud Bridge (Users, Upgrades & Queues)
       let mergedUsersList: UserProfile[] = data.users || [];
       try {
         const localBackups = api.getLocalBackupUsers();
         let cloudBridgeUsers: any[] = [];
         let cloudBridgeUpgrades: any[] = [];
+        let cloudQueues: Awaited<ReturnType<typeof fetchAllCloudQueuesForAdmin>> = null;
         const fbUser = auth.currentUser;
         if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
-          [cloudBridgeUsers, cloudBridgeUpgrades] = await Promise.all([
+          [cloudBridgeUsers, cloudBridgeUpgrades, cloudQueues] = await Promise.all([
             fetchAllCloudUsersForAdmin(),
             fetchAllCloudUpgradesForAdmin(),
+            fetchAllCloudQueuesForAdmin(),
           ]);
         }
         const combinedIncoming = [...localBackups, ...cloudBridgeUsers];
-        if (combinedIncoming.length > 0 || cloudBridgeUpgrades.length > 0) {
-          const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming, cloudBridgeUpgrades);
+        const hasCloudQueues = Boolean(
+          cloudQueues &&
+            (cloudQueues.payouts.length > 0 ||
+              cloudQueues.coinRecharges.length > 0 ||
+              cloudQueues.giftCards.length > 0 ||
+              cloudQueues.complaints.length > 0 ||
+              cloudQueues.contactMessages.length > 0 ||
+              cloudQueues.referrals.length > 0 ||
+              cloudQueues.platformConfig?.settings ||
+              (cloudQueues.platformConfig?.services || []).length > 0 ||
+              (cloudQueues.platformConfig?.homeSliderPhotos || []).length > 0)
+        );
+        if (combinedIncoming.length > 0 || cloudBridgeUpgrades.length > 0 || hasCloudQueues) {
+          const importRes = await api.importCloudUsersToAdmin(
+            adminPassword,
+            combinedIncoming,
+            cloudBridgeUpgrades,
+            cloudQueues
+              ? {
+                  payouts: cloudQueues.payouts,
+                  coinRecharges: cloudQueues.coinRecharges,
+                  giftCardRedemptions: cloudQueues.giftCards,
+                  complaints: cloudQueues.complaints,
+                  contactMessages: cloudQueues.contactMessages,
+                  referrals: cloudQueues.referrals,
+                  settings: cloudQueues.platformConfig?.settings,
+                  services: cloudQueues.platformConfig?.services,
+                  homeSliderPhotos: cloudQueues.platformConfig?.homeSliderPhotos,
+                }
+              : undefined
+          );
           if (importRes?.success && Array.isArray(importRes.users)) {
             mergedUsersList = importRes.users;
             setUsers(importRes.users);
@@ -511,28 +576,70 @@ export const AdminView: React.FC<AdminViewProps> = ({
               total: importRes.totalUsers || importRes.users.length,
               syncedAt: new Date().toLocaleTimeString('en-IN'),
             });
-            const [refreshedOverview, refreshedUpgrades] = await Promise.all([
+            const [refreshedOverview, refreshedUpgrades, refreshedRc, refreshedMsgs, refreshedGc, refreshedSliders] = await Promise.all([
               api.getAdminOverview(adminPassword),
               api.getPlanUpgrades(adminPassword),
+              api.getCoinRecharges(adminPassword).catch(() => []),
+              api.getAdminContactMessages(adminPassword).catch(() => []),
+              api.getGiftCardRedemptions(undefined, adminPassword).catch(() => []),
+              api.getHomeSliderPhotos().catch(() => []),
             ]);
-            if (refreshedOverview?.success && refreshedOverview.stats) {
-              setStats(refreshedOverview.stats);
+            if (refreshedOverview?.success) {
+              if (refreshedOverview.stats) setStats(refreshedOverview.stats);
+              if (Array.isArray(refreshedOverview.payouts)) setPayouts(refreshedOverview.payouts);
+              if (Array.isArray(refreshedOverview.services)) setServices(refreshedOverview.services);
+              if (refreshedOverview.settings) {
+                setSettingsForm(refreshedOverview.settings);
+                onUpdateSettings(refreshedOverview.settings);
+              }
             }
             if (refreshedUpgrades?.success) {
-              setPlanUpgrades(refreshedUpgrades.upgrades || []);
+              loadedUpgrades = refreshedUpgrades.upgrades || [];
+              setPlanUpgrades(loadedUpgrades);
+            }
+            const rcArr = Array.isArray(refreshedRc) ? refreshedRc : (refreshedRc as any)?.coinRecharges || [];
+            if (rcArr.length > 0) {
+              loadedRecharges = rcArr;
+              setCoinRecharges(rcArr);
+            }
+            if (Array.isArray(refreshedMsgs) && refreshedMsgs.length > 0) {
+              loadedMessages = refreshedMsgs;
+              setContactMessages(refreshedMsgs);
+            }
+            if (Array.isArray(refreshedGc) && refreshedGc.length > 0) {
+              loadedGiftCards = refreshedGc;
+              setGiftCardRedemptions(refreshedGc);
+            }
+            if (Array.isArray(refreshedSliders) && refreshedSliders.length > 0) {
+              loadedSliders = refreshedSliders;
+              setSliderPhotos(refreshedSliders);
             }
           }
         }
-        // Keep Firestore updated with complete server user list if Admin Google Auth is active
+        // Keep Firestore updated with complete server dataset if Admin Google Auth is active
         if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL && mergedUsersList.length > 0) {
+          const loadedComplaints = await api.getAdminComplaints(adminPassword).catch(() => []);
           syncAdminDatasetToFirestore({
             users: mergedUsersList,
             payouts: data.payouts || [],
-            giftCards: [],
+            coinRecharges: loadedRecharges,
+            giftCards: loadedGiftCards,
+            complaints: loadedComplaints,
+            contactMessages: loadedMessages,
+            planUpgrades: loadedUpgrades,
+            settings: data.settings || settingsForm,
+            services: data.services || services,
+            homeSliderPhotos: loadedSliders,
           }).catch(() => {});
         }
       } catch (bridgeErr) {
         console.warn('Cloud bridge auto-pull note:', bridgeErr);
+      }
+      if (!livePendingSeededRef.current) {
+        mergedUsersList
+          .filter(u => u.accountType !== 'gamer' && u.status === 'pending')
+          .forEach(u => knownPendingBizIdsRef.current.add(u.userId));
+        livePendingSeededRef.current = true;
       }
     } catch {
       showToast('एडमिन सुरक्षा सत्यापन विफल रहा।', 'error');
@@ -556,19 +663,50 @@ export const AdminView: React.FC<AdminViewProps> = ({
         return;
       }
 
-      // Step 1: Pull ALL registrations & upgrades from Firestore Cloud Bridge (playesp.github.io + all domains) & localStorage backups
-      const [cloudUsers, cloudUpgrades, localBackups] = await Promise.all([
-        fetchAllCloudUsersForAdmin(),
-        fetchAllCloudUpgradesForAdmin(),
+      // Step 1: Force a fresh live re-fetch from Firestore server (bypassing cache) + local backups
+      const [cloudUsers, cloudUpgrades, cloudQueues, localBackups, localComplaints] = await Promise.all([
+        fetchAllCloudUsersForAdmin(true),
+        fetchAllCloudUpgradesForAdmin(true),
+        fetchAllCloudQueuesForAdmin(true),
         Promise.resolve(api.getLocalBackupUsers()),
+        api.getAdminComplaints(adminPassword).catch(() => []),
       ]);
       const combinedIncoming = [...localBackups, ...cloudUsers];
 
       let finalUsers = users;
       let importedCount = 0;
       let updatedCount = 0;
-      if (combinedIncoming.length > 0 || cloudUpgrades.length > 0) {
-        const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming, cloudUpgrades);
+      const hasCloudQueues = Boolean(
+        cloudQueues &&
+          (cloudQueues.payouts.length > 0 ||
+            cloudQueues.coinRecharges.length > 0 ||
+            cloudQueues.giftCards.length > 0 ||
+            cloudQueues.complaints.length > 0 ||
+            cloudQueues.contactMessages.length > 0 ||
+            cloudQueues.referrals.length > 0 ||
+            cloudQueues.platformConfig?.settings ||
+            (cloudQueues.platformConfig?.services || []).length > 0 ||
+            (cloudQueues.platformConfig?.homeSliderPhotos || []).length > 0)
+      );
+      if (combinedIncoming.length > 0 || cloudUpgrades.length > 0 || hasCloudQueues) {
+        const importRes = await api.importCloudUsersToAdmin(
+          adminPassword,
+          combinedIncoming,
+          cloudUpgrades,
+          cloudQueues
+            ? {
+                payouts: cloudQueues.payouts,
+                coinRecharges: cloudQueues.coinRecharges,
+                giftCardRedemptions: cloudQueues.giftCards,
+                complaints: cloudQueues.complaints,
+                contactMessages: cloudQueues.contactMessages,
+                referrals: cloudQueues.referrals,
+                settings: cloudQueues.platformConfig?.settings,
+                services: cloudQueues.platformConfig?.services,
+                homeSliderPhotos: cloudQueues.platformConfig?.homeSliderPhotos,
+              }
+            : undefined
+        );
         if (importRes?.success && Array.isArray(importRes.users)) {
           finalUsers = importRes.users;
           importedCount = importRes.importedCount || 0;
@@ -577,26 +715,70 @@ export const AdminView: React.FC<AdminViewProps> = ({
         }
       }
 
-      // Step 2: Push full merged dataset up to Firestore so all platforms stay 100% in sync
+      // Step 2: Push full merged dataset back to Firestore so every origin stays 100% aligned
+      const [latestOverview, latestRc, latestMsgs, latestGc, latestUpg, latestCmp, latestSliders] = await Promise.all([
+        api.getAdminOverview(adminPassword).catch(() => null),
+        api.getCoinRecharges(adminPassword).catch(() => coinRecharges),
+        api.getAdminContactMessages(adminPassword).catch(() => contactMessages),
+        api.getGiftCardRedemptions(undefined, adminPassword).catch(() => giftCardRedemptions),
+        api.getPlanUpgrades(adminPassword).catch(() => ({ success: false, upgrades: planUpgrades })),
+        api.getAdminComplaints(adminPassword).catch(() => localComplaints),
+        api.getHomeSliderPhotos().catch(() => sliderPhotos),
+      ]);
+
       const res = await syncAdminDatasetToFirestore({
         users: finalUsers,
-        payouts,
-        giftCards: giftCardRedemptions,
+        payouts: latestOverview?.payouts || payouts,
+        coinRecharges: Array.isArray(latestRc) ? latestRc : coinRecharges,
+        giftCards: Array.isArray(latestGc) ? latestGc : giftCardRedemptions,
+        complaints: Array.isArray(latestCmp) ? latestCmp : localComplaints,
+        contactMessages: Array.isArray(latestMsgs) ? latestMsgs : contactMessages,
+        planUpgrades: latestUpg?.upgrades || planUpgrades,
+        settings: latestOverview?.settings || settingsForm,
+        services: latestOverview?.services || services,
+        homeSliderPhotos: Array.isArray(latestSliders) ? latestSliders : sliderPhotos,
       });
 
+      const syncedTime = new Date().toLocaleTimeString('en-IN');
       setLastCloudSyncInfo({
-        imported: importedCount + updatedCount,
+        imported: importedCount,
+        updated: updatedCount,
+        cloudTotal: cloudUsers.length,
         total: finalUsers.length,
-        syncedAt: new Date().toLocaleTimeString('en-IN'),
+        syncedAt: syncedTime,
       });
 
       await loadAdminData();
-      showToast(
-        `☁️ Cloud Bridge सिंक पूर्ण! ${importedCount} नए + ${updatedCount} अपडेटेड यूज़र/फॉर्म सिंक हुए • कुल ${res.syncedUsers} Members!`,
-        'success'
-      );
+      if (importedCount > 0) {
+        showToast(
+          `✅ Sync Now पूर्ण! ${importedCount} नया रजिस्ट्रेशन Firestore से जुड़ा (${updatedCount} अपडेट) • कुल ${res.syncedUsers} Members!`,
+          'success'
+        );
+      } else if (updatedCount > 0) {
+        showToast(
+          `✅ Sync Now पूर्ण! ${updatedCount} यूज़र रिकॉर्ड Firestore से अपडेट हुए • कुल ${res.syncedUsers} Members!`,
+          'success'
+        );
+      } else {
+        showToast(
+          `✅ Firestore Verified (${syncedTime}): सभी ${res.syncedUsers} Members, Payouts, Recharges, Settings व Plans पूर्णतः सिंक हैं।`,
+          'success'
+        );
+      }
     } catch (err: any) {
-      showToast(err?.message || 'Firestore Admin Sync विफल रहा', 'error');
+      const code = String(err?.code || '');
+      const rawMsg = String(err?.message || '');
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+      if (code === 'auth/unauthorized-domain' || rawMsg.includes('unauthorized-domain')) {
+        showToast(
+          `⚠️ डोमेन "${host}" Firebase Authentication Authorized Domains में नहीं है। Firebase Console -> Authentication -> Settings -> Authorized domains में "${host}" जोड़ें।`,
+          'error',
+          'Domain Authorization Required',
+          8000
+        );
+      } else {
+        showToast(rawMsg || 'Firestore Sync Now विफल रहा', 'error');
+      }
     } finally {
       setCloudSyncing(false);
     }
@@ -734,62 +916,208 @@ export const AdminView: React.FC<AdminViewProps> = ({
   };
 
   useEffect(() => {
+    let cancelled = false;
+    let unsubLiveUsers: (() => void) | null = null;
+    let unsubLiveUpgrades: (() => void) | null = null;
+    let unsubCloudQueues: (() => void) | null = null;
+    let unsubPlatformCfg: (() => void) | null = null;
+    let latestCloudUsers: any[] = [];
+    let latestCloudUpgrades: any[] = [];
+
     loadAdminData();
-    const pullFromCloud = async (notifyChanges: boolean) => {
-      const fbUser = auth.currentUser;
-      if (!fbUser || !fbUser.emailVerified || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
-        return;
-      }
+
+    const syncSnapshotPayload = async (
+      cloudUsers: any[],
+      cloudUpgrades: any[],
+      meta?: { isInitial: boolean; newlyPendingBusiness: any[] }
+    ) => {
+      if (cancelled) return;
+      if (cloudUsers.length === 0 && cloudUpgrades.length === 0) return;
       try {
-        const [cloudUsers, cloudUpgrades] = await Promise.all([
-          fetchAllCloudUsersForAdmin(),
-          fetchAllCloudUpgradesForAdmin(),
-        ]);
-        if (cloudUsers.length === 0 && cloudUpgrades.length === 0) return;
         const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers, cloudUpgrades);
-        if (res?.success && Array.isArray(res.users)) {
-          const added = res.importedCount || 0;
-          const updated = res.updatedCount || 0;
-          if (added > 0 || updated > 0 || !notifyChanges) {
-            setUsers(res.users);
-            setLastCloudSyncInfo({
-              imported: added + updated,
-              total: res.totalUsers || res.users.length,
-              syncedAt: new Date().toLocaleTimeString('en-IN'),
+        if (cancelled || !res?.success || !Array.isArray(res.users)) return;
+
+        const nowLabel = new Date().toLocaleTimeString('en-IN');
+        setUsers(res.users);
+        setLiveStreamUpdatedAt(nowLabel);
+        setLastCloudSyncInfo({
+          imported: res.importedCount || 0,
+          updated: res.updatedCount || 0,
+          cloudTotal: cloudUsers.length,
+          total: res.totalUsers || res.users.length,
+          syncedAt: nowLabel,
+        });
+
+        const [ov, upg] = await Promise.all([
+          api.getAdminOverview(adminPassword),
+          api.getPlanUpgrades(adminPassword),
+        ]);
+        if (!cancelled) {
+          if (ov?.success && ov.stats) setStats(ov.stats);
+          if (upg?.success) setPlanUpgrades(upg.upgrades || []);
+        }
+
+        const pendingBusinessList = res.users.filter(
+          (u: UserProfile) => u.accountType !== 'gamer' && u.status === 'pending'
+        );
+
+        if (meta?.isInitial && !livePendingSeededRef.current) {
+          pendingBusinessList.forEach((u: UserProfile) => knownPendingBizIdsRef.current.add(u.userId));
+          livePendingSeededRef.current = true;
+        } else if (meta && !meta.isInitial) {
+          const candidates =
+            meta.newlyPendingBusiness.length > 0 ? meta.newlyPendingBusiness : pendingBusinessList;
+          const freshAlerts: typeof livePendingAlerts = [];
+          for (const raw of candidates) {
+            if (!raw || !raw.userId || raw.accountType === 'gamer' || raw.status !== 'pending') continue;
+            if (knownPendingBizIdsRef.current.has(raw.userId)) continue;
+            knownPendingBizIdsRef.current.add(raw.userId);
+            const enriched = res.users.find((u: UserProfile) => u.userId === raw.userId) || raw;
+            freshAlerts.push({
+              userId: enriched.userId,
+              fullName: enriched.fullName || 'New Business Member',
+              phone: enriched.phone,
+              chosenServiceCode: enriched.chosenServiceCode || 'PLAN',
+              chosenServiceName: enriched.chosenServiceName,
+              joiningFee: Number(enriched.joiningFee || 0),
+              paymentUtr: enriched.paymentUtr,
+              paymentScreenshot: enriched.paymentScreenshot,
+              registeredFromHost: enriched.registeredFromHost,
+              detectedAt: nowLabel,
             });
-            const [ov, upg] = await Promise.all([
-              api.getAdminOverview(adminPassword),
-              api.getPlanUpgrades(adminPassword),
-            ]);
-            if (ov?.success && ov.stats) setStats(ov.stats);
-            if (upg?.success) setPlanUpgrades(upg.upgrades || []);
-            if (notifyChanges && (added > 0 || updated > 0)) {
+          }
+          if (freshAlerts.length > 0 && !cancelled) {
+            setLivePendingAlerts(prev => {
+              const incomingIds = new Set(freshAlerts.map(a => a.userId));
+              return [...freshAlerts, ...prev.filter(a => !incomingIds.has(a.userId))].slice(0, 15);
+            });
+            freshAlerts.forEach(alertItem => {
               showToast(
-                `☁️ ${added > 0 ? `${added} नया रजिस्ट्रेशन` : `${updated} अपडेटेड यूज़र डेटा`} Cloud Bridge से लाइव सिंक हो गया!`,
-                'success'
+                `🔔 नया Business Plan रजिस्ट्रेशन (Pending): ${alertItem.fullName} · ${alertItem.chosenServiceCode} ₹${alertItem.joiningFee} · UTR: ${alertItem.paymentUtr || '—'}`,
+                'warning',
+                'New Pending Business User',
+                7000
               );
-            }
+            });
           }
         }
       } catch {
-        // silent poll retry
+        // silent snapshot merge retry
       }
     };
 
+    const syncQueuesPayload = async (partial: Partial<AdminCloudQueuesBundle>) => {
+      if (cancelled) return;
+      try {
+        await api.importCloudUsersToAdmin(adminPassword, [], [], {
+          payouts: partial.payouts,
+          coinRecharges: partial.coinRecharges,
+          giftCardRedemptions: partial.giftCards,
+          complaints: partial.complaints,
+          contactMessages: partial.contactMessages,
+          referrals: partial.referrals,
+        });
+        if (cancelled) return;
+        if (partial.payouts) {
+          const ov = await api.getAdminOverview(adminPassword).catch(() => null);
+          if (!cancelled && ov?.success && Array.isArray(ov.payouts)) setPayouts(ov.payouts);
+        }
+        if (partial.coinRecharges) {
+          const rc = await api.getCoinRecharges(adminPassword).catch(() => null);
+          const arr = Array.isArray(rc) ? rc : (rc as any)?.coinRecharges;
+          if (!cancelled && Array.isArray(arr)) setCoinRecharges(arr);
+        }
+        if (partial.giftCards) {
+          const gc = await api.getGiftCardRedemptions(undefined, adminPassword).catch(() => null);
+          if (!cancelled && Array.isArray(gc)) setGiftCardRedemptions(gc);
+        }
+        if (partial.contactMessages) {
+          const msgs = await api.getAdminContactMessages(adminPassword).catch(() => null);
+          if (!cancelled && Array.isArray(msgs)) setContactMessages(msgs);
+        }
+        setLiveStreamUpdatedAt(new Date().toLocaleTimeString('en-IN'));
+      } catch {
+        // silent queue refresh retry
+      }
+    };
+
+    unsubPlatformCfg = subscribeToPlatformConfig(
+      cfg => {
+        if (cancelled) return;
+        if (cfg.settings && typeof cfg.settings === 'object') {
+          setSettingsForm(prev => ({ ...prev, ...cfg.settings }));
+          onUpdateSettings({ ...settings, ...cfg.settings });
+        }
+        if (Array.isArray(cfg.services) && cfg.services.length > 0) {
+          setServices(cfg.services);
+        }
+        if (Array.isArray(cfg.homeSliderPhotos) && cfg.homeSliderPhotos.length > 0) {
+          setSliderPhotos(cfg.homeSliderPhotos);
+        }
+        void api.importCloudUsersToAdmin(adminPassword, [], [], {
+          settings: cfg.settings,
+          services: cfg.services,
+          homeSliderPhotos: cfg.homeSliderPhotos,
+        }).catch(() => {});
+      },
+      () => {}
+    );
+
     const unsubscribeAuth = onFirebaseAuthChange(fbUser => {
+      if (unsubLiveUsers) {
+        unsubLiveUsers();
+        unsubLiveUsers = null;
+      }
+      if (unsubLiveUpgrades) {
+        unsubLiveUpgrades();
+        unsubLiveUpgrades = null;
+      }
+      if (unsubCloudQueues) {
+        unsubCloudQueues();
+        unsubCloudQueues = null;
+      }
+
       setCloudConnectedEmail(fbUser?.email || null);
       if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
-        void pullFromCloud(false);
+        setRealtimeStreamLive(true);
+        unsubLiveUsers = subscribeToAdminLiveUsers({
+          onUsersUpdate: (cloudUsers, meta) => {
+            latestCloudUsers = cloudUsers;
+            void syncSnapshotPayload(cloudUsers, latestCloudUpgrades, meta);
+          },
+          onError: () => {
+            if (!cancelled) setRealtimeStreamLive(false);
+          },
+        });
+        unsubLiveUpgrades = subscribeToAdminLiveUpgrades({
+          onUpgradesUpdate: upgrades => {
+            latestCloudUpgrades = upgrades;
+            void syncSnapshotPayload(latestCloudUsers, upgrades);
+          },
+          onError: () => {
+            if (!cancelled) setRealtimeStreamLive(false);
+          },
+        });
+        unsubCloudQueues = subscribeToAdminCloudQueues({
+          onQueuesUpdate: partial => {
+            void syncQueuesPayload(partial);
+          },
+          onError: () => {
+            if (!cancelled) setRealtimeStreamLive(false);
+          },
+        });
+      } else {
+        setRealtimeStreamLive(false);
       }
     });
 
-    const cloudPoll = setInterval(() => {
-      void pullFromCloud(true);
-    }, 12000);
-
     return () => {
+      cancelled = true;
       unsubscribeAuth();
-      clearInterval(cloudPoll);
+      if (unsubLiveUsers) unsubLiveUsers();
+      if (unsubLiveUpgrades) unsubLiveUpgrades();
+      if (unsubCloudQueues) unsubCloudQueues();
+      if (unsubPlatformCfg) unsubPlatformCfg();
     };
   }, []);
 
@@ -1139,6 +1467,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
         if (res.user && auth.currentUser?.emailVerified && auth.currentUser?.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
           syncUserToFirestore(res.user, true).catch(() => {});
         }
+        setLivePendingAlerts(prev => prev.filter(a => a.userId !== userId));
         showToast(
           newStatus === 'active'
             ? '✅ सदस्य सफलतापूर्वक Approve व Active हो गया!'
@@ -1326,7 +1655,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
     try {
       const updated = await api.updateSettings(settingsForm, adminPassword);
       onUpdateSettings(updated);
-      setSettingsMsg('Platform settings, UPI details & QR updated successfully!');
+      const isCloudLive = Boolean(
+        auth.currentUser?.emailVerified && auth.currentUser?.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL
+      );
+      if (isCloudLive) {
+        setSettingsMsg('Platform settings, UPI details & QR updated and published to Cloud across all devices!');
+        showToast('✅ Settings & UPI/QR Cloud पर सभी डिवाइसेस के लिए अपडेट हो गए!', 'success');
+      } else {
+        setSettingsMsg('लोकल में सेव हो गया — सभी डिवाइस व playesp.github.io पर लाइव करने के लिए ऊपर "Connect & Sync Now" दबाएं।');
+        showToast('⚠️ लोकल सेव हुआ! दूसरे डिवाइस/playesp.github.io पर पब्लिश करने हेतु ऊपर "Connect & Sync Now" करें।', 'warning', 'Cloud Sync Pending', 6000);
+      }
     } catch (err: any) {
       setSettingsMsg(err.message || 'Failed to save settings');
     } finally {
@@ -1352,6 +1690,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
           dailyEarningEst: '₹25 - ₹250 / day',
           referralBonusPercent: 40,
         });
+        if (!isCloudAdminConnected) {
+          showToast('⚠️ सर्विस लोकल जुड़ गई — सभी URLs पर सिंक करने हेतु "Connect & Sync Now" दबाएं!', 'warning');
+        } else {
+          showToast('✅ नई सर्विस Cloud पर लाइव अपडेट हो गई!', 'success');
+        }
       }
     } catch (e: any) {
       showToast(e.message || 'Failed to add service', 'error');
@@ -1369,7 +1712,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
           const res = await api.deleteService(serviceId, adminPassword);
           if (res.success) {
             setServices(res.services);
-            showToast('सर्विस हटाई गई', 'info');
+            showToast(
+              isCloudAdminConnected ? 'सर्विस हटाकर Cloud पर अपडेट की गई' : 'सर्विस लोकल हटाई गई (Cloud Sync हेतु Sync Now दबाएं)',
+              'info'
+            );
           }
         } catch (e: any) {
           showToast(e.message || 'Failed to delete service', 'error');
@@ -1391,6 +1737,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   const businessUsersCount = users.filter(u => u.accountType !== 'gamer').length;
   const gamerUsersCount = users.filter(u => u.accountType === 'gamer').length;
+  const pendingBusinessUsers = users.filter(u => u.accountType !== 'gamer' && u.status === 'pending');
   const playespUsersCount = users.filter(u => (u.registeredFromHost || '').toLowerCase().includes('playesp.github.io')).length;
   const isCloudAdminConnected = Boolean(cloudConnectedEmail && cloudConnectedEmail.toLowerCase() === ADMIN_GOOGLE_EMAIL);
 
@@ -1456,12 +1803,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <span>Control</span>
           </button>
           <button
+            type="button"
             onClick={handleAdminCloudSync}
             disabled={cloudSyncing}
+            aria-busy={cloudSyncing}
             className="px-4 py-2 rounded-sm text-xs font-bold text-[#212121] bg-[#ffe500] hover:bg-yellow-300 transition cursor-pointer shadow-2xs disabled:opacity-60 flex items-center gap-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
-            <span>{cloudSyncing ? 'Syncing playesp.github.io...' : '☁️ Sync Cloud (playesp.github.io)'}</span>
+            <span>{cloudSyncing ? 'Syncing Firestore...' : isCloudAdminConnected ? 'Sync Now' : 'Connect & Sync Now'}</span>
           </button>
           <button
             onClick={onLogoutAdmin}
@@ -1497,6 +1846,154 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Real-Time Pending Business Plan Notifications Banner (Firestore onSnapshot) */}
+      {(pendingBusinessUsers.length > 0 || livePendingAlerts.length > 0) && (() => {
+        const alertIds = new Set(livePendingAlerts.map(a => a.userId));
+        const combinedPending = [
+          ...livePendingAlerts.map(a => ({ ...a, isNewLive: true })),
+          ...pendingBusinessUsers
+            .filter(u => !alertIds.has(u.userId))
+            .map(u => ({
+              userId: u.userId,
+              fullName: u.fullName,
+              phone: u.phone,
+              chosenServiceCode: u.chosenServiceCode || 'PLAN',
+              chosenServiceName: u.chosenServiceName,
+              joiningFee: Number(u.joiningFee || 0),
+              paymentUtr: u.paymentUtr,
+              paymentScreenshot: u.paymentScreenshot,
+              registeredFromHost: u.registeredFromHost,
+              detectedAt: u.createdAt ? new Date(u.createdAt).toLocaleTimeString('en-IN') : '',
+              isNewLive: false,
+            })),
+        ].slice(0, 5);
+
+        return (
+          <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-yellow-50 border-2 border-[#fb641b] rounded-md p-3.5 sm:p-4 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#fb641b] text-white flex items-center justify-center shrink-0 animate-pulse">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <p className="text-xs sm:text-sm font-extrabold text-[#212121]">
+                      🔔 {pendingBusinessUsers.length} Business Plan रजिस्ट्रेशन Approval के लिए Pending है!
+                    </p>
+                    {realtimeStreamLive && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-emerald-600 text-white text-[10px] font-extrabold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                        LIVE onSnapshot{liveStreamUpdatedAt ? ` · ${liveStreamUpdatedAt}` : ''}
+                      </span>
+                    )}
+                    {livePendingAlerts.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-sm bg-[#fb641b] text-white text-[10px] font-extrabold">
+                        +{livePendingAlerts.length} New Arrival
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-950 mt-0.5">
+                    नए Income / Business प्लान यूज़र की पेमेंट (UTR व स्क्रीनशॉट) जाँचकर यहीं से तुरंत Approve या Reject करें।
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('members');
+                  setAccountTypeFilter('business');
+                  setStatusFilter('pending');
+                }}
+                className="px-3.5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white text-xs font-extrabold shadow-2xs transition cursor-pointer shrink-0"
+              >
+                Review All Pending ({pendingBusinessUsers.length}) ➔
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {combinedPending.map(item => (
+                <div
+                  key={item.userId}
+                  className={`rounded-sm border p-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 bg-white ${
+                    item.isNewLive ? 'border-[#fb641b] ring-1 ring-orange-300' : 'border-amber-200'
+                  }`}
+                >
+                  <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                    {item.isNewLive && (
+                      <span className="px-1.5 py-0.5 rounded-sm bg-[#fb641b] text-white text-[9px] font-black uppercase shrink-0">
+                        NEW LIVE
+                      </span>
+                    )}
+                    <div className="min-w-0 text-xs">
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        <strong className="text-[#212121]">{item.fullName}</strong>
+                        <span className="font-mono text-[11px] font-bold text-[#2874f0]">{item.userId}</span>
+                        {item.phone && <span className="text-[11px] text-slate-600">• 📞 {item.phone}</span>}
+                        <span className="px-1.5 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[10px]">
+                          {item.chosenServiceCode} · ₹{item.joiningFee}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span>
+                          UTR: <strong className="font-mono text-[#212121]">{item.paymentUtr || '—'}</strong>
+                        </span>
+                        {item.registeredFromHost && (
+                          <span>Origin: {item.registeredFromHost}</span>
+                        )}
+                        {item.detectedAt && <span>Time: {item.detectedAt}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    {item.paymentScreenshot && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewScreenshot({
+                            url: item.paymentScreenshot!,
+                            title: `${item.fullName} (${item.userId}) • Payment Proof`,
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold cursor-pointer"
+                      >
+                        🖼️ Screenshot
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserStatus(item.userId, 'active')}
+                      className="px-2.5 py-1 rounded-sm bg-[#388e3c] hover:bg-[#2e7d32] text-white text-[11px] font-extrabold cursor-pointer flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Approve</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserStatus(item.userId, 'rejected')}
+                      className="px-2.5 py-1 rounded-sm bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold cursor-pointer flex items-center gap-1"
+                    >
+                      <XCircle className="w-3 h-3" />
+                      <span>Reject</span>
+                    </button>
+                    {item.isNewLive && (
+                      <button
+                        type="button"
+                        onClick={() => setLivePendingAlerts(prev => prev.filter(a => a.userId !== item.userId))}
+                        className="p-1 rounded-sm text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                        title="Dismiss live notification"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Live Coin Recharge & Admin Alert Banner */}
       {coinRecharges.filter(r => r.status === 'pending').length > 0 && (
@@ -1538,15 +2035,28 @@ export const AdminView: React.FC<AdminViewProps> = ({
         <div className="flex items-start gap-2.5">
           <Globe className={`w-5 h-5 shrink-0 mt-0.5 ${isCloudAdminConnected ? 'text-[#388e3c]' : 'text-[#2874f0]'}`} />
           <div>
-            <p className="text-xs sm:text-sm font-bold">
-              {isCloudAdminConnected
-                ? `☁️ Cross-Origin Live Cloud Sync Active (${cloudConnectedEmail})`
-                : '🌐 दूसरे डिवाइस या https://playesp.github.io/ से सभी नए रजिस्ट्रेशन डेटा यहाँ लाइव देखने के लिए Cloud Sync कनेक्ट करें'}
+            <p className="text-xs sm:text-sm font-bold flex items-center flex-wrap gap-2">
+              <span>
+                {isCloudAdminConnected
+                  ? `☁️ Cross-Origin Live Cloud Sync Active (${cloudConnectedEmail})`
+                  : '🌐 दूसरे डिवाइस या https://playesp.github.io/ से सभी नए रजिस्ट्रेशन डेटा यहाँ लाइव देखने के लिए Cloud Sync कनेक्ट करें'}
+              </span>
+              {realtimeStreamLive && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-emerald-600 text-white text-[10px] font-extrabold">
+                  ● Real-Time onSnapshot
+                </span>
+              )}
             </p>
             <p className="text-[11px] opacity-85 mt-0.5">
-              {isCloudAdminConnected
-                ? `सभी यूज़र का पूरा फॉर्म डेटा, पासवर्ड, स्क्रीनशॉट, पता, UTR व अपग्रेड सिंक हैं${lastCloudSyncInfo ? ` (Last Sync: ${lastCloudSyncInfo.syncedAt}, Total: ${lastCloudSyncInfo.total})` : ''}।`
-                : `एक बार "${ADMIN_GOOGLE_EMAIL}" से Connect दबाते ही दूसरे ब्राउज़र, मोबाइल या playesp.github.io पर किए गए सभी रजिस्ट्रेशन तुरंत यहाँ दिखने लगेंगे।`}
+              {cloudSyncing
+                ? 'Firestore सर्वर से सभी यूज़र्स व नए रजिस्ट्रेशन ताज़ा लोड हो रहे हैं...'
+                : isCloudAdminConnected
+                ? `सभी यूज़र का पूरा फॉर्म डेटा, पासवर्ड, स्क्रीनशॉट, पता, UTR व अपग्रेड सिंक हैं${
+                    lastCloudSyncInfo
+                      ? ` · Last Sync: ${lastCloudSyncInfo.syncedAt} (+${lastCloudSyncInfo.imported} New, ${lastCloudSyncInfo.updated ?? 0} Updated, Total: ${lastCloudSyncInfo.total})`
+                      : ''
+                  }।`
+                : `एक बार "${ADMIN_GOOGLE_EMAIL}" से Sync Now दबाते ही दूसरे ब्राउज़र, मोबाइल या playesp.github.io पर किए गए सभी रजिस्ट्रेशन तुरंत यहाँ दिखने लगेंगे।`}
             </p>
           </div>
         </div>
@@ -1554,10 +2064,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
           type="button"
           onClick={handleAdminCloudSync}
           disabled={cloudSyncing}
+          aria-busy={cloudSyncing}
           className="px-3.5 py-2 rounded-sm text-xs font-extrabold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer shrink-0 flex items-center gap-1.5 disabled:opacity-60"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
-          <span>{cloudSyncing ? 'Syncing Cloud Users...' : isCloudAdminConnected ? 'Refresh Cloud Users Now' : 'Connect Cloud Sync (Google)'}</span>
+          <span>
+            {cloudSyncing
+              ? 'Syncing...'
+              : isCloudAdminConnected
+              ? 'Sync Now'
+              : 'Connect & Sync Now'}
+          </span>
         </button>
       </div>
 
@@ -2099,16 +2616,40 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </button>
           </div>
 
-          <div className="bg-white p-3.5 rounded-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search Name, ID, @username, Phone, Sponsor, Plan, UTR..."
-                value={searchMember}
-                onChange={e => setSearchMember(e.target.value)}
-                className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3.5 py-2 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
-              />
+          <div className="bg-white p-3.5 rounded-md border border-slate-200 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+              <div className="relative w-full sm:w-80">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search Name, ID, @username, Phone, Sponsor, Plan, UTR..."
+                  value={searchMember}
+                  onChange={e => setSearchMember(e.target.value)}
+                  className="w-full bg-[#f9fafb] border border-slate-300 rounded-sm pl-9 pr-3.5 py-2 text-xs text-[#212121] outline-none focus:border-[#2874f0]"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAdminCloudSync}
+                disabled={cloudSyncing}
+                aria-busy={cloudSyncing}
+                className="px-3.5 py-2 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60 shadow-2xs"
+                title="Firestore से पूरे यूज़र डेटा को तुरंत री-फ़ेच और वेरिफाई करें"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+                <span>{cloudSyncing ? 'Syncing...' : 'Sync Now'}</span>
+              </button>
+
+              {lastCloudSyncInfo && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-bold shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#388e3c] shrink-0" />
+                  <span>
+                    Synced {lastCloudSyncInfo.syncedAt} · {lastCloudSyncInfo.total} Users
+                    {lastCloudSyncInfo.imported > 0 ? ` (+${lastCloudSyncInfo.imported} New)` : ''}
+                  </span>
+                </span>
+              )}
             </div>
 
             {/* Quick Status Filter Buttons */}
@@ -5402,9 +5943,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 type="button"
                 onClick={() => handleAdminCloudSync()}
                 disabled={cloudSyncing}
-                className="p-2.5 rounded-sm bg-[#ffe500] text-[#212121] font-black text-left cursor-pointer disabled:opacity-60"
+                aria-busy={cloudSyncing}
+                className="p-2.5 rounded-sm bg-[#ffe500] text-[#212121] font-black text-left cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
               >
-                {cloudSyncing ? '☁️ Syncing...' : '☁️ Force Cloud Sync'}
+                <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${cloudSyncing ? 'animate-spin' : ''}`} />
+                <span>{cloudSyncing ? 'Syncing...' : 'Sync Now (Firestore)'}</span>
               </button>
             </div>
 

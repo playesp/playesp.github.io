@@ -20,6 +20,7 @@ import {
   KnowGamingSystemModal,
   JoinSelectionPopupModal,
   NewVisitorSelectionPopupModal,
+  WelcomePlatformPopupModal,
 } from './components/SystemPopupModals.tsx';
 import { EspTypingAcademy } from './components/games/EspTypingAcademy.tsx';
 import { HomeView } from './views/HomeView.tsx';
@@ -136,6 +137,7 @@ export default function App() {
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
   const [joinSelectionModalOpen, setJoinSelectionModalOpen] = useState<boolean>(false);
   const [newVisitorModalOpen, setNewVisitorModalOpen] = useState<boolean>(false);
+  const [welcomePopupOpen, setWelcomePopupOpen] = useState<boolean>(false);
   const [knowIncomeModalOpen, setKnowIncomeModalOpen] = useState<boolean>(false);
   const [knowGamingModalOpen, setKnowGamingModalOpen] = useState<boolean>(false);
   const [typingAcademyModalOpen, setTypingAcademyModalOpen] = useState<boolean>(false);
@@ -192,7 +194,19 @@ export default function App() {
       }
     }
 
-    api.getSettings().then(setSettings);
+    api.getSettings().then(loaded => {
+      setSettings(loaded);
+      try {
+        if (
+          !api.getStoredUser() &&
+          loaded.welcomePopupEnabled !== false &&
+          !sessionStorage.getItem('esp_welcome_seen')
+        ) {
+          sessionStorage.setItem('esp_welcome_seen', '1');
+          setWelcomePopupOpen(true);
+        }
+      } catch {}
+    });
     api.getServices().then(setServices);
     api.syncLocalBackupsToCloudBridge().catch(() => {});
 
@@ -674,6 +688,7 @@ export default function App() {
             onOpenKnowIncome={() => setKnowIncomeModalOpen(true)}
             onOpenKnowGaming={() => setKnowGamingModalOpen(true)}
             onOpenTypingAcademy={() => setTypingAcademyModalOpen(true)}
+            onOpenWelcomePopup={() => setWelcomePopupOpen(true)}
           />
         )}
 
@@ -1084,6 +1099,31 @@ export default function App() {
         }}
         onOpenTab={handleTabChange}
         onOpenMoreMenu={() => handleTabChange('services')}
+      />
+
+      <WelcomePlatformPopupModal
+        isOpen={welcomePopupOpen && !currentUser}
+        onClose={() => setWelcomePopupOpen(false)}
+        settings={settings}
+        referralSponsor={referralSponsor}
+        onChooseRegister={(mode, code, fee, sponsor) => {
+          setWelcomePopupOpen(false);
+          setInitialRegMode(mode);
+          if (code) setInitialServiceCode(code);
+          if (typeof fee === 'number') setInitialFee(fee);
+          if (sponsor) setInitialSponsorId(sponsor);
+          setCurrentTab('register');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenLogin={() => {
+          setWelcomePopupOpen(false);
+          setLoginDestination('platform');
+          setLoginModalOpen(true);
+        }}
+        onOpenVisitorGuide={() => {
+          setWelcomePopupOpen(false);
+          setNewVisitorModalOpen(true);
+        }}
       />
 
       <EspTypingAcademy

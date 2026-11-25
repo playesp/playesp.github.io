@@ -45,7 +45,7 @@ import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRec
 import { api } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
-import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, fetchAllCloudUpgradesForAdmin, onFirebaseAuthChange } from '../services/firebase.ts';
 import { CURATED_VIP_ROOM_NUMBERS, isVipFancyRoomNumber } from '../config/giftCatalog.ts';
 
 interface AdminViewProps {
@@ -487,29 +487,39 @@ export const AdminView: React.FC<AdminViewProps> = ({
       // Load Live 12 AM IST Clock & Weekly Rewards Stats
       loadAdminTimeStats();
 
-      // Auto-merge any cross-origin/localStorage backup registrations + Firebase Cloud Bridge
+      // Auto-merge any cross-origin/localStorage backup registrations + Firebase Cloud Bridge (Users & Upgrades)
       let mergedUsersList: UserProfile[] = data.users || [];
       try {
         const localBackups = api.getLocalBackupUsers();
         let cloudBridgeUsers: any[] = [];
+        let cloudBridgeUpgrades: any[] = [];
         const fbUser = auth.currentUser;
         if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
-          cloudBridgeUsers = await fetchAllCloudUsersForAdmin();
+          [cloudBridgeUsers, cloudBridgeUpgrades] = await Promise.all([
+            fetchAllCloudUsersForAdmin(),
+            fetchAllCloudUpgradesForAdmin(),
+          ]);
         }
         const combinedIncoming = [...localBackups, ...cloudBridgeUsers];
-        if (combinedIncoming.length > 0) {
-          const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming);
+        if (combinedIncoming.length > 0 || cloudBridgeUpgrades.length > 0) {
+          const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming, cloudBridgeUpgrades);
           if (importRes?.success && Array.isArray(importRes.users)) {
             mergedUsersList = importRes.users;
             setUsers(importRes.users);
             setLastCloudSyncInfo({
-              imported: importRes.importedCount || 0,
+              imported: (importRes.importedCount || 0) + (importRes.updatedCount || 0),
               total: importRes.totalUsers || importRes.users.length,
               syncedAt: new Date().toLocaleTimeString('en-IN'),
             });
-            const refreshedOverview = await api.getAdminOverview(adminPassword);
+            const [refreshedOverview, refreshedUpgrades] = await Promise.all([
+              api.getAdminOverview(adminPassword),
+              api.getPlanUpgrades(adminPassword),
+            ]);
             if (refreshedOverview?.success && refreshedOverview.stats) {
               setStats(refreshedOverview.stats);
+            }
+            if (refreshedUpgrades?.success) {
+              setPlanUpgrades(refreshedUpgrades.upgrades || []);
             }
           }
         }
@@ -546,20 +556,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
         return;
       }
 
-      // Step 1: Pull ALL registrations from Firestore Cloud Bridge (playesp.github.io + all domains) & localStorage backups
-      const [cloudUsers, localBackups] = await Promise.all([
+      // Step 1: Pull ALL registrations & upgrades from Firestore Cloud Bridge (playesp.github.io + all domains) & localStorage backups
+      const [cloudUsers, cloudUpgrades, localBackups] = await Promise.all([
         fetchAllCloudUsersForAdmin(),
+        fetchAllCloudUpgradesForAdmin(),
         Promise.resolve(api.getLocalBackupUsers()),
       ]);
       const combinedIncoming = [...localBackups, ...cloudUsers];
 
       let finalUsers = users;
       let importedCount = 0;
-      if (combinedIncoming.length > 0) {
-        const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming);
+      let updatedCount = 0;
+      if (combinedIncoming.length > 0 || cloudUpgrades.length > 0) {
+        const importRes = await api.importCloudUsersToAdmin(adminPassword, combinedIncoming, cloudUpgrades);
         if (importRes?.success && Array.isArray(importRes.users)) {
           finalUsers = importRes.users;
           importedCount = importRes.importedCount || 0;
+          updatedCount = importRes.updatedCount || 0;
           setUsers(importRes.users);
         }
       }
@@ -572,14 +585,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
       });
 
       setLastCloudSyncInfo({
-        imported: importedCount,
+        imported: importedCount + updatedCount,
         total: finalUsers.length,
         syncedAt: new Date().toLocaleTimeString('en-IN'),
       });
 
       await loadAdminData();
       showToast(
-        `☁️ Cloud Bridge सिंक पूर्ण! ${importedCount} नए/playesp.github.io यूज़र जुड़े • कुल ${res.syncedUsers} Members सिंक हुए!`,
+        `☁️ Cloud Bridge सिंक पूर्ण! ${importedCount} नए + ${updatedCount} अपडेटेड यूज़र/फॉर्म सिंक हुए • कुल ${res.syncedUsers} Members!`,
         'success'
       );
     } catch (err: any) {
@@ -722,45 +735,57 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   useEffect(() => {
     loadAdminData();
+    const pullFromCloud = async (notifyChanges: boolean) => {
+      const fbUser = auth.currentUser;
+      if (!fbUser || !fbUser.emailVerified || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
+        return;
+      }
+      try {
+        const [cloudUsers, cloudUpgrades] = await Promise.all([
+          fetchAllCloudUsersForAdmin(),
+          fetchAllCloudUpgradesForAdmin(),
+        ]);
+        if (cloudUsers.length === 0 && cloudUpgrades.length === 0) return;
+        const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers, cloudUpgrades);
+        if (res?.success && Array.isArray(res.users)) {
+          const added = res.importedCount || 0;
+          const updated = res.updatedCount || 0;
+          if (added > 0 || updated > 0 || !notifyChanges) {
+            setUsers(res.users);
+            setLastCloudSyncInfo({
+              imported: added + updated,
+              total: res.totalUsers || res.users.length,
+              syncedAt: new Date().toLocaleTimeString('en-IN'),
+            });
+            const [ov, upg] = await Promise.all([
+              api.getAdminOverview(adminPassword),
+              api.getPlanUpgrades(adminPassword),
+            ]);
+            if (ov?.success && ov.stats) setStats(ov.stats);
+            if (upg?.success) setPlanUpgrades(upg.upgrades || []);
+            if (notifyChanges && (added > 0 || updated > 0)) {
+              showToast(
+                `☁️ ${added > 0 ? `${added} नया रजिस्ट्रेशन` : `${updated} अपडेटेड यूज़र डेटा`} Cloud Bridge से लाइव सिंक हो गया!`,
+                'success'
+              );
+            }
+          }
+        }
+      } catch {
+        // silent poll retry
+      }
+    };
+
     const unsubscribeAuth = onFirebaseAuthChange(fbUser => {
       setCloudConnectedEmail(fbUser?.email || null);
       if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
-        fetchAllCloudUsersForAdmin()
-          .then(async cloudUsers => {
-            if (cloudUsers.length > 0) {
-              const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers);
-              if (res?.success && Array.isArray(res.users)) {
-                setUsers(res.users);
-                setLastCloudSyncInfo({
-                  imported: res.importedCount || 0,
-                  total: res.totalUsers || res.users.length,
-                  syncedAt: new Date().toLocaleTimeString('en-IN'),
-                });
-                const ov = await api.getAdminOverview(adminPassword);
-                if (ov?.success && ov.stats) setStats(ov.stats);
-              }
-            }
-          })
-          .catch(() => {});
+        void pullFromCloud(false);
       }
     });
 
     const cloudPoll = setInterval(() => {
-      const fbUser = auth.currentUser;
-      if (fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
-        fetchAllCloudUsersForAdmin()
-          .then(async cloudUsers => {
-            if (cloudUsers.length > 0) {
-              const res = await api.importCloudUsersToAdmin(adminPassword, cloudUsers);
-              if (res?.success && res.importedCount > 0 && Array.isArray(res.users)) {
-                setUsers(res.users);
-                showToast(`☁️ ${res.importedCount} नया यूज़र playesp.github.io से स्वतः जुड़ गया!`, 'success');
-              }
-            }
-          })
-          .catch(() => {});
-      }
-    }, 15000);
+      void pullFromCloud(true);
+    }, 12000);
 
     return () => {
       unsubscribeAuth();
@@ -1104,13 +1129,22 @@ export const AdminView: React.FC<AdminViewProps> = ({
     try {
       const res = await api.updateUserStatus(userId, newStatus, adminPassword);
       if (res.success) {
-        setUsers(users.map(u => (u.userId === userId ? { ...u, status: newStatus, ...(res.user || {}) } : u)));
+        setUsers(prev => prev.map(u => (u.userId === userId ? { ...u, status: newStatus, ...(res.user || {}) } : u)));
         if (selectedAuditUser && selectedAuditUser.user.userId === userId) {
           setSelectedAuditUser({
             ...selectedAuditUser,
             user: { ...selectedAuditUser.user, status: newStatus, ...(res.user || {}) },
           });
         }
+        if (res.user && auth.currentUser?.emailVerified && auth.currentUser?.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL) {
+          syncUserToFirestore(res.user, true).catch(() => {});
+        }
+        showToast(
+          newStatus === 'active'
+            ? '✅ सदस्य सफलतापूर्वक Approve व Active हो गया!'
+            : '❌ सदस्य अनुरोध अस्वीकृत कर दिया गया।',
+          newStatus === 'active' ? 'success' : 'info'
+        );
         // Refresh overview stats
         api.getAdminOverview(adminPassword).then(d => {
           if (d.success) setStats(d.stats);
@@ -1494,6 +1528,38 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Global Cross-Origin Cloud Sync Banner (Always visible across all Admin tabs) */}
+      <div className={`rounded-md p-3.5 sm:p-4 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
+        isCloudAdminConnected
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+          : 'bg-blue-50 border-blue-200 text-blue-950'
+      }`}>
+        <div className="flex items-start gap-2.5">
+          <Globe className={`w-5 h-5 shrink-0 mt-0.5 ${isCloudAdminConnected ? 'text-[#388e3c]' : 'text-[#2874f0]'}`} />
+          <div>
+            <p className="text-xs sm:text-sm font-bold">
+              {isCloudAdminConnected
+                ? `☁️ Cross-Origin Live Cloud Sync Active (${cloudConnectedEmail})`
+                : '🌐 दूसरे डिवाइस या https://playesp.github.io/ से सभी नए रजिस्ट्रेशन डेटा यहाँ लाइव देखने के लिए Cloud Sync कनेक्ट करें'}
+            </p>
+            <p className="text-[11px] opacity-85 mt-0.5">
+              {isCloudAdminConnected
+                ? `सभी यूज़र का पूरा फॉर्म डेटा, पासवर्ड, स्क्रीनशॉट, पता, UTR व अपग्रेड सिंक हैं${lastCloudSyncInfo ? ` (Last Sync: ${lastCloudSyncInfo.syncedAt}, Total: ${lastCloudSyncInfo.total})` : ''}।`
+                : `एक बार "${ADMIN_GOOGLE_EMAIL}" से Connect दबाते ही दूसरे ब्राउज़र, मोबाइल या playesp.github.io पर किए गए सभी रजिस्ट्रेशन तुरंत यहाँ दिखने लगेंगे।`}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleAdminCloudSync}
+          disabled={cloudSyncing}
+          className="px-3.5 py-2 rounded-sm text-xs font-extrabold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer shrink-0 flex items-center gap-1.5 disabled:opacity-60"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+          <span>{cloudSyncing ? 'Syncing Cloud Users...' : isCloudAdminConnected ? 'Refresh Cloud Users Now' : 'Connect Cloud Sync (Google)'}</span>
+        </button>
+      </div>
 
       {/* Admin Tabs */}
       <div className="bg-white border border-slate-200 rounded-md p-2 flex overflow-x-auto gap-1.5 text-xs font-bold no-scrollbar shadow-2xs">
@@ -1961,37 +2027,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
       {/* ===================== TAB 1: MEMBERS AUDIT & TOTAL CONTROL ===================== */}
       {activeTab === 'members' && (
         <div className="space-y-4">
-          {/* Cross-Origin Cloud Sync Banner (https://playesp.github.io/ -> Admin Panel) */}
-          <div className={`rounded-md p-3.5 sm:p-4 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
-            isCloudAdminConnected
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-              : 'bg-blue-50 border-blue-200 text-blue-950'
-          }`}>
-            <div className="flex items-start gap-2.5">
-              <Globe className={`w-5 h-5 shrink-0 mt-0.5 ${isCloudAdminConnected ? 'text-[#388e3c]' : 'text-[#2874f0]'}`} />
-              <div>
-                <p className="text-xs sm:text-sm font-bold">
-                  {isCloudAdminConnected
-                    ? `☁️ Cross-Origin Live Sync Active (${cloudConnectedEmail})`
-                    : '🌐 https://playesp.github.io/ यूज़र लिस्ट यहाँ लाइव देखने के लिए Cloud Bridge कनेक्ट करें'}
-                </p>
-                <p className="text-[11px] opacity-85 mt-0.5">
-                  {isCloudAdminConnected
-                    ? `playesp.github.io व Live URLs के सभी पुराने व नए यूज़र सुरक्षित रूप से सिंक हैं${lastCloudSyncInfo ? ` (Last Sync: ${lastCloudSyncInfo.syncedAt}, Total: ${lastCloudSyncInfo.total})` : ''}।`
-                    : `एक बार "${ADMIN_GOOGLE_EMAIL}" से Cloud Sync बटन दबाते ही https://playesp.github.io/ पर रजिस्टर हुए सभी ESP Earning व Free Gaming यूज़र तुरंत यहाँ आ जाएंगे।`}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleAdminCloudSync}
-              disabled={cloudSyncing}
-              className="px-3.5 py-2 rounded-sm text-xs font-extrabold bg-[#2874f0] hover:bg-[#1c62d6] text-white cursor-pointer shrink-0 flex items-center gap-1.5 disabled:opacity-60"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
-              <span>{cloudSyncing ? 'Pulling Users...' : isCloudAdminConnected ? 'Refresh & Pull playesp.github.io' : 'Connect & Pull playesp.github.io'}</span>
-            </button>
-          </div>
 
           {/* Dual Account-Type Filter Cards (ESP Earning vs Free Gaming) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -2208,8 +2243,26 @@ export const AdminView: React.FC<AdminViewProps> = ({
                               <span className="block text-[10px] text-slate-500 line-clamp-1">{u.chosenServiceName}</span>
                             )}
                           </div>
-                          <div className="font-mono text-[11px] text-[#212121] select-all font-semibold bg-slate-100 px-1.5 py-0.5 rounded-xs inline-block">
-                            UTR: {u.paymentUtr || '—'}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="font-mono text-[11px] text-[#212121] select-all font-semibold bg-slate-100 px-1.5 py-0.5 rounded-xs inline-block">
+                              UTR: {u.paymentUtr || '—'}
+                            </div>
+                            {u.paymentScreenshot && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewScreenshot({
+                                    url: u.paymentScreenshot!,
+                                    title: `${u.fullName} (${u.userId}) · UTR: ${u.paymentUtr || 'N/A'}`,
+                                  })
+                                }
+                                className="px-1.5 py-0.5 rounded-xs bg-blue-50 hover:bg-blue-100 text-[#2874f0] border border-blue-200 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                title="पेमेंट स्क्रीनशॉट देखें"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Screenshot</span>
+                              </button>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-[11px] font-mono pt-0.5">
                             <span className="font-bold text-[#388e3c]">₹{u.balance || 0}</span>
@@ -3608,6 +3661,56 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 {settingsForm.adminQrCodeUrl && (
                   <span className="text-[11px] font-bold text-[#388e3c]">Custom QR Attached ✓</span>
                 )}
+              </div>
+            </div>
+
+            {/* Welcome Platform Popup Controls */}
+            <div className="bg-amber-50/70 p-4 rounded-md border border-amber-200 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-[#212121] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#fb641b]" />
+                    <span>Home Page Attractive Welcome Popup Controls</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    नए विज़िटर्स को होम पेज पर प्लेटफ़ॉर्म के फीचर्स और तुरंत Join विकल्प दिखाने वाला पॉपअप नियंत्रित करें।
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs font-bold text-[#212121] cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.welcomePopupEnabled !== false}
+                    onChange={e => setSettingsForm({ ...settingsForm, welcomePopupEnabled: e.target.checked })}
+                    className="w-4 h-4 accent-[#2874f0] cursor-pointer"
+                  />
+                  <span>Active On Home</span>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-2.5">
+                <div>
+                  <label className="text-xs font-semibold text-[#212121] block mb-1">
+                    Welcome Popup Headline (शीर्षक)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="ESP Earning & Gaming World में आपका स्वागत है!"
+                    value={settingsForm.welcomePopupHeadline || ''}
+                    onChange={e => setSettingsForm({ ...settingsForm, welcomePopupHeadline: e.target.value })}
+                    className="w-full bg-white border border-slate-300 focus:border-[#2874f0] rounded-sm px-3.5 py-2 text-xs text-[#212121] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#212121] block mb-1">
+                    Welcome Popup Special Note / Offer Message
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="🎮 ₹0 में फ्री गेमिंग तुरंत खेलें या 💼 ₹10+ प्लान से कमाई शुरू करें!"
+                    value={settingsForm.welcomePopupNote || ''}
+                    onChange={e => setSettingsForm({ ...settingsForm, welcomePopupNote: e.target.value })}
+                    className="w-full bg-white border border-slate-300 focus:border-[#2874f0] rounded-sm px-3.5 py-2 text-xs text-[#212121] outline-none"
+                  />
+                </div>
               </div>
             </div>
 

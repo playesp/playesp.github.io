@@ -1292,6 +1292,20 @@ function buildNwiTree(db: StaticDb, user: UserProfile): NwiTreeRecord {
   };
 }
 
+export function applyStaticCloudConfig(settings?: Partial<PlatformSettings> | null, services?: ServiceItem[] | null) {
+  const db = getDb();
+  let changed = false;
+  if (settings && typeof settings === 'object') {
+    db.settings = { ...db.settings, ...settings };
+    changed = true;
+  }
+  if (Array.isArray(services) && services.length > 0) {
+    db.services = services;
+    changed = true;
+  }
+  if (changed) saveDb(db);
+}
+
 export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}): any {
   const db = getDb();
   const method = (options.method || 'GET').toUpperCase();
@@ -1419,14 +1433,72 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     };
   }
 
+  if (path === '/api/auth/check-identity' && method === 'POST') {
+    const normalizedPhone = normalizeStaticPhone(body.phone || '');
+    const cleanEmail = String(body.email || '').trim().toLowerCase();
+    const cleanUname = body.username ? normalizeStaticUsername(body.username) : '';
+    const excl = body.excludeUserId ? String(body.excludeUserId).toLowerCase() : '';
+
+    if (normalizedPhone.length >= 10) {
+      const phoneConflict = db.users.find(
+        u => (!excl || u.userId.toLowerCase() !== excl) && normalizeStaticPhone(u.phone || '') === normalizedPhone
+      );
+      if (phoneConflict) {
+        return {
+          success: true,
+          available: false,
+          conflictField: 'phone',
+          message: 'यह मोबाइल नंबर पहले से किसी ESP खाते में पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।',
+        };
+      }
+    }
+    if (cleanEmail && cleanEmail.includes('@')) {
+      const emailConflict = db.users.find(
+        u => (!excl || u.userId.toLowerCase() !== excl) && (u.email || '').trim().toLowerCase() === cleanEmail
+      );
+      if (emailConflict) {
+        return {
+          success: true,
+          available: false,
+          conflictField: 'email',
+          message: 'यह ईमेल पता पहले से किसी दूसरे ESP खाते में पंजीकृत है। कृपया कोई नया ईमेल दर्ज करें या लॉगिन करें।',
+        };
+      }
+    }
+    if (cleanUname) {
+      if (!isValidStaticUsername(cleanUname)) {
+        return {
+          success: true,
+          available: false,
+          conflictField: 'username',
+          message: 'यूनिक यूज़रनेम में कोई Symbol (_ - . @) उपयोग न करें — केवल 3 से 24 अक्षर (a-z और 0-9) लिखें।',
+        };
+      }
+      if (isStaticUsernameTaken(db.users, cleanUname, body.excludeUserId)) {
+        return {
+          success: true,
+          available: false,
+          conflictField: 'username',
+          message: `यूज़रनेम "@${cleanUname}" पहले से लिया जा चुका है! कृपया कोई दूसरा नाम चुनें।`,
+        };
+      }
+    }
+    return { success: true, available: true };
+  }
+
   // Auth: Register, Login, Restore, Forget ID, Forget Password, Verify Session
   if (path === '/api/auth/register' && method === 'POST') {
     const isGamer = body.accountType === 'gamer';
     const fullName = String(body.fullName || '').trim().replace(/\s+/g, ' ');
     const rawPhone = String(body.phone || '').trim();
     const phone = normalizeStaticPhone(rawPhone) || rawPhone;
-    const cleanEmail = body.email ? String(body.email).trim().toLowerCase() : `${phone}@espgaming.club`;
-    if (!fullName || !phone) return { success: false, message: 'नाम और मोबाइल नंबर आवश्यक है' };
+    const cleanEmail = String(body.email || '').trim().toLowerCase();
+    if (!fullName || !phone || normalizeStaticPhone(rawPhone).length < 10) {
+      return { success: false, message: 'नाम और सही 10 अंकों का मोबाइल नंबर आवश्यक है' };
+    }
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return { success: false, message: 'कृपया एक वैध ईमेल पता (Valid Email Address) दर्ज करें।' };
+    }
     const inputUsername = body.username !== undefined ? normalizeStaticUsername(body.username) : '';
     if (inputUsername) {
       if (!isValidStaticUsername(inputUsername)) {
@@ -1444,10 +1516,14 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         };
       }
     }
-    const exists = db.users.find(
-      u => normalizeStaticPhone(u.phone || '') === phone || (body.email && (u.email || '').trim().toLowerCase() === cleanEmail)
-    );
-    if (exists) return { success: false, message: 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।' };
+    const phoneConflict = db.users.find(u => normalizeStaticPhone(u.phone || '') === phone);
+    if (phoneConflict) {
+      return { success: false, code: 'DUPLICATE_PHONE', message: 'इस मोबाइल नंबर से पहले से खाता पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।' };
+    }
+    const emailConflict = db.users.find(u => (u.email || '').trim().toLowerCase() === cleanEmail);
+    if (emailConflict) {
+      return { success: false, code: 'DUPLICATE_EMAIL', message: 'इस ईमेल पते से पहले से खाता पंजीकृत है। एक ईमेल से केवल 1 अकाउंट बन सकता है।' };
+    }
 
     const fee = isGamer ? 0 : (Number(body.joiningFee) || 10);
     const srv = isGamer
@@ -1485,6 +1561,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       joiningFee: fee,
       joiningDate: body.joiningDate || new Date().toISOString().split('T')[0],
       paymentUtr: body.paymentUtr || (isGamer ? 'FREE_GAMING_USER' : 'STATIC_UTR'),
+      paymentScreenshot: body.paymentScreenshot || '',
       status: isGamer ? 'active' : 'pending',
       accountType: isGamer ? 'gamer' : 'business',
       balance: 0,
@@ -1858,7 +1935,26 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       if (fullName !== undefined && String(fullName).trim()) {
         user.fullName = String(fullName).trim().replace(/\s+/g, ' ');
       }
-      if (email) user.email = String(email).trim();
+      if (body.phone !== undefined && String(body.phone).trim()) {
+        const cleanNewPhone = normalizeStaticPhone(String(body.phone)) || String(body.phone).trim();
+        const phoneConflict = db.users.find(
+          u => u.userId !== user.userId && normalizeStaticPhone(u.phone || '') === cleanNewPhone && cleanNewPhone.length >= 10
+        );
+        if (phoneConflict) {
+          return { success: false, code: 'DUPLICATE_PHONE', message: 'यह मोबाइल नंबर पहले से किसी दूसरे यूजर के पास पंजीकृत है।' };
+        }
+        user.phone = cleanNewPhone;
+      }
+      if (email !== undefined && String(email).trim()) {
+        const cleanNewEmail = String(email).trim().toLowerCase();
+        const emailConflict = db.users.find(
+          u => u.userId !== user.userId && (u.email || '').trim().toLowerCase() === cleanNewEmail
+        );
+        if (emailConflict) {
+          return { success: false, code: 'DUPLICATE_EMAIL', message: 'यह ईमेल पता पहले से किसी दूसरे यूजर के खाते में जुड़ा है।' };
+        }
+        user.email = cleanNewEmail;
+      }
       if (gender !== undefined) user.gender = String(gender);
       if (location !== undefined) user.location = String(location).trim().slice(0, 80);
       if (body.birthday !== undefined) user.birthday = String(body.birthday).trim().slice(0, 32);
@@ -3747,6 +3843,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
   if (path === '/api/admin/import-cloud-users' && method === 'POST') {
     if (!verifyAdminPass(body.adminPassword || adminPassHeader)) return { success: false, message: 'Unauthorized' };
     const incoming = Array.isArray(body.users) ? body.users : [];
+    const incomingUpgrades = Array.isArray(body.upgrades) ? body.upgrades : [];
     let importedCount = 0;
     let updatedCount = 0;
     for (const raw of incoming) {
@@ -3761,10 +3858,79 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
           (rawEmail && rawEmail.includes('@') && (u.email || '').trim().toLowerCase() === rawEmail)
       );
       if (existingUser) {
-        if (!existingUser.registeredFromHost && raw.registeredFromHost) {
-          existingUser.registeredFromHost = String(raw.registeredFromHost).slice(0, 128);
-          updatedCount++;
+        let touched = false;
+        const incomingTime = Date.parse(String(raw.updatedAt || raw.lastLogin || raw.createdAt || '')) || 0;
+        const localTime = Date.parse(String((existingUser as any).updatedAt || existingUser.lastLogin || existingUser.createdAt || '')) || 0;
+        const incomingIsNewer = incomingTime > localTime;
+        const fill = (key: keyof UserProfile, maxLen = 300) => {
+          const val = typeof raw[key] === 'string' ? String(raw[key]).trim() : '';
+          const cur = typeof (existingUser as any)[key] === 'string' ? String((existingUser as any)[key]).trim() : '';
+          if (val && (!cur || (incomingIsNewer && val !== cur))) {
+            (existingUser as any)[key] = maxLen > 0 ? val.slice(0, maxLen) : val;
+            touched = true;
+          }
+        };
+        fill('registeredFromHost', 128);
+        fill('fullAddress', 300);
+        fill('paymentAddress', 120);
+        fill('payoutUpiId', 120);
+        fill('password', 128);
+        fill('swiAppLink', 300);
+        fill('swiAppNote', 300);
+        if (raw.paymentScreenshot && (!existingUser.paymentScreenshot || (incomingIsNewer && String(raw.paymentScreenshot).startsWith('data:image/')))) {
+          existingUser.paymentScreenshot = String(raw.paymentScreenshot);
+          touched = true;
         }
+        if (raw.paymentUtr && (!existingUser.paymentUtr || existingUser.paymentUtr === 'CLOUD_SYNC' || existingUser.paymentUtr === 'FREE_GAMING_USER')) {
+          existingUser.paymentUtr = String(raw.paymentUtr).slice(0, 80);
+          touched = true;
+        }
+        if ((!existingUser.email || existingUser.email.endsWith('@espgaming.club')) && rawEmail && rawEmail.includes('@') && !rawEmail.endsWith('@espgaming.club')) {
+          existingUser.email = rawEmail;
+          touched = true;
+        }
+        if ((!existingUser.phone || existingUser.phone === '0000000000') && rawPhone && rawPhone.length >= 10) {
+          existingUser.phone = rawPhone;
+          touched = true;
+        }
+        if (raw.chosenServiceCode && (!existingUser.chosenServiceCode || (existingUser.accountType === 'gamer' && raw.accountType === 'business'))) {
+          existingUser.chosenServiceCode = String(raw.chosenServiceCode).slice(0, 24);
+          if (raw.chosenServiceName) existingUser.chosenServiceName = String(raw.chosenServiceName).slice(0, 120);
+          touched = true;
+        }
+        if (Number(raw.joiningFee) > (Number(existingUser.joiningFee) || 0)) {
+          existingUser.joiningFee = Number(raw.joiningFee);
+          touched = true;
+        }
+        if (raw.accountType === 'business' && existingUser.accountType === 'gamer') {
+          existingUser.accountType = 'business';
+          touched = true;
+        }
+        if (incomingIsNewer && (raw.status === 'active' || raw.status === 'pending' || raw.status === 'rejected') && existingUser.status !== raw.status) {
+          existingUser.status = raw.status;
+          touched = true;
+        }
+        if (incomingIsNewer && Number(raw.coins) > (Number(existingUser.coins) || 0)) {
+          existingUser.coins = Number(raw.coins);
+          touched = true;
+        }
+        if (incomingIsNewer && Number(raw.balance) > (Number(existingUser.balance) || 0)) {
+          existingUser.balance = Number(raw.balance);
+          touched = true;
+        }
+        if (incomingIsNewer && Number(raw.gameLevel) > (Number(existingUser.gameLevel) || 1)) {
+          existingUser.gameLevel = Number(raw.gameLevel);
+          touched = true;
+        }
+        if (raw.workspaceState && typeof raw.workspaceState === 'object') {
+          const wsIn = Date.parse(String(raw.workspaceState.updatedAt || '')) || 0;
+          const wsCur = Date.parse(String(existingUser.workspaceState?.updatedAt || '')) || 0;
+          if (wsIn > wsCur) {
+            existingUser.workspaceState = raw.workspaceState;
+            touched = true;
+          }
+        }
+        if (touched) updatedCount++;
         continue;
       }
       const cleanName = String(raw.fullName || 'ESP Member').trim().replace(/\s+/g, ' ');
@@ -3810,6 +3976,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         joiningFee: isGamer ? 0 : Math.max(0, Number(raw.joiningFee) || 10),
         joiningDate: String(raw.joiningDate || new Date().toISOString().split('T')[0]),
         paymentUtr: String(raw.paymentUtr || (isGamer ? 'FREE_GAMING_USER' : 'CLOUD_SYNC')),
+        paymentScreenshot: String(raw.paymentScreenshot || ''),
         status: raw.status === 'active' || raw.status === 'rejected' ? raw.status : isGamer ? 'active' : 'pending',
         accountType: isGamer ? 'gamer' : 'business',
         balance: Math.max(0, Number(raw.balance) || 0),
@@ -3818,6 +3985,8 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         gameLevel: Math.max(1, Number(raw.gameLevel) || 1),
         vipTier: raw.vipTier || 'none',
         frameType: raw.frameType || 'standard',
+        swiAppLink: raw.swiAppLink ? String(raw.swiAppLink) : undefined,
+        swiAppNote: raw.swiAppNote ? String(raw.swiAppNote) : undefined,
         roomAddress,
         personalRoomId: roomAddress,
         registeredFromHost: String(raw.registeredFromHost || 'playesp.github.io'),
@@ -3827,6 +3996,16 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
       db.users.unshift(newUser);
       ensureStaticPersonalRoom(db, newUser);
       importedCount++;
+    }
+    if (incomingUpgrades.length > 0) {
+      if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
+      for (const upg of incomingUpgrades) {
+        if (!upg || !upg.id) continue;
+        if (!db.planUpgrades.some(x => x.id === upg.id)) {
+          db.planUpgrades.unshift(upg);
+          updatedCount++;
+        }
+      }
     }
     if (importedCount > 0 || updatedCount > 0) saveDb(db);
     return { success: true, importedCount, updatedCount, totalUsers: db.users.length, users: db.users };
@@ -4257,8 +4436,26 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     }
     if (body.fullName) user.fullName = String(body.fullName).trim();
     if (body.username) user.username = normalizeStaticUsername(body.username);
-    if (body.phone !== undefined && String(body.phone).trim()) user.phone = String(body.phone).trim();
-    if (body.email !== undefined && String(body.email).trim()) user.email = String(body.email).trim();
+    if (body.phone !== undefined && String(body.phone).trim()) {
+      const cleanPhone = normalizeStaticPhone(String(body.phone)) || String(body.phone).trim();
+      const phoneConflict = db.users.find(
+        u => u.userId !== user.userId && normalizeStaticPhone(u.phone || '') === cleanPhone && cleanPhone.length >= 10
+      );
+      if (phoneConflict) {
+        return { success: false, code: 'DUPLICATE_PHONE', message: 'यह मोबाइल नंबर पहले से किसी दूसरे यूजर के खाते में पंजीकृत है।' };
+      }
+      user.phone = cleanPhone;
+    }
+    if (body.email !== undefined && String(body.email).trim()) {
+      const cleanEmail = String(body.email).trim().toLowerCase();
+      const emailConflict = db.users.find(
+        u => u.userId !== user.userId && (u.email || '').trim().toLowerCase() === cleanEmail
+      );
+      if (emailConflict) {
+        return { success: false, code: 'DUPLICATE_EMAIL', message: 'यह ईमेल पता पहले से किसी दूसरे यूजर के खाते में जुड़ा है।' };
+      }
+      user.email = cleanEmail;
+    }
     if (body.fullAddress !== undefined) user.fullAddress = String(body.fullAddress).trim();
     if (body.paymentAddress !== undefined) {
       user.paymentAddress = String(body.paymentAddress).trim();

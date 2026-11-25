@@ -419,6 +419,9 @@ export interface PlatformSettings {
   homeSliderPhotos?: HomeSliderPhoto[];
   swiSpecialAppLink?: string;
   swiSpecialAppName?: string;
+  welcomePopupEnabled?: boolean;
+  welcomePopupHeadline?: string;
+  welcomePopupNote?: string;
 }
 
 export interface NotificationItem {

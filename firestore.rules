@@ -53,16 +53,21 @@ service cloud.firestore {
         (!('updatedAt' in ws) || isValidString(ws.updatedAt, 0, 64));
     }
 
+    function isValidShaKey(val) {
+      return val is string && val.size() >= 10 && val.size() <= 128 && val.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isValidUserProfile(data) {
       return data.keys().hasAll(['userId', 'authUid', 'fullName', 'phone', 'email', 'status', 'role', 'createdAt']) &&
         data.keys().hasOnly([
           'userId', 'authUid', 'username', 'fullName', 'phone', 'email', 'fullAddress',
           'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
-          'paymentUtr', 'status', 'accountType', 'balance', 'totalEarnings',
+          'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'totalEarnings',
           'referralEarnings', 'totalWithdrawn', 'coins', 'charms',
           'gameLevel', 'gameXp', 'vipTier', 'unlockedFrames', 'frameType',
-          'tasksCompletedCount', 'clanName', 'avatar', 'coverPhoto', 'bio',
+          'tasksCompletedCount', 'totalGamesPlayed', 'totalGamesWon', 'unlockedRooms', 'roomTheme',
+          'clanName', 'avatar', 'coverPhoto', 'bio',
           'gender', 'location', 'friendsList', 'gamingId', 'personalRoomId',
           'roomAddress', 'todayActiveness', 'loginStreak', 'claimedDays',
           'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost',
@@ -88,6 +93,7 @@ service cloud.firestore {
         (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
         (!('joiningDate' in data) || isValidString(data.joiningDate, 0, 32)) &&
         (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('paymentScreenshot' in data) || isValidString(data.paymentScreenshot, 0, 250000)) &&
         (!('accountType' in data) || data.accountType in ['business', 'gamer']) &&
         (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
         (!('totalEarnings' in data) || (data.totalEarnings is number && data.totalEarnings >= 0)) &&
@@ -101,6 +107,10 @@ service cloud.firestore {
         (!('unlockedFrames' in data) || (data.unlockedFrames is list && data.unlockedFrames.size() >= 1 && data.unlockedFrames.size() <= 20 && data.unlockedFrames[0] is string)) &&
         (!('frameType' in data) || isValidString(data.frameType, 1, 64)) &&
         (!('tasksCompletedCount' in data) || (data.tasksCompletedCount is number && data.tasksCompletedCount >= 0)) &&
+        (!('totalGamesPlayed' in data) || (data.totalGamesPlayed is number && data.totalGamesPlayed >= 0)) &&
+        (!('totalGamesWon' in data) || (data.totalGamesWon is number && data.totalGamesWon >= 0)) &&
+        (!('unlockedRooms' in data) || (data.unlockedRooms is list && data.unlockedRooms.size() <= 30 && (data.unlockedRooms.size() == 0 || data.unlockedRooms[0] is string))) &&
+        (!('roomTheme' in data) || isValidString(data.roomTheme, 0, 64)) &&
         (!('clanName' in data) || isValidString(data.clanName, 0, 100)) &&
         (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
         (!('coverPhoto' in data) || isValidString(data.coverPhoto, 0, 500)) &&
@@ -128,9 +138,9 @@ service cloud.firestore {
           'id', 'userId', 'gamingId', 'username', 'fullName', 'phone', 'email', 'fullAddress',
           'paymentAddress', 'payoutUpiId', 'password', 'sponsorId', 'sponsorName',
           'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate',
-          'paymentUtr', 'status', 'accountType', 'balance', 'coins', 'charms',
+          'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'coins', 'charms',
           'gameLevel', 'vipTier', 'frameType', 'personalRoomId', 'roomAddress',
-          'registeredFromHost', 'role', 'createdAt', 'updatedAt'
+          'registeredFromHost', 'swiAppLink', 'swiAppNote', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.fullName, 1, 120) &&
@@ -154,6 +164,7 @@ service cloud.firestore {
         (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
         (!('joiningDate' in data) || isValidString(data.joiningDate, 0, 32)) &&
         (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('paymentScreenshot' in data) || isValidString(data.paymentScreenshot, 0, 250000)) &&
         (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
         (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
         (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
@@ -163,7 +174,130 @@ service cloud.firestore {
         (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
         (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
         (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
+        (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
+        (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
+    }
+
+    function isValidIdentityLock(data) {
+      return data.keys().hasAll(['lockKey', 'lockType', 'userId', 'createdAt']) &&
+        data.keys().hasOnly(['lockKey', 'lockType', 'userId', 'gamingId', 'accountType', 'chosenServiceCode', 'createdAt']) &&
+        isValidShaKey(data.lockKey) &&
+        data.lockType in ['phone', 'email', 'username', 'userId', 'gamingId', 'roomAddress'] &&
+        isValidId(data.userId) &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
+        (!('accountType' in data) || data.accountType in ['business', 'gamer']) &&
+        (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24));
+    }
+
+    function isValidDeviceVault(data) {
+      return data.keys().hasAll(['vaultKey', 'userId', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'vaultKey', 'isPointer', 'pointerTargetKey', 'userId', 'gamingId',
+          'personalRoomId', 'roomAddress', 'sponsorId', 'sponsorName', 'username',
+          'fullName', 'phone', 'email', 'fullAddress', 'paymentAddress', 'payoutUpiId',
+          'chosenServiceCode', 'chosenServiceName', 'joiningFee', 'joiningDate', 'paymentUtr',
+          'status', 'accountType', 'role', 'balance', 'totalEarnings', 'referralEarnings',
+          'totalWithdrawn', 'coins', 'charms', 'gameLevel', 'gameXp', 'vipTier', 'frameType',
+          'unlockedFrames', 'tasksCompletedCount', 'totalGamesPlayed', 'totalGamesWon',
+          'unlockedRooms', 'roomTheme', 'clanName', 'avatar', 'coverPhoto', 'bio',
+          'gender', 'location', 'friendsList', 'todayActiveness', 'loginStreak', 'claimedDays',
+          'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost', 'swiAppLink',
+          'swiAppNote', 'password', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidShaKey(data.vaultKey) &&
+        isValidId(data.userId) &&
+        isValidString(data.updatedAt, 4, 64) &&
+        (!('isPointer' in data) || data.isPointer is bool) &&
+        (!('pointerTargetKey' in data) || isValidString(data.pointerTargetKey, 0, 128)) &&
+        (!('gamingId' in data) || isValidString(data.gamingId, 0, 64)) &&
+        (!('personalRoomId' in data) || isValidString(data.personalRoomId, 0, 24)) &&
+        (!('roomAddress' in data) || isValidString(data.roomAddress, 0, 24)) &&
+        (!('sponsorId' in data) || isValidString(data.sponsorId, 0, 64)) &&
+        (!('sponsorName' in data) || isValidString(data.sponsorName, 0, 120)) &&
+        (!('username' in data) || data.username == '' || isValidUsernameHandle(data.username)) &&
+        (!('fullName' in data) || isValidString(data.fullName, 0, 120)) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 24)) &&
+        (!('email' in data) || isValidString(data.email, 0, 150)) &&
+        (!('fullAddress' in data) || isValidString(data.fullAddress, 0, 300)) &&
+        (!('paymentAddress' in data) || isValidString(data.paymentAddress, 0, 120)) &&
+        (!('payoutUpiId' in data) || isValidString(data.payoutUpiId, 0, 120)) &&
+        (!('chosenServiceCode' in data) || isValidString(data.chosenServiceCode, 0, 24)) &&
+        (!('chosenServiceName' in data) || isValidString(data.chosenServiceName, 0, 120)) &&
+        (!('joiningFee' in data) || (data.joiningFee is number && data.joiningFee >= 0)) &&
+        (!('joiningDate' in data) || isValidString(data.joiningDate, 0, 32)) &&
+        (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('status' in data) || data.status in ['pending', 'active', 'rejected']) &&
+        (!('accountType' in data) || data.accountType in ['business', 'gamer']) &&
+        (!('role' in data) || data.role in ['member', 'admin']) &&
+        (!('balance' in data) || (data.balance is number && data.balance >= 0)) &&
+        (!('totalEarnings' in data) || (data.totalEarnings is number && data.totalEarnings >= 0)) &&
+        (!('referralEarnings' in data) || (data.referralEarnings is number && data.referralEarnings >= 0)) &&
+        (!('totalWithdrawn' in data) || (data.totalWithdrawn is number && data.totalWithdrawn >= 0)) &&
+        (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
+        (!('charms' in data) || (data.charms is number && data.charms >= 0)) &&
+        (!('gameLevel' in data) || (data.gameLevel is number && data.gameLevel >= 1)) &&
+        (!('gameXp' in data) || (data.gameXp is number && data.gameXp >= 0)) &&
+        (!('vipTier' in data) || data.vipTier in ['none', 'silver', 'gold', 'diamond']) &&
+        (!('frameType' in data) || isValidString(data.frameType, 0, 64)) &&
+        (!('unlockedFrames' in data) || (data.unlockedFrames is list && data.unlockedFrames.size() <= 20 && (data.unlockedFrames.size() == 0 || data.unlockedFrames[0] is string))) &&
+        (!('tasksCompletedCount' in data) || (data.tasksCompletedCount is number && data.tasksCompletedCount >= 0)) &&
+        (!('totalGamesPlayed' in data) || (data.totalGamesPlayed is number && data.totalGamesPlayed >= 0)) &&
+        (!('totalGamesWon' in data) || (data.totalGamesWon is number && data.totalGamesWon >= 0)) &&
+        (!('unlockedRooms' in data) || (data.unlockedRooms is list && data.unlockedRooms.size() <= 30 && (data.unlockedRooms.size() == 0 || data.unlockedRooms[0] is string))) &&
+        (!('roomTheme' in data) || isValidString(data.roomTheme, 0, 64)) &&
+        (!('clanName' in data) || isValidString(data.clanName, 0, 100)) &&
+        (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
+        (!('coverPhoto' in data) || isValidString(data.coverPhoto, 0, 500)) &&
+        (!('bio' in data) || isValidString(data.bio, 0, 240)) &&
+        (!('gender' in data) || isValidString(data.gender, 0, 24)) &&
+        (!('location' in data) || isValidString(data.location, 0, 100)) &&
+        (!('friendsList' in data) || (data.friendsList is list && data.friendsList.size() <= 500 && (data.friendsList.size() == 0 || data.friendsList[0] is string))) &&
+        (!('todayActiveness' in data) || (data.todayActiveness is number && data.todayActiveness >= 0)) &&
+        (!('loginStreak' in data) || (data.loginStreak is number && data.loginStreak >= 0)) &&
+        (!('claimedDays' in data) || (data.claimedDays is list && data.claimedDays.size() <= 7)) &&
+        (!('lastDailyCheckInDate' in data) || isValidString(data.lastDailyCheckInDate, 0, 32)) &&
+        (!('workspaceState' in data) || isValidWorkspaceState(data.workspaceState)) &&
+        (!('registeredFromHost' in data) || isValidString(data.registeredFromHost, 0, 128)) &&
+        (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
+        (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
+        (!('password' in data) || isValidString(data.password, 0, 128)) &&
+        (!('createdAt' in data) || isValidString(data.createdAt, 0, 64));
+    }
+
+    function isValidCloudPlanUpgrade(data) {
+      return data.keys().hasAll(['id', 'userId', 'targetServiceCode', 'upgradeFee', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'userName', 'fromAccountType', 'upgradeType',
+          'fromServiceCode', 'fromFee', 'targetServiceCode', 'targetServiceName',
+          'upgradeFee', 'paymentUtr', 'paymentScreenshot', 'status', 'createdAt', 'processedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        isValidString(data.targetServiceCode, 1, 24) &&
+        data.upgradeFee is number && data.upgradeFee >= 0 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.createdAt, 4, 64) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        (!('fromAccountType' in data) || data.fromAccountType in ['business', 'gamer']) &&
+        (!('upgradeType' in data) || data.upgradeType in ['plan_upgrade', 'gamer_to_business']) &&
+        (!('fromServiceCode' in data) || isValidString(data.fromServiceCode, 0, 24)) &&
+        (!('fromFee' in data) || (data.fromFee is number && data.fromFee >= 0)) &&
+        (!('targetServiceName' in data) || isValidString(data.targetServiceName, 0, 120)) &&
+        (!('paymentUtr' in data) || isValidString(data.paymentUtr, 0, 64)) &&
+        (!('paymentScreenshot' in data) || isValidString(data.paymentScreenshot, 0, 250000)) &&
+        (!('processedAt' in data) || isValidString(data.processedAt, 0, 64));
+    }
+
+    function isValidPlatformConfig(data) {
+      return data.keys().hasAll(['configId', 'updatedAt']) &&
+        data.keys().hasOnly(['configId', 'settings', 'services', 'updatedAt', 'updatedBy']) &&
+        isValidId(data.configId) &&
+        isValidString(data.updatedAt, 4, 64) &&
+        (!('settings' in data) || data.settings is map) &&
+        (!('services' in data) || (data.services is list && data.services.size() <= 40 && (data.services.size() == 0 || data.services[0] is map))) &&
+        (!('updatedBy' in data) || isValidString(data.updatedBy, 0, 150));
     }
 
     function isValidPublicProfile(data) {
@@ -390,8 +524,65 @@ service cloud.firestore {
     match /cloud_registrations/{regId} {
       allow get: if isAdmin() && isValidId(regId);
       allow list: if isAdmin();
-      allow create: if isValidId(regId) && isValidCloudRegistration(incoming());
+      allow create: if isValidId(regId) && isValidCloudRegistration(incoming()) && incoming().userId == regId;
       allow update: if isAdmin() && isValidId(regId) && isValidCloudRegistration(incoming());
+      allow delete: if false;
+    }
+
+    // 3c. Zero-PII Identity Uniqueness Locks (Global Duplicate Prevention Across All Domains)
+    match /identity_locks/{lockKey} {
+      allow get: if isValidShaKey(lockKey);
+      allow list: if false;
+      allow create: if isValidShaKey(lockKey) &&
+        isValidIdentityLock(incoming()) &&
+        incoming().lockKey == lockKey &&
+        !exists(/databases/$(database)/documents/identity_locks/$(lockKey));
+      allow update, delete: if isAdmin();
+    }
+
+    // 3d. Credential-Keyed Cross-Device Sync Vault (SHA-256 Keyed, Zero Enumeration)
+    match /device_sync_vault/{vaultKey} {
+      allow get: if isValidShaKey(vaultKey);
+      allow list: if false;
+      allow create: if isValidShaKey(vaultKey) &&
+        isValidDeviceVault(incoming()) &&
+        incoming().vaultKey == vaultKey &&
+        !exists(/databases/$(database)/documents/device_sync_vault/$(vaultKey));
+      allow update: if isValidShaKey(vaultKey) && isValidDeviceVault(incoming()) && (
+        isAdmin() || (
+          incoming().vaultKey == existing().vaultKey &&
+          incoming().userId == existing().userId &&
+          (!('role' in existing()) || incoming().role == existing().role) &&
+          (!('sponsorId' in existing()) || existing().sponsorId == '' || incoming().sponsorId == existing().sponsorId) &&
+          (!('personalRoomId' in existing()) || existing().personalRoomId == '' || incoming().personalRoomId == existing().personalRoomId) &&
+          (!('roomAddress' in existing()) || existing().roomAddress == '' || incoming().roomAddress == existing().roomAddress) &&
+          (!('gamingId' in existing()) || existing().gamingId == '' || incoming().gamingId == existing().gamingId) &&
+          (!('status' in existing()) || existing().status == 'active' || incoming().status == existing().status)
+        )
+      );
+      allow delete: if false;
+    }
+
+    // 3e. Cross-Origin Plan Upgrade & Gaming-to-Income Queue (Admin Managed)
+    match /cloud_plan_upgrades/{upgradeId} {
+      allow get: if isAdmin() && isValidId(upgradeId);
+      allow list: if isAdmin();
+      allow create: if isValidId(upgradeId) &&
+        isValidCloudPlanUpgrade(incoming()) &&
+        incoming().id == upgradeId &&
+        incoming().status == 'pending';
+      allow update: if isAdmin() && isValidId(upgradeId) && isValidCloudPlanUpgrade(incoming());
+      allow delete: if false;
+    }
+
+    // 3f. Global Platform Config (UPI, QR, Welcome Popup & Services Catalog - Admin Controlled)
+    match /platform_config/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if false;
+      allow create, update: if isAdmin() &&
+        isValidId(configId) &&
+        isValidPlatformConfig(incoming()) &&
+        incoming().configId == configId;
       allow delete: if false;
     }
 

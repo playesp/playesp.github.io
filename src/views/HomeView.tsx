@@ -58,6 +58,7 @@ interface HomeViewProps {
   onOpenKnowIncome?: () => void;
   onOpenKnowGaming?: () => void;
   onOpenTypingAcademy?: () => void;
+  onOpenWelcomePopup?: () => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -77,6 +78,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenKnowIncome,
   onOpenKnowGaming,
   onOpenTypingAcademy,
+  onOpenWelcomePopup,
 }) => {
   const [calcTier, setCalcTier] = useState<number>(100);
   const [calcReferrals, setCalcReferrals] = useState<number>(10);
@@ -111,6 +113,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const totalProjected = estimatedDirectReward + calcTier * 1.5 * 30;
 
   const moreItems: MoreOptionItem[] = [
+    ...(onOpenWelcomePopup
+      ? [
+          {
+            id: 'welcome-overview',
+            label: 'Platform Welcome & Features',
+            subLabel: 'ESP फ्री गेमिंग व कमाई सिस्टम की पूरी झलक',
+            icon: <Info className="w-4 h-4 text-[#fb641b]" />,
+            badge: 'Welcome',
+            onClick: () => onOpenWelcomePopup(),
+          },
+        ]
+      : []),
     ...(onOpenNewVisitorPopup
       ? [
           {
@@ -323,11 +337,23 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
 
           <div className="px-4 py-3 bg-[#f8fafc] border-t border-slate-200 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
-            <span>10 Earning Services (₹10+)</span>
-            <span aria-hidden="true">·</span>
             <span>Free Gaming Club (₹0)</span>
             <span aria-hidden="true">·</span>
+            <span>10 Earning Services (₹10+)</span>
+            <span aria-hidden="true">·</span>
             <span>Same-ID Upgrade Verified in Admin</span>
+            {onOpenWelcomePopup && (
+              <>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  onClick={() => onOpenWelcomePopup()}
+                  className="text-[#fb641b] font-bold hover:underline cursor-pointer"
+                >
+                  ✨ Platform Welcome Tour →
+                </button>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <button
               type="button"

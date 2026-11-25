@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, X, Monitor, LogOut, RefreshCw } from 'lucide-react';
+import { Lock, X, Monitor, LogOut, RefreshCw, Globe, CheckCircle2 } from 'lucide-react';
 import { api } from '../services/api.ts';
+import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, onFirebaseAuthChange } from '../services/firebase.ts';
 import type { AdminSession } from '../types/index.ts';
 
 interface AdminLoginModalProps {
@@ -16,18 +17,47 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [cloudConnecting, setCloudConnecting] = useState(false);
+  const [cloudEmail, setCloudEmail] = useState<string | null>(() => auth.currentUser?.email || null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [conflictSessions, setConflictSessions] = useState<AdminSession[] | null>(null);
   const [maxDevices, setMaxDevices] = useState(4);
 
   useEffect(() => {
+    const unsub = onFirebaseAuthChange(fbUser => {
+      setCloudEmail(fbUser?.email || null);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       setErrorMsg(null);
       setConflictSessions(null);
+      setCloudEmail(auth.currentUser?.email || null);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const isCloudVerified = Boolean(cloudEmail && cloudEmail.toLowerCase() === ADMIN_GOOGLE_EMAIL);
+
+  const handleConnectGoogleCloud = async () => {
+    if (cloudConnecting) return;
+    setCloudConnecting(true);
+    setErrorMsg(null);
+    try {
+      const fbUser = await signInWithGoogle();
+      setCloudEmail(fbUser.email || null);
+      if (fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
+        setErrorMsg(`कृपया केवल अधिकृत एडमिन Google खाता (${ADMIN_GOOGLE_EMAIL}) चुनें।`);
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Google Cloud Sync कनेक्ट करने में त्रुटि आई');
+    } finally {
+      setCloudConnecting(false);
+    }
+  };
 
   const attemptAdminLogin = async (opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }) => {
     if (!password.trim()) {
@@ -80,8 +110,45 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           </div>
           <h2 className="text-lg font-bold text-[#212121]">ESP Multi-Device Admin Access</h2>
           <p className="text-xs text-slate-500">
-            Up to 4 Admin devices supported simultaneously with remote session control
+            Up to 4 Admin devices supported simultaneously with live Cross-Origin Cloud Sync
           </p>
+        </div>
+
+        {/* 1-Click Google Cloud Bridge Connection for Firestore Full User Data Sync */}
+        <div
+          className={`p-3 rounded-sm border text-xs flex items-center justify-between gap-2 ${
+            isCloudVerified
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-blue-50 border-blue-200 text-blue-950'
+          }`}
+        >
+          <div className="min-w-0">
+            <div className="font-bold flex items-center gap-1.5">
+              {isCloudVerified ? (
+                <CheckCircle2 className="w-4 h-4 text-[#388e3c] shrink-0" />
+              ) : (
+                <Globe className="w-4 h-4 text-[#2874f0] shrink-0" />
+              )}
+              <span className="truncate">
+                {isCloudVerified ? 'Cloud Database Connected' : 'Live Cloud Database Sync'}
+              </span>
+            </div>
+            <p className="text-[10.5px] opacity-80 truncate mt-0.5">
+              {isCloudVerified
+                ? `${cloudEmail} (सभी रजिस्टर्ड यूज़र स्वतः दिखेंगे)`
+                : 'दूसरे डिवाइस/URL से सभी रजिस्ट्रेशन डेटा खींचने के लिए कनेक्ट करें'}
+            </p>
+          </div>
+          {!isCloudVerified && (
+            <button
+              type="button"
+              onClick={handleConnectGoogleCloud}
+              disabled={cloudConnecting}
+              className="px-2.5 py-1.5 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white text-[11px] font-bold shrink-0 cursor-pointer disabled:opacity-60"
+            >
+              {cloudConnecting ? 'Connecting...' : 'Connect Google'}
+            </button>
+          )}
         </div>
 
         {errorMsg && (
@@ -121,7 +188,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                     className="shrink-0 px-2.5 py-1 rounded-xs bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
                   >
                     <LogOut className="w-3 h-3" />
-                    <span>Logout & Enter</span>
+                    <span>Logout &amp; Enter</span>
                   </button>
                 </div>
               ))}

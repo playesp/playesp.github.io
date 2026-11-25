@@ -600,7 +600,7 @@ export const JoinSelectionPopupModal: React.FC<JoinSelectionPopupModalProps> = (
   onProceedRegister,
   onOpenMoreMenu,
 }) => {
-  const [joinBranch, setJoinBranch] = useState<'income' | 'gaming'>('income');
+  const [joinBranch, setJoinBranch] = useState<'gaming' | 'income'>('gaming');
   const [selectedCode, setSelectedCode] = useState<string>('EMO');
   const [selectedFee, setSelectedFee] = useState<number>(10);
 
@@ -611,13 +611,13 @@ export const JoinSelectionPopupModal: React.FC<JoinSelectionPopupModalProps> = (
   return (
     <div className="fixed inset-0 z-[95] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
       <div className="esp-popup-card max-w-2xl bg-white border border-slate-200 overflow-hidden flex flex-col">
-        <div className="bg-gradient-to-r from-[#fb641b] via-[#f97316] to-[#2874f0] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
+        <div className="bg-gradient-to-r from-[#6d28d9] via-[#2874f0] to-[#fb641b] text-white p-4 sm:p-5 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <span className="inline-block px-2 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
-              Reg / Join Selection
+              आप प्लेटफ़ॉर्म पर किस लिए आए हैं?
             </span>
             <h2 className="text-fluid-title font-black mt-1 leading-tight">
-              अपना अकाउंट विकल्प चुनें — रिजल्ट तुरंत देखें
+              अपना उद्देश्य चुनें — तुरंत रिजल्ट देखें
             </h2>
             {referralSponsor && (
               <p className="text-[11px] text-amber-100 mt-0.5 font-semibold">
@@ -635,29 +635,8 @@ export const JoinSelectionPopupModal: React.FC<JoinSelectionPopupModalProps> = (
         </div>
 
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-[#212121]">
-          {/* Step 1: Primary Branch Choice */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => setJoinBranch('income')}
-              className={`btn-3d p-3.5 rounded-xl border text-left cursor-pointer ${
-                joinBranch === 'income'
-                  ? 'bg-[#2874f0] text-white border-[#1553b8]'
-                  : 'bg-slate-50 text-[#212121] border-slate-200 hover:border-[#2874f0]'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <Briefcase className="w-5 h-5" />
-                <span className={`text-[11px] font-black ${joinBranch === 'income' ? 'text-[#ffe500]' : 'text-[#388e3c]'}`}>
-                  ₹10+ Plan
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm font-black mt-2">Earning Member Reg</p>
-              <p className={`text-[10.5px] mt-0.5 ${joinBranch === 'income' ? 'text-blue-100' : 'text-slate-500'}`}>
-                10 प्लान + 50% रेफरल + ID कार्ड
-              </p>
-            </button>
-
+          {/* Step 1: Primary Purpose Choice (Free Gaming FIRST, Income SECOND) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <button
               type="button"
               onClick={() => setJoinBranch('gaming')}
@@ -670,12 +649,33 @@ export const JoinSelectionPopupModal: React.FC<JoinSelectionPopupModalProps> = (
               <div className="flex items-center justify-between">
                 <Gamepad2 className="w-5 h-5" />
                 <span className={`text-[11px] font-black ${joinBranch === 'gaming' ? 'text-[#ffe500]' : 'text-indigo-700'}`}>
-                  ₹0 Free
+                  ₹0 Free · तुरंत Active
                 </span>
               </div>
-              <p className="text-xs sm:text-sm font-black mt-2">Free Gaming Pass</p>
+              <p className="text-xs sm:text-sm font-black mt-2">1. Free Gaming Pass</p>
               <p className={`text-[10.5px] mt-0.5 ${joinBranch === 'gaming' ? 'text-indigo-100' : 'text-slate-500'}`}>
-                गेम्स, वॉइस रूम व Same-ID अपग्रेड
+                गेम्स, वॉइस क्लब व Same-ID अपग्रेड
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setJoinBranch('income')}
+              className={`btn-3d p-3.5 rounded-xl border text-left cursor-pointer ${
+                joinBranch === 'income'
+                  ? 'bg-[#2874f0] text-white border-[#1553b8]'
+                  : 'bg-slate-50 text-[#212121] border-slate-200 hover:border-[#2874f0]'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <Briefcase className="w-5 h-5" />
+                <span className={`text-[11px] font-black ${joinBranch === 'income' ? 'text-[#ffe500]' : 'text-[#388e3c]'}`}>
+                  ₹10+ · Admin वेरिफाइड
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm font-black mt-2">2. Earning Member Reg</p>
+              <p className={`text-[10.5px] mt-0.5 ${joinBranch === 'income' ? 'text-blue-100' : 'text-slate-500'}`}>
+                10 प्लान + 50% रेफरल + ID कार्ड
               </p>
             </button>
           </div>
@@ -1277,6 +1277,185 @@ export const MoreOptionsPopupModal: React.FC<MoreOptionsPopupModalProps> = ({
               कोई विकल्प नहीं मिला — दूसरा शब्द लिखें
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================ */
+/* ATTRACTIVE WELCOME PLATFORM POPUP MODAL FOR NEW HOME VISITORS                */
+/* ============================================================================ */
+interface WelcomePlatformPopupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  settings: PlatformSettings;
+  referralSponsor?: PublicSponsorPreview | null;
+  onChooseRegister: (mode: 'gamer' | 'business', serviceCode?: string, fee?: number, sponsorId?: string) => void;
+  onOpenLogin: () => void;
+  onOpenVisitorGuide: () => void;
+}
+
+export const WelcomePlatformPopupModal: React.FC<WelcomePlatformPopupModalProps> = ({
+  isOpen,
+  onClose,
+  settings,
+  referralSponsor,
+  onChooseRegister,
+  onOpenLogin,
+  onOpenVisitorGuide,
+}) => {
+  if (!isOpen) return null;
+
+  const headline =
+    settings.welcomePopupHeadline?.trim() ||
+    'ESP Earning & Gaming World में आपका स्वागत है!';
+  const note =
+    settings.welcomePopupNote?.trim() ||
+    'अपनी पसंद चुनें: ₹0 में तुरंत Free Gaming खेलें या ₹10+ Earning Plan से डेली UPI इनकम शुरू करें!';
+
+  return (
+    <div className="fixed inset-0 z-[98] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
+      <div className="esp-popup-card max-w-2xl bg-white border border-slate-200 overflow-hidden flex flex-col">
+        {/* Hero Header */}
+        <div className="bg-gradient-to-br from-[#2874f0] via-[#1d5ed6] to-[#6d28d9] text-white p-5 sm:p-6 relative">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close welcome popup"
+            className="btn-3d absolute right-3.5 top-3.5 p-2 rounded-full bg-white/15 hover:bg-white/25 text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          <div className="pr-10 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-[#ffe500] text-[#212121] text-[10px] font-black uppercase">
+                <Sparkles className="w-3 h-3" />
+                <span>Earning System Platform (ESP)</span>
+              </span>
+              {referralSponsor && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-400/20 border border-emerald-200/40 text-emerald-100 text-[10px] font-bold">
+                  ✓ Sponsor: {referralSponsor.sponsorName} ({referralSponsor.sponsorId})
+                </span>
+              )}
+            </div>
+
+            <h2 className="text-lg sm:text-2xl font-black leading-tight text-white [text-wrap:balance]">
+              {headline}
+            </h2>
+            <p className="text-xs sm:text-sm text-blue-100 leading-relaxed">
+              {note}
+            </p>
+          </div>
+        </div>
+
+        {/* Platform Features Overview */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-[#212121]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+            <div className="p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200 flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#6d28d9] text-white flex items-center justify-center shrink-0">
+                <Gamepad2 className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-black text-indigo-950">Free Gaming Club (₹0 · तुरंत Active)</p>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                  16+ मल्टीप्लेयर व स्किल गेम्स, 8-सीट लाइव वॉइस क्लब, टाइपिंग एकेडमी व डेली स्ट्रीक कॉइन्स।
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#f5f8ff] border border-blue-200 flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#2874f0] text-white flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-black text-[#212121]">10 Earning Services (₹10+ से शुरू)</p>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                  EMO, MMO, SWI 3.3% स्पेशल रिचार्ज ऐप व NWI 3-Level ऑटो ट्री — 40%–70% रेफरल बोनस।
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#388e3c] text-white flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-black text-emerald-950">Verified Digital ID &amp; Same-ID अपग्रेड</p>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                  एडमिन वेरिफिकेशन के बाद डिजिटल ID कार्ड, व फ्री गेमिंग से उसी ID पर कमाई में अपग्रेड।
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#fb641b] text-white flex items-center justify-center shrink-0">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-black text-amber-950">Direct UPI पेआउट &amp; 4-Device Sync</p>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                  न्यूनतम ₹50 होते ही PhonePe/GPay/Paytm निकासी + मोबाइल व लैपटॉप पर सुरक्षित लॉगिन।
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Selection */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
+            <p className="text-xs font-black text-[#212121] text-center">
+              अभी शुरू करने के लिए अपना विकल्प चुनें:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onChooseRegister('gamer', 'GAMING', 0, referralSponsor?.sponsorId);
+                }}
+                className="btn-3d py-3 px-4 rounded-xl bg-[#6d28d9] hover:bg-[#5b21b6] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Gamepad2 className="w-4 h-4 shrink-0" />
+                <span>🎮 ESP Game Join (₹0 Free)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onChooseRegister('business', 'EMO', 10, referralSponsor?.sponsorId);
+                }}
+                className="btn-3d py-3 px-4 rounded-xl bg-[#fb641b] hover:bg-[#e8550f] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Briefcase className="w-4 h-4 shrink-0" />
+                <span>💼 ESP Income Reg (₹10+)</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenLogin();
+                }}
+                className="btn-3d px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-[#2874f0] font-bold cursor-pointer"
+              >
+                🔑 पहले से खाता है? Login करें
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenVisitorGuide();
+                }}
+                className="btn-3d px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-[#212121] font-bold cursor-pointer"
+              >
+                📘 प्लान व कमाई गाइड देखें
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

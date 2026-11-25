@@ -2035,7 +2035,66 @@ function createAdminSession(
   return { adminToken, session: newSess };
 }
 
-// 4. Registration - Sets status to 'pending' for Admin Verification!
+// 3b. Public Uniqueness Check for Phone, Email & Username (Before Payment / Submit)
+app.post('/api/auth/check-identity', (req, res) => {
+  const { phone, email, username, excludeUserId } = req.body || {};
+  const normalizedPhone = normalizePhoneDigits(phone || '');
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanUname = username ? normalizeUsername(username) : '';
+
+  if (normalizedPhone && normalizedPhone.length >= 10) {
+    const phoneConflict = db.users.find(
+      u => (!excludeUserId || u.userId.toLowerCase() !== String(excludeUserId).toLowerCase()) &&
+        normalizePhoneDigits(u.phone || '') === normalizedPhone
+    );
+    if (phoneConflict) {
+      return res.json({
+        success: true,
+        available: false,
+        conflictField: 'phone',
+        message: 'यह मोबाइल नंबर पहले से किसी ESP खाते में पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।',
+      });
+    }
+  }
+
+  if (cleanEmail && cleanEmail.includes('@')) {
+    const emailConflict = db.users.find(
+      u => (!excludeUserId || u.userId.toLowerCase() !== String(excludeUserId).toLowerCase()) &&
+        (u.email || '').trim().toLowerCase() === cleanEmail
+    );
+    if (emailConflict) {
+      return res.json({
+        success: true,
+        available: false,
+        conflictField: 'email',
+        message: 'यह ईमेल पता पहले से किसी दूसरे ESP खाते में पंजीकृत है। कृपया कोई नया ईमेल दर्ज करें या लॉगिन करें।',
+      });
+    }
+  }
+
+  if (cleanUname) {
+    if (!isValidUsernameFormat(cleanUname)) {
+      return res.json({
+        success: true,
+        available: false,
+        conflictField: 'username',
+        message: 'यूनिक यूज़रनेम में कोई Symbol (_ - . @) उपयोग न करें — केवल 3 से 24 अक्षर (a-z और 0-9) लिखें।',
+      });
+    }
+    if (isUsernameTaken(db.users, cleanUname, excludeUserId)) {
+      return res.json({
+        success: true,
+        available: false,
+        conflictField: 'username',
+        message: `यूज़रनेम "@${cleanUname}" पहले से लिया जा चुका है! कृपया कोई दूसरा नाम चुनें।`,
+      });
+    }
+  }
+
+  return res.json({ success: true, available: true });
+});
+
+// 4. Registration - Sets status to 'pending' for Business Plans & 'active' for Free Gaming
 app.post('/api/auth/register', (req, res) => {
   try {
     const {
@@ -2092,26 +2151,42 @@ app.post('/api/auth/register', (req, res) => {
     }
 
     const normalizedPhone = normalizePhoneDigits(phone) || String(phone).trim();
-    const cleanEmail = email ? String(email).trim().toLowerCase() : `${normalizedPhone}@espgaming.club`;
+    if (normalizePhoneDigits(phone).length < 10) {
+      return res.status(400).json({ success: false, message: 'कृपया सही 10 अंकों का मोबाइल नंबर दर्ज करें।' });
+    }
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return res.status(400).json({ success: false, message: 'कृपया एक वैध ईमेल पता (Valid Email Address) दर्ज करें।' });
+    }
 
     if (!isGamer) {
-      if (!email || !paymentAddress) {
-        return res.status(400).json({ success: false, message: 'बिजनेस प्लान हेतु ईमेल और UPI एड्रेस आवश्यक है' });
+      if (!paymentAddress) {
+        return res.status(400).json({ success: false, message: 'बिजनेस प्लान हेतु UPI एड्रेस आवश्यक है' });
       }
       if (!paymentUtr) {
         return res.status(400).json({ success: false, message: 'Payment UTR / Transaction Reference is required' });
       }
     }
 
-    const existing = db.users.find(
-      u =>
-        normalizePhoneDigits(u.phone) === normalizedPhone ||
-        (email && (u.email || '').trim().toLowerCase() === cleanEmail)
+    const phoneConflict = db.users.find(
+      u => normalizePhoneDigits(u.phone || '') === normalizedPhone
     );
-    if (existing) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'इस मोबाइल नंबर या ईमेल से पहले से खाता पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।' 
+    if (phoneConflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_PHONE',
+        message: 'इस मोबाइल नंबर से पहले से खाता पंजीकृत है। कृपया लॉगिन करें या "Forget ID" का उपयोग करें।',
+      });
+    }
+
+    const emailConflict = db.users.find(
+      u => (u.email || '').trim().toLowerCase() === cleanEmail
+    );
+    if (emailConflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_EMAIL',
+        message: 'इस ईमेल पते से पहले से खाता पंजीकृत है। एक ईमेल से केवल 1 अकाउंट बन सकता है।',
       });
     }
 
@@ -2275,8 +2350,10 @@ app.post('/api/auth/register', (req, res) => {
     db.notifications.push({
       id: `notif-${Date.now()}-reg`,
       userId: newUserId,
-      title: '⏳ Account Under Review',
-      message: `Welcome ${newUser.fullName}! Your Roll Number ${newUserId} has been registered. Your payment UTR (${newUser.paymentUtr}) is being verified by admin. Once approved, your Verified Digital ID Card download will be unlocked.`,
+      title: isGamer ? '🎮 Free Gaming ID तुरंत सक्रिय!' : '⏳ Account Under Review',
+      message: isGamer
+        ? `स्वागत है ${newUser.fullName}! आपकी Free Gaming ID (${newUserId}) तुरंत Active हो गई है। अब आप सभी गेम्स और वॉइस रूम खेल सकते हैं!`
+        : `Welcome ${newUser.fullName}! Your Roll Number ${newUserId} has been registered. Your payment UTR (${newUser.paymentUtr}) is being verified by admin. Once approved, your Verified Digital ID Card download will be unlocked.`,
       date: new Date().toISOString(),
       read: false,
       type: 'system',
@@ -2286,7 +2363,9 @@ app.post('/api/auth/register', (req, res) => {
 
     res.json({
       success: true,
-      message: 'Registration submitted successfully! Your account is pending admin approval.',
+      message: isGamer
+        ? '🎮 आपका फ्री गेमिंग अकाउंट तुरंत सक्रिय (Active) हो गया है!'
+        : 'Registration submitted successfully! Your account is pending admin approval.',
       user: {
         ...newUser,
         activeSessions: newUser.activeSessions?.map(s => ({
@@ -3137,23 +3216,45 @@ app.put('/api/user/:userId', (req, res) => {
   }
 
   if (phone !== undefined && phone.trim() && phone !== user.phone) {
+    const cleanNewPhone = normalizePhoneDigits(phone) || phone.trim();
+    const phoneConflict = db.users.find(
+      u => u.userId !== user.userId && normalizePhoneDigits(u.phone || '') === cleanNewPhone && cleanNewPhone.length >= 10
+    );
+    if (phoneConflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_PHONE',
+        message: 'यह मोबाइल नंबर पहले से किसी दूसरे यूजर के पास पंजीकृत है।',
+      });
+    }
     user.editHistory.push({
       date: now,
       field: 'phone',
       oldValue: user.phone || '',
-      newValue: phone.trim(),
+      newValue: cleanNewPhone,
     });
-    user.phone = phone.trim();
+    user.phone = cleanNewPhone;
   }
 
-  if (email !== undefined && email.trim() && email !== user.email) {
+  if (email !== undefined && email.trim() && email.trim().toLowerCase() !== (user.email || '').trim().toLowerCase()) {
+    const cleanNewEmail = email.trim().toLowerCase();
+    const emailConflict = db.users.find(
+      u => u.userId !== user.userId && (u.email || '').trim().toLowerCase() === cleanNewEmail
+    );
+    if (emailConflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_EMAIL',
+        message: 'यह ईमेल पता पहले से किसी दूसरे यूजर के खाते में जुड़ा है।',
+      });
+    }
     user.editHistory.push({
       date: now,
       field: 'email',
       oldValue: user.email || '',
-      newValue: email.trim(),
+      newValue: cleanNewEmail,
     });
-    user.email = email.trim();
+    user.email = cleanNewEmail;
   }
 
   if (avatar !== undefined && avatar !== user.avatar) {
@@ -3454,6 +3555,7 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
   }
 
   const incoming = Array.isArray(req.body?.users) ? req.body.users : [];
+  const incomingUpgrades = Array.isArray(req.body?.upgrades) ? req.body.upgrades : [];
   let importedCount = 0;
   let updatedCount = 0;
 
@@ -3472,22 +3574,79 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
 
     if (existingUser) {
       let touched = false;
-      if (!existingUser.registeredFromHost && raw.registeredFromHost) {
-        existingUser.registeredFromHost = String(raw.registeredFromHost).slice(0, 128);
+      const incomingTime = Date.parse(String(raw.updatedAt || raw.lastLogin || raw.createdAt || '')) || 0;
+      const localTime = Date.parse(String((existingUser as any).updatedAt || existingUser.lastLogin || existingUser.createdAt || '')) || 0;
+      const incomingIsNewer = incomingTime > localTime;
+
+      const fillIfMissing = (key: keyof UserProfile, maxLen = 300) => {
+        const val = typeof raw[key] === 'string' ? String(raw[key]).trim() : '';
+        const cur = typeof (existingUser as any)[key] === 'string' ? String((existingUser as any)[key]).trim() : '';
+        if (val && (!cur || (incomingIsNewer && val !== cur))) {
+          (existingUser as any)[key] = maxLen > 0 ? val.slice(0, maxLen) : val;
+          touched = true;
+        }
+      };
+
+      fillIfMissing('registeredFromHost', 128);
+      fillIfMissing('fullAddress', 300);
+      fillIfMissing('paymentAddress', 120);
+      fillIfMissing('payoutUpiId', 120);
+      fillIfMissing('password', 128);
+      fillIfMissing('swiAppLink', 300);
+      fillIfMissing('swiAppNote', 300);
+
+      if (raw.paymentScreenshot && (!existingUser.paymentScreenshot || (incomingIsNewer && String(raw.paymentScreenshot).startsWith('data:image/')))) {
+        existingUser.paymentScreenshot = String(raw.paymentScreenshot);
         touched = true;
       }
-      if (!existingUser.fullAddress && raw.fullAddress) {
-        existingUser.fullAddress = String(raw.fullAddress).slice(0, 300);
+      if (raw.paymentUtr && (!existingUser.paymentUtr || existingUser.paymentUtr === 'CLOUD_SYNC' || existingUser.paymentUtr === 'FREE_GAMING_USER')) {
+        existingUser.paymentUtr = String(raw.paymentUtr).slice(0, 80);
         touched = true;
       }
-      if (!existingUser.paymentAddress && raw.paymentAddress) {
-        existingUser.paymentAddress = String(raw.paymentAddress).slice(0, 120);
-        existingUser.payoutUpiId = existingUser.payoutUpiId || existingUser.paymentAddress;
+      if ((!existingUser.email || existingUser.email.endsWith('@espgaming.club')) && rawEmail && rawEmail.includes('@') && !rawEmail.endsWith('@espgaming.club')) {
+        existingUser.email = rawEmail;
         touched = true;
       }
-      if (!existingUser.password && raw.password) {
-        existingUser.password = String(raw.password).slice(0, 128);
+      if ((!existingUser.phone || existingUser.phone === '0000000000') && rawPhone && rawPhone.length >= 10) {
+        existingUser.phone = rawPhone;
         touched = true;
+      }
+      if (raw.chosenServiceCode && (!existingUser.chosenServiceCode || (existingUser.accountType === 'gamer' && raw.accountType === 'business'))) {
+        existingUser.chosenServiceCode = String(raw.chosenServiceCode).slice(0, 24);
+        if (raw.chosenServiceName) existingUser.chosenServiceName = String(raw.chosenServiceName).slice(0, 120);
+        touched = true;
+      }
+      if (Number(raw.joiningFee) > (Number(existingUser.joiningFee) || 0)) {
+        existingUser.joiningFee = Number(raw.joiningFee);
+        touched = true;
+      }
+      if (raw.accountType === 'business' && existingUser.accountType === 'gamer') {
+        existingUser.accountType = 'business';
+        touched = true;
+      }
+      if (incomingIsNewer && (raw.status === 'active' || raw.status === 'pending' || raw.status === 'rejected') && existingUser.status !== raw.status) {
+        existingUser.status = raw.status;
+        touched = true;
+      }
+      if (incomingIsNewer && Number(raw.coins) > (Number(existingUser.coins) || 0)) {
+        existingUser.coins = Number(raw.coins);
+        touched = true;
+      }
+      if (incomingIsNewer && Number(raw.balance) > (Number(existingUser.balance) || 0)) {
+        existingUser.balance = Number(raw.balance);
+        touched = true;
+      }
+      if (incomingIsNewer && Number(raw.gameLevel) > (Number(existingUser.gameLevel) || 1)) {
+        existingUser.gameLevel = Number(raw.gameLevel);
+        touched = true;
+      }
+      if (raw.workspaceState && typeof raw.workspaceState === 'object') {
+        const wsIn = Date.parse(String(raw.workspaceState.updatedAt || '')) || 0;
+        const wsCur = Date.parse(String(existingUser.workspaceState?.updatedAt || '')) || 0;
+        if (wsIn > wsCur) {
+          existingUser.workspaceState = raw.workspaceState;
+          touched = true;
+        }
       }
       if (touched) updatedCount++;
       continue;
@@ -3572,8 +3731,10 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
       vipTitle: '',
       unlockedFrames: Array.isArray(raw.unlockedFrames) && raw.unlockedFrames.length > 0 ? raw.unlockedFrames : ['standard'],
       frameType: String(raw.frameType || 'standard'),
-      unlockedRooms: ['default_dark'],
-      roomTheme: 'default_dark',
+      unlockedRooms: Array.isArray(raw.unlockedRooms) && raw.unlockedRooms.length > 0 ? raw.unlockedRooms : ['default_dark'],
+      roomTheme: String(raw.roomTheme || 'default_dark'),
+      swiAppLink: raw.swiAppLink ? String(raw.swiAppLink) : undefined,
+      swiAppNote: raw.swiAppNote ? String(raw.swiAppNote) : undefined,
       taskProgress: {},
       taskProgressDate: getTodayDateString(),
       claimedTaskIds: [],
@@ -3614,6 +3775,18 @@ app.post('/api/admin/import-cloud-users', (req, res) => {
     db.users.push(importedUser);
     ensurePersonalRoomForUser(db, importedUser);
     importedCount++;
+  }
+
+  if (incomingUpgrades.length > 0) {
+    if (!Array.isArray(db.planUpgrades)) db.planUpgrades = [];
+    for (const upg of incomingUpgrades) {
+      if (!upg || !upg.id) continue;
+      const existingUpg = db.planUpgrades.find(x => x.id === upg.id);
+      if (!existingUpg) {
+        db.planUpgrades.unshift(upg);
+        updatedCount++;
+      }
+    }
   }
 
   if (importedCount > 0 || updatedCount > 0) {
@@ -8731,8 +8904,34 @@ app.put('/api/admin/user/:userId/edit-details', (req, res) => {
     user.avatar = avatar;
   }
 
-  if (phone !== undefined && String(phone).trim()) user.phone = String(phone).trim();
-  if (email !== undefined && String(email).trim()) user.email = String(email).trim();
+  if (phone !== undefined && String(phone).trim()) {
+    const cleanPhone = normalizePhoneDigits(String(phone)) || String(phone).trim();
+    const conflict = db.users.find(
+      u => u.userId !== user.userId && normalizePhoneDigits(u.phone || '') === cleanPhone && cleanPhone.length >= 10
+    );
+    if (conflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_PHONE',
+        message: 'यह मोबाइल नंबर पहले से किसी दूसरे यूजर के खाते में पंजीकृत है।',
+      });
+    }
+    user.phone = cleanPhone;
+  }
+  if (email !== undefined && String(email).trim()) {
+    const cleanEmail = String(email).trim().toLowerCase();
+    const conflict = db.users.find(
+      u => u.userId !== user.userId && (u.email || '').trim().toLowerCase() === cleanEmail
+    );
+    if (conflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_EMAIL',
+        message: 'यह ईमेल पता पहले से किसी दूसरे यूजर के खाते में जुड़ा है।',
+      });
+    }
+    user.email = cleanEmail;
+  }
   if (fullAddress !== undefined) user.fullAddress = String(fullAddress).trim();
   if (paymentAddress !== undefined) {
     user.paymentAddress = String(paymentAddress).trim();

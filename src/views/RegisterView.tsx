@@ -93,14 +93,16 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [registeredUser, setRegisteredUser] = useState<UserProfile | null>(null);
 
-  // Dual Registration Architecture: Business Income Plan vs Free Gamer Account
+  // Dual Registration Architecture: Purpose-First (Free Gaming vs Business Income Plan)
   const [registrationType, setRegistrationType] = useState<'business' | 'gamer'>(initialRegistrationType);
   const [gamerName, setGamerName] = useState('');
   const [gamerUsername, setGamerUsername] = useState('');
   const [gamerSponsorId, setGamerSponsorId] = useState(initialSponsorId || settings.ownerSponsorId || 'EMO-MOM-MMO');
   const [gamerPhone, setGamerPhone] = useState('');
+  const [gamerEmail, setGamerEmail] = useState('');
   const [gamerPassword, setGamerPassword] = useState('');
   const [gamerLoading, setGamerLoading] = useState(false);
+  const [step1Checking, setStep1Checking] = useState(false);
   const [regUsernameCheck, setRegUsernameCheck] = useState<{
     status: 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
     message: string;
@@ -172,12 +174,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     e.preventDefault();
     setErrorMsg(null);
     if (!gamerName.trim()) {
-      setErrorMsg('कृपया अपना गेमर नाम (Nickname) दर्ज करें');
+      setErrorMsg('कृपया अपना पूरा नाम (Full Name / Nickname) दर्ज करें');
       return;
     }
     const cleanPhone = gamerPhone.trim();
     if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
-      setErrorMsg('कृपया एक मान्य 10 अंकों का भारतीय मोबाइल नंबर दर्ज करें');
+      setErrorMsg('कृपया एक मान्य 10 अंकों का भारतीय मोबाइल नंबर दर्ज करें (6-9 से शुरू)');
+      return;
+    }
+    const cleanEmail = gamerEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setErrorMsg('कृपया एक वैध ईमेल पता (Email Address) दर्ज करें (उदा. rahul@gmail.com)');
       return;
     }
     if (!gamerPassword || gamerPassword.length < 6) {
@@ -195,11 +202,24 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
     setGamerLoading(true);
     try {
+      const cleanUname = gamerUsername.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || undefined;
+      const dupCheck = await api.checkIdentityAvailability({
+        phone: cleanPhone,
+        email: cleanEmail,
+        username: cleanUname,
+      });
+      if (!dupCheck.available) {
+        setErrorMsg(dupCheck.message || 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है।');
+        setGamerLoading(false);
+        return;
+      }
+
       const res = await api.register({
         fullName: gamerName.trim(),
-        username: gamerUsername.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || undefined,
+        username: cleanUname,
         sponsorId: gamerSponsorId.trim() || formData.sponsorId || settings.ownerSponsorId,
         phone: cleanPhone,
+        email: cleanEmail,
         password: gamerPassword,
         accountType: 'gamer',
         chosenServiceCode: 'GAME',
@@ -464,14 +484,24 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           </div>
 
           <div className="space-y-2">
-            <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-[#388e3c] bg-emerald-50 px-3 py-1 rounded border border-emerald-200">
-              REGISTRATION COMPLETE
+            <span
+              className={`inline-block text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded border ${
+                registeredUser.status === 'active'
+                  ? 'text-[#388e3c] bg-emerald-50 border-emerald-200'
+                  : 'text-amber-700 bg-amber-50 border-amber-300'
+              }`}
+            >
+              {registeredUser.status === 'active'
+                ? '✅ INSTANTLY ACTIVE • FREE GAMING PASS'
+                : '⏳ PENDING ADMIN VERIFICATION'}
             </span>
             <h2 className="text-2xl sm:text-3xl font-black text-[#212121]">
               बधाई हो, {registeredUser.fullName}!
             </h2>
             <p className="text-xs sm:text-sm text-slate-600">
-              आप सफलतापूर्वक EARNING SYSTEM PLATFORM (ESP) के वेरिफाइड मेंबर बन चुके हैं।
+              {registeredUser.status === 'active'
+                ? 'आपकी फ्री गेमिंग व वॉइस क्लब ID तुरंत Active हो गई है! आप सीधे सभी गेम्स खेल सकते हैं और भविष्य में इसी ID से ₹10+ Earning में अपग्रेड कर सकते हैं।'
+                : 'आपका बिजनेस प्लान आवेदन सफलतापूर्वक Admin Panel में भेज दिया गया है! UTR सत्यापन के बाद आपकी Earning सेवा व Verified ID Card Active हो जाएगा।'}
             </p>
           </div>
 
@@ -559,44 +589,61 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
       </div>
 
-      {/* Dual Registration Mode Selector */}
-      <div className="bg-white p-2 rounded-md border border-slate-200 mb-5 flex flex-col sm:flex-row gap-2 shadow-2xs">
-        <button
-          type="button"
-          onClick={() => setRegistrationType('business')}
-          className={`flex-1 py-3 px-4 rounded text-xs sm:text-sm flex items-center space-x-2.5 transition cursor-pointer text-left border ${
-            registrationType === 'business'
-              ? 'bg-[#2874f0] text-white border-[#2874f0] shadow-xs'
-              : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <span className="text-xl shrink-0">💼</span>
-          <div>
-            <span className="block leading-tight font-extrabold">1. इनकम व बिजनेस पार्टनर (₹10+)</span>
-            <span className={`text-[11px] font-medium block ${registrationType === 'business' ? 'text-blue-100' : 'text-slate-500'}`}>
-              10 अर्निंग सर्विसेज, डिजिटल ID कार्ड व UPI पेआउट
-            </span>
-          </div>
-        </button>
+      {/* Purpose-First Registration Mode Selector */}
+      <div className="bg-white p-3 sm:p-4 rounded-md border border-slate-200 mb-5 shadow-2xs space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs sm:text-sm font-extrabold text-[#212121]">
+            आप प्लेटफ़ॉर्म पर किस लिए आए हैं? (पहले अपना उद्देश्य चुनें)
+          </p>
+          <span className="text-[10px] font-bold text-[#2874f0] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+            Same ID से Gaming → Earning अपग्रेड उपलब्ध
+          </span>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setRegistrationType('gamer')}
-          className={`flex-1 py-3 px-4 rounded text-xs sm:text-sm flex items-center space-x-2.5 transition cursor-pointer text-left border ${
-            registrationType === 'gamer'
-              ? 'bg-[#fb641b] text-white border-[#fb641b] shadow-xs'
-              : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <span className="text-xl shrink-0">🎮</span>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMsg(null);
+              setRegistrationType('gamer');
+            }}
+            className={`flex-1 py-3 px-4 rounded text-xs sm:text-sm flex items-center space-x-2.5 transition cursor-pointer text-left border ${
+              registrationType === 'gamer'
+                ? 'bg-[#fb641b] text-white border-[#fb641b] shadow-xs'
+                : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-xl shrink-0">🎮</span>
             <div>
-              <span className="block leading-tight font-extrabold">2. गेमर व वॉइस क्लब प्लेयर (FREE)</span>
+              <span className="block leading-tight font-extrabold">1. फ्री गेमिंग व वॉइस क्लब (FREE ₹0)</span>
               <span className={`text-[11px] font-medium block ${registrationType === 'gamer' ? 'text-orange-100' : 'text-slate-500'}`}>
-                100% मुफ्त • 0 Coins स्टार्ट • रियल टास्क से +5 कॉइन्स व EXP
+                तुरंत Active • 16+ गेम्स, टाइपिंग अकैडमी व कॉइन्स
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMsg(null);
+              setRegistrationType('business');
+            }}
+            className={`flex-1 py-3 px-4 rounded text-xs sm:text-sm flex items-center space-x-2.5 transition cursor-pointer text-left border ${
+              registrationType === 'business'
+                ? 'bg-[#2874f0] text-white border-[#2874f0] shadow-xs'
+                : 'bg-[#f9fafb] text-[#212121] border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-xl shrink-0">💼</span>
+            <div>
+              <span className="block leading-tight font-extrabold">2. इनकम व बिजनेस पार्टनर (₹10+)</span>
+              <span className={`text-[11px] font-medium block ${registrationType === 'business' ? 'text-blue-100' : 'text-slate-500'}`}>
+                10 अर्निंग प्लान्स, Admin वेरिफिकेशन (Pending → Active)
               </span>
             </div>
           </button>
         </div>
+      </div>
 
         {/* ===================== FREE GAMER ACCOUNT FORM ===================== */}
         {registrationType === 'gamer' && (
@@ -695,19 +742,38 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-[#212121] mb-1">
-                मोबाइल नंबर (10-Digit Mobile Number) *
-              </label>
-              <input
-                type="tel"
-                required
-                maxLength={10}
-                value={gamerPhone}
-                onChange={e => setGamerPhone(e.target.value.replace(/\D/g, ''))}
-                placeholder="e.g. 9876543210"
-                className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-mono font-semibold bg-[#f9fafb] focus:bg-white"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#212121] mb-1">
+                  मोबाइल नंबर (10-Digit Mobile Number) *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  maxLength={10}
+                  value={gamerPhone}
+                  onChange={e => setGamerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="e.g. 9876543210"
+                  className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-mono font-semibold bg-[#f9fafb] focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#212121] mb-1">
+                  ईमेल पता (Email Address) *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={gamerEmail}
+                  onChange={e => setGamerEmail(e.target.value)}
+                  placeholder="example@gmail.com"
+                  className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-medium bg-[#f9fafb] focus:bg-white"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  एक मोबाइल और ईमेल से केवल 1 अकाउंट बन सकता है।
+                </p>
+              </div>
             </div>
 
             <div>
@@ -1122,12 +1188,29 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             <div className="pt-3 flex justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  if (validateStep1()) setStep(2);
+                disabled={step1Checking}
+                onClick={async () => {
+                  if (!validateStep1()) return;
+                  setStep1Checking(true);
+                  try {
+                    const cleanUname = formData.username.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || undefined;
+                    const dupCheck = await api.checkIdentityAvailability({
+                      phone: formData.phone.trim(),
+                      email: formData.email.trim().toLowerCase(),
+                      username: cleanUname,
+                    });
+                    if (!dupCheck.available) {
+                      setErrorMsg(dupCheck.message || 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है।');
+                      return;
+                    }
+                    setStep(2);
+                  } finally {
+                    setStep1Checking(false);
+                  }
                 }}
-                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-sm font-bold text-xs text-white bg-[#2874f0] hover:bg-blue-700 transition cursor-pointer shadow-xs"
+                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-sm font-bold text-xs text-white bg-[#2874f0] hover:bg-blue-700 transition cursor-pointer shadow-xs disabled:opacity-60"
               >
-                <span>Continue to Step 2 (Sponsor &amp; Service) &rarr;</span>
+                <span>{step1Checking ? 'मोबाइल व ईमेल जांचा जा रहा है...' : 'Continue to Step 2 (Sponsor & Service) →'}</span>
               </button>
             </div>
           </div>

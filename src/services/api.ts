@@ -35,8 +35,19 @@ import type {
 } from '../types/index.ts';
 import type { VoiceRoomTierId } from '../config/espSocialCatalog.ts';
 import type { TaskEventType, VipTierId } from '../config/economy.ts';
-import { handleStaticApiRequest } from './staticFallback.ts';
-import { pushRegistrationToCloudBridge } from './firebase.ts';
+import { handleStaticApiRequest, applyStaticCloudConfig } from './staticFallback.ts';
+import {
+  checkIdentityLocksInCloud,
+  lookupUserIdByLockInCloud,
+  pushDeviceSyncVault,
+  pullUserFromDeviceVault,
+  pushRegistrationToCloudBridge,
+  syncUserToFirestore,
+  pushPlanUpgradeToCloud,
+  pushPlatformConfigToFirestore,
+  fetchPlatformConfigFromFirestore,
+  updateUserStatusInFirestore,
+} from './firebase.ts';
 
 const API_BASE_URL =
   ((import.meta as any).env?.VITE_API_BASE_URL ||
@@ -279,14 +290,7 @@ export const api = {
   },
 
   async getSettings(): Promise<PlatformSettings> {
-    try {
-      const res = await apiFetch('/api/settings');
-      const data = await res.json();
-      if (data.success) return data.settings;
-    } catch (e) {
-      console.warn('API error fetching settings, fallback to defaults', e);
-    }
-    return {
+    const defaultSettings: PlatformSettings = {
       ownerName: 'SANTOSH KUMAR',
       ownerSponsorId: 'EMO-MOM-MMO',
       adminUpiId: '8877490845@SPICEPAY',
@@ -301,7 +305,30 @@ export const api = {
       blogReferenceUrl: 'https://emofi100.blogspot.com/2024/03/earning-service-platform-esp.html?m=1',
       joiningFormUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScqqyR1CDev8HEmpKaSzvRd1hcIERIIOP1qYWL1NaPV_9L-rg/viewform?usp=sf_link',
       bannerNotice: '🎉 Welcome to Earning System Platform (ESP)! Join starting at ₹10 & receive your Verified Member Digital ID Card!',
+      welcomePopupEnabled: true,
     };
+    let resolvedSettings = defaultSettings;
+    try {
+      const res = await apiFetch('/api/settings');
+      const data = await res.json();
+      if (data.success && data.settings) resolvedSettings = { ...defaultSettings, ...data.settings };
+    } catch (e) {
+      console.warn('API error fetching settings, fallback to defaults', e);
+    }
+    try {
+      const cloudCfg = await fetchPlatformConfigFromFirestore();
+      if (cloudCfg?.settings && typeof cloudCfg.settings === 'object') {
+        resolvedSettings = {
+          ...resolvedSettings,
+          ...cloudCfg.settings,
+          adminQrCodeUrl: cloudCfg.settings.adminQrCodeUrl || resolvedSettings.adminQrCodeUrl || '',
+        };
+        applyStaticCloudConfig(resolvedSettings, cloudCfg.services);
+      }
+    } catch {
+      // ignore cloud config fetch failures
+    }
+    return resolvedSettings;
   },
 
   async updateSettings(settings: Partial<PlatformSettings>, adminPassword: string): Promise<PlatformSettings> {
@@ -312,18 +339,31 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to update settings');
+    void pushPlatformConfigToFirestore(data.settings).catch(() => {});
     return data.settings;
   },
 
   async getServices(): Promise<ServiceItem[]> {
+    let list: ServiceItem[] = [];
     try {
       const res = await apiFetch('/api/services');
       const data = await res.json();
-      if (data.success && data.services) return data.services;
+      if (data.success && Array.isArray(data.services)) list = data.services;
     } catch (e) {
       console.warn('API error fetching services', e);
     }
-    return [];
+    try {
+      const cloudCfg = await fetchPlatformConfigFromFirestore();
+      if (Array.isArray(cloudCfg?.services) && cloudCfg.services.length > 0) {
+        if (list.length === 0 || cloudCfg.services.length >= list.length) {
+          list = cloudCfg.services;
+          applyStaticCloudConfig(null, list);
+        }
+      }
+    } catch {
+      // ignore cloud config fetch error
+    }
+    return list;
   },
 
   async addService(newService: Partial<ServiceItem>, adminPassword: string) {
@@ -334,6 +374,9 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to add service');
+    if (Array.isArray(data.services)) {
+      void pushPlatformConfigToFirestore(undefined, data.services).catch(() => {});
+    }
     return data;
   },
 
@@ -344,6 +387,9 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to delete service');
+    if (Array.isArray(data.services)) {
+      void pushPlatformConfigToFirestore(undefined, data.services).catch(() => {});
+    }
     return data;
   },
 
@@ -367,10 +413,60 @@ export const api = {
     }
   },
 
+  async checkIdentityAvailability(params: {
+    phone?: string;
+    email?: string;
+    username?: string;
+    excludeUserId?: string;
+  }): Promise<{ available: boolean; conflictField?: string; message?: string }> {
+    const cloudLock = await checkIdentityLocksInCloud({
+      phone: params.phone,
+      email: params.email,
+      username: params.username,
+      excludeUserId: params.excludeUserId,
+    });
+    if (!cloudLock.ok) {
+      return {
+        available: false,
+        conflictField: cloudLock.conflictField,
+        message: cloudLock.message,
+      };
+    }
+    try {
+      const res = await apiFetch('/api/auth/check-identity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (data && data.available === false) {
+        return {
+          available: false,
+          conflictField: data.conflictField,
+          message: data.message,
+        };
+      }
+    } catch {
+      // fall through cleanly
+    }
+    return { available: true };
+  },
+
   async register(formData: any) {
     const deviceInfo = detectClientDevice();
     const currentHost =
       typeof window !== 'undefined' ? window.location.hostname : 'web';
+
+    // Pre-check global cloud uniqueness across playesp.github.io & live domains before committing
+    const cloudCheck = await checkIdentityLocksInCloud({
+      phone: formData?.phone,
+      email: formData?.email,
+      username: formData?.username,
+    });
+    if (!cloudCheck.ok) {
+      throw new Error(cloudCheck.message || 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है।');
+    }
+
     const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -386,12 +482,16 @@ export const api = {
       const mergedUser = {
         ...data.user,
         password: formData.password || data.user.password,
+        paymentScreenshot: formData.paymentScreenshot || data.user.paymentScreenshot || '',
         registeredFromHost: data.user.registeredFromHost || currentHost,
       };
       saveUserToLocalBackup(mergedUser, formData.password);
       this.setStoredUser(mergedUser, data.sessionToken);
-      // Immediately push to cross-origin Firestore bridge so Admin Panel sees playesp.github.io & live registrations instantly
-      pushRegistrationToCloudBridge(mergedUser, currentHost).catch(() => {});
+      // Await cross-origin Firestore bridge + locks + vault so Admin Panel receives COMPLETE user data immediately
+      await Promise.all([
+        pushRegistrationToCloudBridge(mergedUser, currentHost).catch(() => false),
+        syncUserToFirestore(mergedUser, true).catch(() => false),
+      ]);
     }
     return data;
   },
@@ -418,6 +518,7 @@ export const api = {
     if (data.success && data.user) {
       saveUserToLocalBackup(data.user, password);
       this.setStoredUser(data.user, data.sessionToken);
+      void pushDeviceSyncVault(data.user, password).catch(() => {});
       return data.user;
     }
 
@@ -429,8 +530,9 @@ export const api = {
       throw err;
     }
 
-    // Fallback recovery if backend DB restarted and account only exists in browser backup / static DB
+    // Fallback recovery across devices/origins: check local backup AND Firestore multi-device vault!
     if (data.code === 'ACCOUNT_NOT_FOUND' || res.status === 404) {
+      let recoveredUser: UserProfile | null = null;
       const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
       if (backups.length > 0) {
         const matchedBackup = backups.find(
@@ -441,12 +543,21 @@ export const api = {
             'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या नीचे "Forget Password?" का उपयोग करें।'
           );
         }
+        recoveredUser = matchedBackup;
+      }
+      if (!recoveredUser) {
+        const cloudVaultUser = await pullUserFromDeviceVault(identifier, password).catch(() => null);
+        if (cloudVaultUser && cloudVaultUser.userId) {
+          recoveredUser = cloudVaultUser as UserProfile;
+        }
+      }
+      if (recoveredUser) {
         try {
           const restoreRes = await apiFetch('/api/auth/restore-account', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              user: matchedBackup,
+              user: recoveredUser,
               password,
               deviceId: deviceInfo.deviceId,
               deviceInfo,
@@ -465,14 +576,15 @@ export const api = {
           if (restoreData.success && restoreData.user) {
             saveUserToLocalBackup(restoreData.user, password);
             this.setStoredUser(restoreData.user, restoreData.sessionToken);
+            void pushDeviceSyncVault(restoreData.user, password).catch(() => {});
             return restoreData.user;
           }
         } catch (err: any) {
           if (err?.code === 'DEVICE_LIMIT_REACHED') throw err;
-          // fallback to local backup directly if network unavailable
-          saveUserToLocalBackup(matchedBackup, password);
-          this.setStoredUser(matchedBackup, `esp_local_${Date.now()}`);
-          return matchedBackup;
+          // fallback to recovered user directly if network unavailable
+          saveUserToLocalBackup(recoveredUser, password);
+          this.setStoredUser(recoveredUser, `esp_local_${Date.now()}`);
+          return recoveredUser;
         }
       }
     }
@@ -483,6 +595,10 @@ export const api = {
   async logout(userId?: string, workspaceState?: UserWorkspaceState): Promise<void> {
     const sessionToken = this.getStoredSessionToken();
     const deviceId = getOrCreateClientDeviceId();
+    const stored = this.getStoredUser();
+    if (stored && workspaceState) {
+      void pushDeviceSyncVault({ ...stored, workspaceState }, stored.password).catch(() => {});
+    }
     try {
       await apiFetch('/api/auth/logout', {
         method: 'POST',
@@ -500,6 +616,12 @@ export const api = {
 
   async saveWorkspaceState(userId: string, workspaceState: UserWorkspaceState): Promise<void> {
     const sessionToken = this.getStoredSessionToken();
+    const stored = this.getStoredUser();
+    if (stored && stored.userId.toLowerCase() === userId.toLowerCase()) {
+      const updated = { ...stored, workspaceState };
+      this.setStoredUser(updated, sessionToken || undefined);
+      void pushDeviceSyncVault(updated, updated.password).catch(() => {});
+    }
     try {
       await apiFetch(`/api/user/${encodeURIComponent(userId)}/workspace-state`, {
         method: 'POST',
@@ -555,6 +677,28 @@ export const api = {
           accountType: u.accountType || 'business',
           chosenServiceCode: u.chosenServiceCode || 'EMO',
         })),
+      };
+    }
+
+    // Cross-origin zero-PII Firestore lock lookup
+    const cloudHit = await lookupUserIdByLockInCloud(phoneOrEmail).catch(() => null);
+    if (cloudHit && cloudHit.userId) {
+      return {
+        success: true,
+        userId: cloudHit.userId,
+        gamingId: cloudHit.gamingId || cloudHit.userId,
+        fullName: 'ESP Verified Account',
+        accountType: cloudHit.accountType || 'business',
+        chosenServiceCode: cloudHit.chosenServiceCode || 'EMO',
+        accounts: [
+          {
+            userId: cloudHit.userId,
+            gamingId: cloudHit.gamingId || cloudHit.userId,
+            fullName: 'ESP Verified Account',
+            accountType: cloudHit.accountType || 'business',
+            chosenServiceCode: cloudHit.chosenServiceCode || 'EMO',
+          },
+        ],
       };
     }
 
@@ -702,6 +846,8 @@ export const api = {
     if (!data.success) throw new Error(data.message || 'Failed to update profile');
     if (data.user) {
       this.setStoredUser(data.user, sessionToken);
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      void syncUserToFirestore(data.user, true).catch(() => {});
     }
     return data.user;
   },
@@ -769,6 +915,8 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to update user status');
+    const safeStatus = (status === 'active' || status === 'rejected' ? status : 'pending') as 'active' | 'pending' | 'rejected';
+    void updateUserStatusInFirestore(userId, safeStatus, data.user).catch(() => {});
     return data;
   },
 
@@ -937,7 +1085,10 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Game action failed');
-    if (data.user) this.setStoredUser(data.user);
+    if (data.user) {
+      this.setStoredUser(data.user);
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
     return data;
   },
 
@@ -949,7 +1100,10 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Game action failed');
-    if (data.user) this.setStoredUser(data.user);
+    if (data.user) {
+      this.setStoredUser(data.user);
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
     return { ...data, currentCoins: data.newBalance || data.user?.coins || 0 };
   },
 
@@ -961,7 +1115,10 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Claim win failed');
-    if (data.user) this.setStoredUser(data.user);
+    if (data.user) {
+      this.setStoredUser(data.user);
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
     return data;
   },
 
@@ -1758,7 +1915,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, ...updates }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success && data.user) {
+      void syncUserToFirestore(data.user, true).catch(() => {});
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
+    return data;
   },
 
   detectClientDevice(): { deviceType: 'mobile' | 'desktop' | 'tablet'; deviceName: string; browser: string; os: string } {
@@ -2221,7 +2383,11 @@ export const api = {
         upgradeType: opts?.upgradeType,
       }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success && data.request) {
+      void pushPlanUpgradeToCloud(data.request).catch(() => {});
+    }
+    return data;
   },
 
   async getPlanUpgrades(adminPassword: string): Promise<{ success: boolean; upgrades: PlanUpgradeRequest[] }> {
@@ -2243,7 +2409,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminPassword }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success && data.user) {
+      void syncUserToFirestore(data.user, true).catch(() => {});
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
+    return data;
   },
 
   // ---------------- Admin VIP Numeric Room ID Management ----------------
@@ -2465,7 +2636,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminPassword, userIdentifier, amount, mode, reason }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success && data.user) {
+      void syncUserToFirestore(data.user, true).catch(() => {});
+      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    }
+    return data;
   },
 
   async adminCreatePlayer(
@@ -2750,7 +2926,8 @@ export const api = {
 
   async importCloudUsersToAdmin(
     adminPassword: string,
-    cloudUsers: Partial<UserProfile>[]
+    cloudUsers: Partial<UserProfile>[],
+    cloudUpgrades: PlanUpgradeRequest[] = []
   ): Promise<{
     success: boolean;
     importedCount: number;
@@ -2765,7 +2942,7 @@ export const api = {
         'Content-Type': 'application/json',
         'x-admin-password': adminPassword,
       },
-      body: JSON.stringify({ adminPassword, users: cloudUsers }),
+      body: JSON.stringify({ adminPassword, users: cloudUsers, upgrades: cloudUpgrades }),
     });
     return await res.json();
   },

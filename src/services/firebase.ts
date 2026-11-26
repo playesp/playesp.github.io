@@ -21,6 +21,7 @@ import {
   query,
   where,
   limit,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -272,7 +273,12 @@ function sanitizeWorkspaceState(ws: any) {
   };
 }
 
-function buildValidatedUserDoc(userData: any, authUid: string, screenshotForCloud = '') {
+function buildValidatedUserDoc(
+  userData: any,
+  authUid: string,
+  screenshotForCloud = '',
+  lockKeys?: { phoneLockKey?: string; emailLockKey?: string }
+) {
   const safeUserId = sanitizeFirestoreId(userData.userId || userData.id);
   const nowIso = new Date().toISOString();
   const status =
@@ -367,6 +373,8 @@ function buildValidatedUserDoc(userData: any, authUid: string, screenshotForClou
     vipTitle: clampString(userData.vipTitle, 64),
     promoEarnings: nonNegativeNumber(userData.promoEarnings, 0),
     verifiedAt: clampString(userData.verifiedAt, 64),
+    ...(lockKeys?.phoneLockKey ? { phoneLockKey: lockKeys.phoneLockKey } : {}),
+    ...(lockKeys?.emailLockKey ? { emailLockKey: lockKeys.emailLockKey } : {}),
     password: clampString(userData.password, 128),
     role,
     createdAt: createdAt.length >= 4 ? createdAt : nowIso,
@@ -374,7 +382,12 @@ function buildValidatedUserDoc(userData: any, authUid: string, screenshotForClou
   };
 }
 
-function buildCloudRegistrationDoc(userData: any, hostOverride?: string, screenshotForCloud = '') {
+function buildCloudRegistrationDoc(
+  userData: any,
+  hostOverride?: string,
+  screenshotForCloud = '',
+  lockKeys?: { phoneLockKey?: string; emailLockKey?: string; usernameLockKey?: string }
+) {
   const safeUserId = sanitizeFirestoreId(userData.userId || userData.id);
   const nowIso = new Date().toISOString();
   const status =
@@ -437,6 +450,9 @@ function buildCloudRegistrationDoc(userData: any, hostOverride?: string, screens
     vipTitle: clampString(userData.vipTitle, 64),
     promoEarnings: nonNegativeNumber(userData.promoEarnings, 0),
     verifiedAt: clampString(userData.verifiedAt, 64),
+    ...(lockKeys?.phoneLockKey ? { phoneLockKey: lockKeys.phoneLockKey } : {}),
+    ...(lockKeys?.emailLockKey ? { emailLockKey: lockKeys.emailLockKey } : {}),
+    ...(lockKeys?.usernameLockKey ? { usernameLockKey: lockKeys.usernameLockKey } : {}),
     role: 'member' as const,
     createdAt: createdAt.length >= 4 ? createdAt : nowIso,
     updatedAt: nowIso,
@@ -463,6 +479,45 @@ async function makeLockKey(
       : rawValue.trim().toLowerCase().replace(/^@+/, '');
   const hash = await sha256Hex(`esp_lock_v1|${lockType}|${norm}`);
   return `${prefixMap[lockType]}_${hash.slice(0, 48)}`;
+}
+
+async function computeIdentityLockKeys(userData: any): Promise<{
+  safeUserId: string;
+  phoneLockKey: string;
+  emailLockKey: string;
+  usernameLockKey: string;
+  userIdLockKey: string;
+  gamingIdLockKey: string;
+  roomLockKey: string;
+}> {
+  const safeUserId = sanitizeFirestoreId(userData?.userId || userData?.id || 'esp_member');
+  const p10 = normalizePhone10(userData?.phone || '') || clampString(userData?.phone, 24) || '0000000000';
+  const emRaw = clampString(String(userData?.email || '').toLowerCase(), 150);
+  const emailVal = emRaw.includes('@') && emRaw.length >= 3 ? emRaw : `${safeUserId.toLowerCase()}@esp.local`;
+  const cleanUname = String(userData?.username || '').trim().toLowerCase().replace(/^@+/, '');
+  const validUname = cleanUname && /^[a-z0-9]{3,24}$/.test(cleanUname) ? cleanUname : '';
+  const gamingIdVal = String(userData?.gamingId || '').trim().toLowerCase();
+  const roomVal = String(userData?.personalRoomId || userData?.roomAddress || '').trim();
+
+  const [phoneLockKey, emailLockKey, usernameLockKey, userIdLockKey, gamingIdLockKey, roomLockKey] =
+    await Promise.all([
+      makeLockKey('phone', p10),
+      makeLockKey('email', emailVal),
+      validUname ? makeLockKey('username', validUname) : Promise.resolve(''),
+      makeLockKey('userId', safeUserId.toLowerCase()),
+      gamingIdVal ? makeLockKey('gamingId', gamingIdVal) : Promise.resolve(''),
+      roomVal ? makeLockKey('roomAddress', roomVal) : Promise.resolve(''),
+    ]);
+
+  return {
+    safeUserId,
+    phoneLockKey,
+    emailLockKey,
+    usernameLockKey,
+    userIdLockKey,
+    gamingIdLockKey,
+    roomLockKey,
+  };
 }
 
 export async function checkIdentityLocksInCloud(params: {
@@ -856,30 +911,108 @@ export async function pullUserFromDeviceVault(identifier: string, password: stri
 
 export async function pushRegistrationToCloudBridge(userData: any, hostOverride?: string): Promise<boolean> {
   if (!userData || (!userData.userId && !userData.id)) return false;
-  const compressedShot = await compressDataUrlForFirestore(userData.paymentScreenshot, 220000);
-  const payload = buildCloudRegistrationDoc(userData, hostOverride, compressedShot);
+  const [compressedShot, lockKeys] = await Promise.all([
+    compressDataUrlForFirestore(userData.paymentScreenshot, 220000),
+    computeIdentityLockKeys(userData),
+  ]);
+  const payload = buildCloudRegistrationDoc(userData, hostOverride, compressedShot, lockKeys);
 
-  // Also register zero-PII identity locks + multi-device vault in parallel
-  void registerIdentityLocksInCloud(userData);
   if (userData.password) {
     void pushDeviceSyncVault(userData, userData.password);
   }
 
+  const ref = doc(db, 'cloud_registrations', payload.userId);
+  const fbUser = auth.currentUser;
+  const isOwnerAdmin =
+    Boolean(fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL);
+
+  if (isOwnerAdmin) {
+    try {
+      await registerIdentityLocksInCloud(userData);
+      await setDoc(ref, payload);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   try {
-    const ref = doc(db, 'cloud_registrations', payload.userId);
-    const fbUser = auth.currentUser;
-    const isOwnerAdmin =
-      Boolean(fbUser && fbUser.emailVerified && fbUser.email?.toLowerCase() === ADMIN_GOOGLE_EMAIL);
-    if (!isOwnerAdmin) {
-      const existing = await getDoc(ref).catch(() => null);
-      if (existing && existing.exists()) {
-        // Already exists; vault handles state updates without violating admin-only cloud_registrations update
-        return true;
+    const existing = await getDoc(ref).catch(() => null);
+    if (existing && existing.exists()) {
+      void registerIdentityLocksInCloud(userData);
+      return true;
+    }
+
+    const baseLockMeta = {
+      userId: payload.userId,
+      gamingId: clampString(payload.gamingId || '', 64),
+      accountType: payload.accountType,
+      chosenServiceCode: clampString(payload.chosenServiceCode || '', 24),
+      createdAt: payload.createdAt,
+    };
+
+    const batch = writeBatch(db);
+    batch.set(ref, payload);
+    // Phone & Email locks are atomically verified by Firestore Security Rules (!exists + existsAfter + getAfter)
+    batch.set(doc(db, 'identity_locks', lockKeys.phoneLockKey), {
+      lockKey: lockKeys.phoneLockKey,
+      lockType: 'phone',
+      ...baseLockMeta,
+    });
+    batch.set(doc(db, 'identity_locks', lockKeys.emailLockKey), {
+      lockKey: lockKeys.emailLockKey,
+      lockType: 'email',
+      ...baseLockMeta,
+    });
+
+    const optionalPairs: Array<['username' | 'userId' | 'gamingId' | 'roomAddress', string]> = [];
+    if (lockKeys.usernameLockKey) optionalPairs.push(['username', lockKeys.usernameLockKey]);
+    if (lockKeys.userIdLockKey) optionalPairs.push(['userId', lockKeys.userIdLockKey]);
+    if (lockKeys.gamingIdLockKey) optionalPairs.push(['gamingId', lockKeys.gamingIdLockKey]);
+    if (lockKeys.roomLockKey) optionalPairs.push(['roomAddress', lockKeys.roomLockKey]);
+
+    await Promise.all(
+      optionalPairs.map(async ([lockType, key]) => {
+        try {
+          const lockRef = doc(db, 'identity_locks', key);
+          const snap = await getDoc(lockRef);
+          if (!snap.exists()) {
+            batch.set(lockRef, { lockKey: key, lockType, ...baseLockMeta });
+          }
+        } catch {
+          // ignore preflight read failure
+        }
+      })
+    );
+
+    await batch.commit();
+    return true;
+  } catch (err: any) {
+    const msg = String(err?.message || '').toLowerCase();
+    const code = String(err?.code || '').toLowerCase();
+    if (
+      code.includes('permission-denied') ||
+      code.includes('already-exists') ||
+      msg.includes('permission') ||
+      msg.includes('insufficient permissions') ||
+      msg.includes('already exists')
+    ) {
+      const conflict = await checkIdentityLocksInCloud({
+        phone: userData.phone,
+        email: userData.email,
+        username: userData.username,
+        excludeUserId: payload.userId,
+      }).catch(() => ({ ok: true as const }));
+      if (!conflict.ok) {
+        const dupErr: any = new Error(
+          conflict.message ||
+            'यह मोबाइल नंबर या ईमेल पहले से Firestore डेटाबेस में पंजीकृत है। कृपया लॉगिन करें।'
+        );
+        dupErr.code = 'DUPLICATE_CLOUD_IDENTITY';
+        dupErr.conflictField = conflict.conflictField;
+        throw dupErr;
       }
     }
-    await setDoc(ref, payload);
-    return true;
-  } catch {
     return false;
   }
 }
@@ -1002,6 +1135,7 @@ export function subscribeToAdminLiveUsers(callbacks: {
     meta: {
       isInitial: boolean;
       newlyPendingBusiness: any[];
+      newlyRegisteredUsers: any[];
       source: 'cloud_registrations' | 'users';
     }
   ) => void;
@@ -1017,22 +1151,26 @@ export function subscribeToAdminLiveUsers(callbacks: {
   let cloudInitialized = false;
   let usersInitialized = false;
 
-  const extractNewlyPendingBusiness = (docChanges: any[]) => {
-    const seen = new Set<string>();
-    const list: any[] = [];
+  const extractChanges = (docChanges: any[]) => {
+    const seenPending = new Set<string>();
+    const seenAll = new Set<string>();
+    const newlyPendingBusiness: any[] = [];
+    const newlyRegisteredUsers: any[] = [];
     for (const change of docChanges) {
       if (change.type !== 'added' && change.type !== 'modified') continue;
       const data = change.doc?.data?.();
       if (!data || !data.userId) continue;
-      if (data.accountType !== 'gamer' && data.status === 'pending') {
-        const key = String(data.userId).toLowerCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          list.push(data);
-        }
+      const key = String(data.userId).toLowerCase();
+      if (change.type === 'added' && !seenAll.has(key)) {
+        seenAll.add(key);
+        newlyRegisteredUsers.push(data);
+      }
+      if (data.accountType !== 'gamer' && data.status === 'pending' && !seenPending.has(key)) {
+        seenPending.add(key);
+        newlyPendingBusiness.push(data);
       }
     }
-    return list;
+    return { newlyPendingBusiness, newlyRegisteredUsers };
   };
 
   const unsubCloud = onSnapshot(
@@ -1045,10 +1183,12 @@ export function subscribeToAdminLiveUsers(callbacks: {
         const data = d.data();
         if (data?.userId) cloudMap.set(String(data.userId).toLowerCase(), data);
       });
-      const newlyPendingBusiness = isInitial ? [] : extractNewlyPendingBusiness(snap.docChanges());
+      const { newlyPendingBusiness, newlyRegisteredUsers } = isInitial
+        ? { newlyPendingBusiness: [], newlyRegisteredUsers: [] }
+        : extractChanges(snap.docChanges());
       callbacks.onUsersUpdate(
         mergeAdminCloudRecords([...cloudMap.values(), ...usersMap.values()]),
-        { isInitial, newlyPendingBusiness, source: 'cloud_registrations' }
+        { isInitial, newlyPendingBusiness, newlyRegisteredUsers, source: 'cloud_registrations' }
       );
     },
     (error) => {
@@ -1067,10 +1207,12 @@ export function subscribeToAdminLiveUsers(callbacks: {
         const data = d.data();
         if (data?.userId) usersMap.set(String(data.userId).toLowerCase(), data);
       });
-      const newlyPendingBusiness = isInitial ? [] : extractNewlyPendingBusiness(snap.docChanges());
+      const { newlyPendingBusiness, newlyRegisteredUsers } = isInitial
+        ? { newlyPendingBusiness: [], newlyRegisteredUsers: [] }
+        : extractChanges(snap.docChanges());
       callbacks.onUsersUpdate(
         mergeAdminCloudRecords([...cloudMap.values(), ...usersMap.values()]),
-        { isInitial, newlyPendingBusiness, source: 'users' }
+        { isInitial, newlyPendingBusiness, newlyRegisteredUsers, source: 'users' }
       );
     },
     (error) => {
@@ -1086,17 +1228,40 @@ export function subscribeToAdminLiveUsers(callbacks: {
 }
 
 export function subscribeToAdminLiveUpgrades(callbacks: {
-  onUpgradesUpdate: (upgrades: any[]) => void;
+  onUpgradesUpdate: (
+    upgrades: any[],
+    meta: { isInitial: boolean; newlySubmittedUpgrades: any[] }
+  ) => void;
   onError?: (error: unknown) => void;
 }): Unsubscribe {
   const fbUser = auth.currentUser;
   if (!fbUser || !fbUser.emailVerified || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
     return () => {};
   }
+  let initialized = false;
   return onSnapshot(
     collection(db, 'cloud_plan_upgrades'),
     (snap) => {
-      callbacks.onUpgradesUpdate(snap.docs.map((d) => d.data()));
+      const isInitial = !initialized;
+      initialized = true;
+      const newlySubmittedUpgrades: any[] = [];
+      if (!isInitial) {
+        const seen = new Set<string>();
+        for (const change of snap.docChanges()) {
+          if (change.type !== 'added' && change.type !== 'modified') continue;
+          const d = change.doc?.data?.();
+          if (!d || !d.id || d.status !== 'pending') continue;
+          const k = String(d.id).toLowerCase();
+          if (!seen.has(k)) {
+            seen.add(k);
+            newlySubmittedUpgrades.push(d);
+          }
+        }
+      }
+      callbacks.onUpgradesUpdate(
+        snap.docs.map((d) => d.data()),
+        { isInitial, newlySubmittedUpgrades }
+      );
     },
     (error) => {
       callbacks.onError?.(error);
@@ -1127,9 +1292,13 @@ export async function updateUserStatusInFirestore(
 
   try {
     const safeUserId = sanitizeFirestoreId(userId);
-    const compressedShot = await compressDataUrlForFirestore(merged.paymentScreenshot, 220000);
-    await setDoc(doc(db, 'users', safeUserId), buildValidatedUserDoc(merged, fbUser!.uid, compressedShot));
-    await setDoc(doc(db, 'cloud_registrations', safeUserId), buildCloudRegistrationDoc(merged, undefined, compressedShot));
+    const [compressedShot, lockKeys] = await Promise.all([
+      compressDataUrlForFirestore(merged.paymentScreenshot, 220000),
+      computeIdentityLockKeys(merged),
+    ]);
+    await registerIdentityLocksInCloud(merged);
+    await setDoc(doc(db, 'users', safeUserId), buildValidatedUserDoc(merged, fbUser!.uid, compressedShot, lockKeys));
+    await setDoc(doc(db, 'cloud_registrations', safeUserId), buildCloudRegistrationDoc(merged, undefined, compressedShot, lockKeys));
     await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(merged, fbUser!.uid));
     return true;
   } catch (err) {
@@ -1774,18 +1943,22 @@ export async function syncUserToFirestore(userData: any, silentIfUnauthenticated
   }
 
   const userPath = `users/${safeUserId}`;
-  const compressedShot = await compressDataUrlForFirestore(userData.paymentScreenshot, 220000);
+  const [compressedShot, lockKeys] = await Promise.all([
+    compressDataUrlForFirestore(userData.paymentScreenshot, 220000),
+    computeIdentityLockKeys(userData),
+  ]);
   try {
     const userRef = doc(db, 'users', safeUserId);
     const snap = await getDoc(userRef);
     if (snap.exists()) {
       const existingData = snap.data();
       if (isOwnerAdmin) {
-        const payload = buildValidatedUserDoc(userData, existingData?.authUid || fbUser.uid, compressedShot);
+        await registerIdentityLocksInCloud(userData);
+        const payload = buildValidatedUserDoc(userData, existingData?.authUid || fbUser.uid, compressedShot, lockKeys);
         await setDoc(userRef, payload, { merge: false });
         await setDoc(
           doc(db, 'cloud_registrations', safeUserId),
-          buildCloudRegistrationDoc(userData, undefined, compressedShot)
+          buildCloudRegistrationDoc(userData, undefined, compressedShot, lockKeys)
         ).catch(() => {});
       } else if (existingData?.authUid === fbUser.uid) {
         const previousUsername = clampString(
@@ -1820,11 +1993,12 @@ export async function syncUserToFirestore(userData: any, silentIfUnauthenticated
         }
       }
     } else if (isOwnerAdmin) {
-      const payload = buildValidatedUserDoc(userData, fbUser.uid, compressedShot);
+      await registerIdentityLocksInCloud(userData);
+      const payload = buildValidatedUserDoc(userData, fbUser.uid, compressedShot, lockKeys);
       await setDoc(userRef, payload);
       await setDoc(
         doc(db, 'cloud_registrations', safeUserId),
-        buildCloudRegistrationDoc(userData, undefined, compressedShot)
+        buildCloudRegistrationDoc(userData, undefined, compressedShot, lockKeys)
       ).catch(() => {});
     } else {
       const payload = buildValidatedUserDoc(
@@ -1836,7 +2010,8 @@ export async function syncUserToFirestore(userData: any, silentIfUnauthenticated
           balance: 0,
         },
         fbUser.uid,
-        compressedShot
+        compressedShot,
+        lockKeys
       );
       await setDoc(userRef, payload);
     }
@@ -1885,13 +2060,19 @@ export async function syncAdminDatasetToFirestore(dataset: {
     const safeUserId = sanitizeFirestoreId(u.userId || u.id);
     const userPath = `users/${safeUserId}`;
     try {
-      const compressedShot = await compressDataUrlForFirestore(u.paymentScreenshot, 220000);
-      const validated = buildValidatedUserDoc(u, fbUser.uid, compressedShot);
+      const [compressedShot, lockKeys] = await Promise.all([
+        compressDataUrlForFirestore(u.paymentScreenshot, 220000),
+        computeIdentityLockKeys(u),
+      ]);
+      await registerIdentityLocksInCloud(u);
+      const validated = buildValidatedUserDoc(u, fbUser.uid, compressedShot, lockKeys);
       await setDoc(doc(db, 'users', safeUserId), validated);
       await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(u, fbUser.uid));
-      await setDoc(doc(db, 'cloud_registrations', safeUserId), buildCloudRegistrationDoc(u, undefined, compressedShot));
+      await setDoc(
+        doc(db, 'cloud_registrations', safeUserId),
+        buildCloudRegistrationDoc(u, undefined, compressedShot, lockKeys)
+      );
       await pushPublicSponsorToCloud(u);
-      await registerIdentityLocksInCloud(u);
       if (u.password) {
         await pushDeviceSyncVault(u, u.password);
       }

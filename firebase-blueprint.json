@@ -64,6 +64,8 @@
         "promoEarnings": { "type": "number" },
         "verifiedAt": { "type": "string", "maxLength": 64 },
         "password": { "type": "string", "maxLength": 128 },
+        "phoneLockKey": { "type": "string", "maxLength": 128 },
+        "emailLockKey": { "type": "string", "maxLength": 128 },
         "role": { "type": "string", "enum": ["member", "admin"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
@@ -112,11 +114,14 @@
         "vipTitle": { "type": "string", "maxLength": 64 },
         "promoEarnings": { "type": "number" },
         "verifiedAt": { "type": "string", "maxLength": 64 },
+        "phoneLockKey": { "type": "string", "minLength": 10, "maxLength": 128 },
+        "emailLockKey": { "type": "string", "minLength": 10, "maxLength": 128 },
+        "usernameLockKey": { "type": "string", "maxLength": 128 },
         "role": { "type": "string", "enum": ["member"] },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["userId", "fullName", "phone", "email", "status", "accountType", "role", "createdAt"]
+      "required": ["userId", "fullName", "phone", "email", "phoneLockKey", "emailLockKey", "status", "accountType", "role", "createdAt"]
     },
     "IdentityLock": {
       "title": "IdentityLock",

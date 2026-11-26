@@ -85,11 +85,21 @@ const MAX_DEVICE_SESSIONS = 4;
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-session-token, x-admin-password, x-admin-token, x-device-id');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-admin-password, x-admin-token, x-device-id');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   next();
+});
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    success: true,
+    ok: true,
+    service: 'esp-live-api',
+    usersCount: db.users.length,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use(express.json({ limit: '20mb' }));
@@ -2405,6 +2415,34 @@ app.post('/api/auth/register', (req, res) => {
   }
 });
 
+// 4b. Atomic Rollback if Cloud Identity Lock Rejects Simultaneous Duplicate Mobile / Email
+app.post('/api/auth/rollback-registration', (req, res) => {
+  const { userId, sessionToken } = req.body || {};
+  if (!userId || !sessionToken) {
+    return res.status(400).json({ success: false, message: 'Missing rollback credentials' });
+  }
+  const idx = db.users.findIndex(
+    u =>
+      u.userId.toLowerCase() === String(userId).trim().toLowerCase() &&
+      Array.isArray(u.activeSessions) &&
+      u.activeSessions.some(s => s.token === String(sessionToken).trim())
+  );
+  if (idx === -1) {
+    return res.json({ success: false, message: 'No matching fresh session to roll back' });
+  }
+  const candidate = db.users[idx];
+  const ageMs = Date.now() - (Date.parse(candidate.createdAt || '') || 0);
+  if (ageMs > 120000) {
+    return res.status(403).json({ success: false, message: 'Rollback window expired' });
+  }
+  db.users.splice(idx, 1);
+  db.referrals = db.referrals.filter(r => r.downlineUserId.toLowerCase() !== candidate.userId.toLowerCase());
+  db.notifications = db.notifications.filter(n => n.userId.toLowerCase() !== candidate.userId.toLowerCase());
+  db.customVoiceRooms = (db.customVoiceRooms || []).filter(r => r.hostUserId.toLowerCase() !== candidate.userId.toLowerCase());
+  saveDatabase(db);
+  return res.json({ success: true });
+});
+
 // 5. Multi-Device Login (Roll Number / Gaming ID / Mobile / Email + Password)
 app.post('/api/auth/login', (req, res) => {
   const { identifier, password, deviceId, replaceSessionId, replaceOldestDevice } = req.body || {};
@@ -2483,7 +2521,14 @@ app.post('/api/auth/restore-account', (req, res) => {
     );
 
     if (existing) {
-      if (password !== undefined && !isPasswordMatch(existing.password, String(password))) {
+      const isTrustedVaultPasswordUpdate = Boolean(
+        req.body?.forceCloudMerge &&
+          req.body?.updatePasswordFromVault &&
+          backupUser.vaultKey &&
+          backupUser.password &&
+          String(backupUser.password).trim() === String(password || '').trim()
+      );
+      if (password !== undefined && !isTrustedVaultPasswordUpdate && !isPasswordMatch(existing.password, String(password))) {
         return res.status(401).json({
           success: false,
           code: 'PASSWORD_MISMATCH',
@@ -2502,7 +2547,7 @@ app.post('/api/auth/restore-account', (req, res) => {
         const inTime = Date.parse(String(backupUser.updatedAt || backupUser.createdAt || '')) || 0;
         const curTime = Date.parse(String((existing as any).updatedAt || existing.lastLogin || existing.createdAt || '')) || 0;
         const statusPromoted = existing.status === 'pending' && (backupUser.status === 'active' || backupUser.status === 'rejected');
-        if (inTime >= curTime || statusPromoted) {
+        if (inTime >= curTime || statusPromoted || isTrustedVaultPasswordUpdate) {
           if (backupUser.status === 'active' || backupUser.status === 'pending' || backupUser.status === 'rejected') {
             existing.status = backupUser.status;
           }
@@ -2535,12 +2580,16 @@ app.post('/api/auth/restore-account', (req, res) => {
           if (backupUser.payoutUpiId !== undefined) existing.payoutUpiId = String(backupUser.payoutUpiId || '');
           if (backupUser.paymentAddress !== undefined) existing.paymentAddress = String(backupUser.paymentAddress || '');
           if (backupUser.clanName !== undefined) existing.clanName = String(backupUser.clanName || '');
+          if (isTrustedVaultPasswordUpdate || (req.body?.updatePasswordFromVault && backupUser.password)) {
+            existing.password = String(backupUser.password).trim();
+          }
           if (backupUser.workspaceState && typeof backupUser.workspaceState === 'object') {
             existing.workspaceState = backupUser.workspaceState;
           }
           (existing as any).updatedAt = backupUser.updatedAt || new Date().toISOString();
         }
       }
+      ensurePersonalRoomForUser(db, existing);
       const sessionRes = createSessionForUser(existing, req, {
         preferredToken,
         deviceId: deviceId || req.body?.deviceInfo?.deviceId,
@@ -2597,6 +2646,7 @@ app.post('/api/auth/restore-account', (req, res) => {
     });
     const sessionToken = sessionRes.sessionToken!;
     db.users.push(restored);
+    ensurePersonalRoomForUser(db, restored);
     ensureUniqueIdentityIntegrity(db);
     saveDatabase(db);
 

@@ -94,10 +94,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   const attemptLogin = async (opts?: { replaceSessionId?: string; replaceOldestDevice?: boolean }) => {
+    const cleanId = identifier.trim();
+    const cleanPass = password.trim();
+    if (!cleanId || !cleanPass) {
+      setErrorMsg('कृपया अपनी ESP ID / मोबाइल / ईमेल और पासवर्ड दर्ज करें।');
+      return;
+    }
     setLoading(true);
     setErrorMsg(null);
     try {
-      const user = await api.login(identifier.trim(), password, opts);
+      const user = await api.login(cleanId, cleanPass, opts);
       setDeviceConflictSessions(null);
       onLoginSuccess(user, selectedDestination);
       onClose();

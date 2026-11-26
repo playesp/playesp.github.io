@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, X, Monitor, LogOut, RefreshCw, Globe, CheckCircle2 } from 'lucide-react';
+import { Lock, X, Monitor, LogOut, RefreshCw, Globe, CheckCircle2, Copy, Check } from 'lucide-react';
 import { api } from '../services/api.ts';
 import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, onFirebaseAuthChange } from '../services/firebase.ts';
 import type { AdminSession } from '../types/index.ts';
@@ -20,6 +20,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [cloudConnecting, setCloudConnecting] = useState(false);
   const [cloudEmail, setCloudEmail] = useState<string | null>(() => auth.currentUser?.email || null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [unauthorizedHost, setUnauthorizedHost] = useState<string | null>(null);
+  const [copiedHost, setCopiedHost] = useState(false);
   const [conflictSessions, setConflictSessions] = useState<AdminSession[] | null>(null);
   const [maxDevices, setMaxDevices] = useState(4);
 
@@ -33,6 +35,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setErrorMsg(null);
+      setUnauthorizedHost(null);
+      setCopiedHost(false);
       setConflictSessions(null);
       setCloudEmail(auth.currentUser?.email || null);
     }
@@ -42,10 +46,18 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
   const isCloudVerified = Boolean(cloudEmail && cloudEmail.toLowerCase() === ADMIN_GOOGLE_EMAIL);
 
+  const handleCopyUnauthorizedHost = () => {
+    if (!unauthorizedHost) return;
+    navigator.clipboard.writeText(unauthorizedHost);
+    setCopiedHost(true);
+    setTimeout(() => setCopiedHost(false), 2000);
+  };
+
   const handleConnectGoogleCloud = async () => {
     if (cloudConnecting) return;
     setCloudConnecting(true);
     setErrorMsg(null);
+    setUnauthorizedHost(null);
     try {
       const fbUser = await signInWithGoogle();
       setCloudEmail(fbUser.email || null);
@@ -57,8 +69,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       const rawMsg = String(err?.message || '');
       const host = typeof window !== 'undefined' ? window.location.hostname : '';
       if (code === 'auth/unauthorized-domain' || rawMsg.includes('unauthorized-domain')) {
+        setUnauthorizedHost(host || 'playesp.github.io');
         setErrorMsg(
-          `⚠️ डोमेन "${host}" Firebase Authentication में Authorized नहीं है। Firebase Console -> Authentication -> Settings -> Authorized domains में "${host}" जोड़ें। (आप नीचे Master Password से स्थानीय Admin Panel अभी भी खोल सकते हैं)`
+          `डोमेन "${host}" Firebase Authentication Authorized Domains में नहीं है।`
         );
       } else if (code === 'auth/popup-blocked' || rawMsg.includes('popup-blocked')) {
         setErrorMsg('ब्राउज़र ने Google Sign-In Popup ब्लॉक कर दिया है। कृपया Popups Allow करें और पुनः प्रयास करें।');
@@ -162,7 +175,30 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           )}
         </div>
 
-        {errorMsg && (
+        {unauthorizedHost && (
+          <div className="p-3 rounded-sm bg-amber-50 border border-amber-300 text-amber-950 text-[11px] space-y-2">
+            <p className="font-extrabold">Domain Authorization Required ({unauthorizedHost})</p>
+            <p className="leading-snug">
+              Firebase Console ➔ Authentication ➔ Settings ➔ <strong>Authorized domains</strong> में नीचे दिया डोमेन जोड़ें:
+            </p>
+            <div className="flex items-center justify-between gap-2 bg-white border border-amber-300 rounded-xs px-2.5 py-1.5">
+              <span className="font-mono font-bold text-[#212121] truncate">{unauthorizedHost}</span>
+              <button
+                type="button"
+                onClick={handleCopyUnauthorizedHost}
+                className="px-2 py-1 rounded-xs bg-[#2874f0] text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                {copiedHost ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedHost ? 'Copied' : 'Copy Domain'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-amber-800">
+              आप अभी भी नीचे Admin Master Password से Admin Panel तुरंत खोल सकते हैं।
+            </p>
+          </div>
+        )}
+
+        {errorMsg && !unauthorizedHost && (
           <div className="p-2.5 rounded-sm bg-rose-50 border border-rose-200 text-rose-700 text-xs text-center font-medium">
             {errorMsg}
           </div>

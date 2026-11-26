@@ -752,7 +752,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   required
                   maxLength={10}
                   value={gamerPhone}
-                  onChange={e => setGamerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onChange={e => {
+                    const d = e.target.value.replace(/\D/g, '');
+                    const clean10 = d.length > 10 && d.startsWith('91') ? d.slice(2, 12) : d.length > 10 && d.startsWith('0') ? d.slice(1, 11) : d.slice(0, 10);
+                    setGamerPhone(clean10);
+                  }}
                   placeholder="e.g. 9876543210"
                   className="w-full px-3.5 py-2.5 rounded border border-slate-300 focus:border-[#2874f0] focus:outline-none text-xs sm:text-sm font-mono font-semibold bg-[#f9fafb] focus:bg-white"
                 />
@@ -980,7 +984,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     type="tel"
                     placeholder="10 अंकों का मोबाइल नंबर (6-9 से शुरू)"
                     value={formData.phone}
-                    onChange={e => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    onChange={e => {
+                      const d = e.target.value.replace(/\D/g, '');
+                      const clean10 = d.length > 10 && d.startsWith('91') ? d.slice(2, 12) : d.length > 10 && d.startsWith('0') ? d.slice(1, 11) : d.slice(0, 10);
+                      setFormData({ ...formData, phone: clean10 });
+                    }}
                     className="w-full bg-[#f9fafb] border border-slate-300 focus:border-[#2874f0] focus:bg-white rounded px-3.5 py-2.5 text-xs text-[#212121] outline-none font-medium pr-8 transition"
                     required
                   />
@@ -1204,6 +1212,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       return;
                     }
                     setStep(2);
+                  } catch (err: any) {
+                    setErrorMsg(err?.message || 'मोबाइल व ईमेल सत्यापन में त्रुटि आई। कृपया पुनः प्रयास करें।');
                   } finally {
                     setStep1Checking(false);
                   }

@@ -58,17 +58,65 @@ import {
   pushReferralToCloud,
 } from './firebase.ts';
 
-const API_BASE_URL =
-  ((import.meta as any).env?.VITE_API_BASE_URL ||
+export function getConfiguredApiBaseUrl(): string {
+  return (
     (typeof window !== 'undefined' ? localStorage.getItem('esp_api_base_url') : '') ||
-    '')
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    ''
+  )
     .toString()
+    .trim()
     .replace(/\/+$/, '');
+}
+
+let API_BASE_URL = getConfiguredApiBaseUrl();
 
 let staticModeDetected =
   typeof window !== 'undefined' &&
   !API_BASE_URL &&
   window.location.hostname.endsWith('.github.io');
+
+export function setConfiguredApiBaseUrl(url: string): string {
+  const cleaned = String(url || '').trim().replace(/\/+$/, '');
+  API_BASE_URL = cleaned;
+  if (typeof window !== 'undefined') {
+    if (cleaned) {
+      localStorage.setItem('esp_api_base_url', cleaned);
+      staticModeDetected = false;
+    } else {
+      localStorage.removeItem('esp_api_base_url');
+      staticModeDetected = window.location.hostname.endsWith('.github.io');
+    }
+  }
+  return cleaned;
+}
+
+export async function testLiveApiConnection(url: string): Promise<{
+  ok: boolean;
+  usersCount?: number;
+  service?: string;
+  error?: string;
+}> {
+  const cleaned = String(url || '').trim().replace(/\/+$/, '');
+  if (!cleaned) return { ok: false, error: 'URL खाली है' };
+  try {
+    const controller = new AbortController();
+    const t = window.setTimeout(() => controller.abort(), 5000);
+    const res = await window.fetch(`${cleaned}/api/health`, { signal: controller.signal });
+    window.clearTimeout(t);
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || !ct.includes('application/json')) {
+      return { ok: false, error: `HTTP ${res.status} (JSON API नहीं मिली)` };
+    }
+    const data = await res.json();
+    if (data?.ok) {
+      return { ok: true, usersCount: data.usersCount, service: data.service };
+    }
+    return { ok: false, error: 'Health check failed' };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'कनेक्शन असफल (CORS या Offline)' };
+  }
+}
 
 function makeJsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -78,16 +126,18 @@ function makeJsonResponse(data: any, status = 200): Response {
 }
 
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  if (staticModeDetected) {
+  if (staticModeDetected && !API_BASE_URL) {
     return makeJsonResponse(handleStaticApiRequest(input, init));
   }
   const targetUrl = input.startsWith('/') && API_BASE_URL ? `${API_BASE_URL}${input}` : input;
   try {
     const res = await window.fetch(targetUrl, init);
     const ct = res.headers.get('content-type') || '';
-    if ((res.status === 404 || res.status === 405) && !ct.includes('application/json')) {
-      staticModeDetected = true;
-      return makeJsonResponse(handleStaticApiRequest(input, init));
+    if ((res.status === 404 || res.status === 405 || !ct.includes('application/json')) && !ct.includes('application/json')) {
+      if (typeof window !== 'undefined' && window.location.hostname.endsWith('.github.io')) {
+        staticModeDetected = true;
+        return makeJsonResponse(handleStaticApiRequest(input, init));
+      }
     }
     return res;
   } catch {
@@ -200,9 +250,23 @@ function saveUserToLocalBackup(user: UserProfile, overridePassword?: string) {
     } else {
       safeList.unshift(merged);
     }
-    localStorage.setItem(USERS_BACKUP_KEY, JSON.stringify(safeList.slice(0, 20)));
+    localStorage.setItem(USERS_BACKUP_KEY, JSON.stringify(safeList.slice(0, 100)));
   } catch {
     // ignore storage quota
+  }
+}
+
+function removeUserFromLocalBackup(userId: string) {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    const raw = localStorage.getItem(USERS_BACKUP_KEY);
+    if (!raw) return;
+    const list: UserProfile[] = JSON.parse(raw);
+    if (!Array.isArray(list)) return;
+    const next = list.filter(u => (u.userId || '').toLowerCase() !== userId.toLowerCase());
+    localStorage.setItem(USERS_BACKUP_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
   }
 }
 
@@ -587,13 +651,18 @@ export const api = {
     const currentHost =
       typeof window !== 'undefined' ? window.location.hostname : 'web';
 
-    // Pre-check global cloud uniqueness across playesp.github.io & live domains before committing
-    const [cloudCheck, reservedIds] = await Promise.all([
+    // Pre-check global cloud + backend uniqueness across playesp.github.io & live domains before committing
+    const [cloudCheck, serverDupCheck, reservedIds] = await Promise.all([
       checkIdentityLocksInCloud({
         phone: formData?.phone,
         email: formData?.email,
         username: formData?.username,
       }),
+      this.checkIdentityAvailability({
+        phone: formData?.phone,
+        email: formData?.email,
+        username: formData?.username,
+      }).catch(() => ({ available: true as const })),
       reserveUniqueRegistrationIdsInCloud({
         fullName: formData?.fullName || 'ESP',
         serviceCode: formData?.chosenServiceCode || 'EMO',
@@ -602,6 +671,9 @@ export const api = {
     ]);
     if (!cloudCheck.ok) {
       throw new Error(cloudCheck.message || 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है।');
+    }
+    if (serverDupCheck && serverDupCheck.available === false) {
+      throw new Error(serverDupCheck.message || 'यह मोबाइल नंबर, ईमेल या @username पहले से पंजीकृत है।');
     }
 
     const res = await apiFetch('/api/auth/register', {
@@ -625,6 +697,22 @@ export const api = {
         paymentScreenshot: formData.paymentScreenshot || data.user.paymentScreenshot || '',
         registeredFromHost: data.user.registeredFromHost || currentHost,
       };
+      // Atomic Firestore Security Rules + Identity Locks check (throws DUPLICATE_CLOUD_IDENTITY if DB blocks dup)
+      try {
+        await pushRegistrationToCloudBridge(mergedUser, currentHost);
+      } catch (cloudErr: any) {
+        if (cloudErr?.code === 'DUPLICATE_CLOUD_IDENTITY') {
+          await apiFetch('/api/auth/rollback-registration', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: mergedUser.userId, sessionToken: data.sessionToken }),
+          }).catch(() => {});
+          removeUserFromLocalBackup(mergedUser.userId);
+          this.setStoredUser(null);
+          throw new Error(cloudErr.message || 'यह मोबाइल नंबर या ईमेल पहले से पंजीकृत है।');
+        }
+      }
+
       saveUserToLocalBackup(mergedUser, formData.password);
       this.setStoredUser(mergedUser, data.sessionToken);
       const sponsorRefId = String(mergedUser.sponsorId || '').trim();
@@ -646,9 +734,7 @@ export const api = {
               date: new Date().toISOString().split('T')[0],
             }
           : null;
-      // Await cross-origin Firestore bridge + locks + public sponsor + vault so Admin & any device sync immediately
       await Promise.all([
-        pushRegistrationToCloudBridge(mergedUser, currentHost).catch(() => false),
         syncUserToFirestore(mergedUser, true).catch(() => false),
         pushPublicSponsorToCloud(mergedUser).catch(() => false),
         ...(pendingReferral ? [pushReferralToCloud(pendingReferral).catch(() => false)] : []),
@@ -694,27 +780,38 @@ export const api = {
       throw err;
     }
 
-    // Fallback recovery across devices/origins: check local backup AND Firestore multi-device vault!
-    if (data.code === 'ACCOUNT_NOT_FOUND' || res.status === 404) {
+    // Fallback recovery across devices/origins: check local backup AND Firestore multi-device vault on 404 or cross-device password sync (401)!
+    if (
+      data.code === 'ACCOUNT_NOT_FOUND' ||
+      data.code === 'PASSWORD_MISMATCH' ||
+      res.status === 404 ||
+      res.status === 401
+    ) {
       let recoveredUser: UserProfile | null = null;
-      const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
-      if (backups.length > 0) {
-        const matchedBackup = backups.find(
-          u => !u.password || u.password === password || u.password.trim() === password.trim()
-        );
-        if (!matchedBackup) {
-          throw new Error(
-            'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या नीचे "Forget Password?" का उपयोग करें।'
+      const isPasswordMismatch = data.code === 'PASSWORD_MISMATCH' || res.status === 401;
+
+      if (!isPasswordMismatch) {
+        const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
+        if (backups.length > 0) {
+          const matchedBackup = backups.find(
+            u => !u.password || u.password === password || u.password.trim() === password.trim()
           );
+          if (!matchedBackup) {
+            throw new Error(
+              'पासवर्ड मेल नहीं खा रहा (Password details mismatch)। कृपया सही पासवर्ड दर्ज करें या नीचे "Forget Password?" का उपयोग करें।'
+            );
+          }
+          recoveredUser = matchedBackup;
         }
-        recoveredUser = matchedBackup;
       }
+
       if (!recoveredUser) {
         const cloudVaultUser = await pullUserFromDeviceVault(identifier, password).catch(() => null);
         if (cloudVaultUser && cloudVaultUser.userId) {
           recoveredUser = cloudVaultUser as UserProfile;
         }
       }
+
       if (recoveredUser) {
         try {
           const restoreRes = await apiFetch('/api/auth/restore-account', {
@@ -723,6 +820,8 @@ export const api = {
             body: JSON.stringify({
               user: recoveredUser,
               password,
+              forceCloudMerge: true,
+              updatePasswordFromVault: true,
               deviceId: deviceInfo.deviceId,
               deviceInfo,
               replaceSessionId: opts?.replaceSessionId,
@@ -745,7 +844,6 @@ export const api = {
           }
         } catch (err: any) {
           if (err?.code === 'DEVICE_LIMIT_REACHED') throw err;
-          // fallback to recovered user directly if network unavailable
           saveUserToLocalBackup(recoveredUser, password);
           this.setStoredUser(recoveredUser, `esp_local_${Date.now()}`);
           return recoveredUser;
@@ -884,13 +982,17 @@ export const api = {
     if (data.success) {
       const backups = readAllLocalBackupUsers().filter(u => u.userId.toLowerCase() === data.userId.toLowerCase());
       if (backups[0]) {
-        saveUserToLocalBackup({ ...backups[0], password: newPassword.trim() }, newPassword.trim());
+        const nextUser = { ...backups[0], password: newPassword.trim(), updatedAt: new Date().toISOString() };
+        saveUserToLocalBackup(nextUser, newPassword.trim());
+        void pushDeviceSyncVault(nextUser, newPassword.trim()).catch(() => {});
+      } else {
+        void pushDeviceSyncVault({ userId: data.userId, fullName: data.fullName, password: newPassword.trim() }, newPassword.trim()).catch(() => {});
       }
       return data;
     }
 
     // Fallback reset if account only existed in local backup
-    if (res.status === 404) {
+    if (res.status === 404 || data.success === false) {
       const cleanVerify = verifyPhone.trim().toLowerCase();
       const verifyDigits = normalizePhoneTail(cleanVerify);
       const backups = readAllLocalBackupUsers().filter(u => matchesBackupIdentifier(u, identifier));
@@ -903,13 +1005,14 @@ export const api = {
         );
       });
       if (matched) {
-        const updated = { ...matched, password: newPassword.trim() };
+        const updated = { ...matched, password: newPassword.trim(), updatedAt: new Date().toISOString() };
         saveUserToLocalBackup(updated, newPassword.trim());
+        void pushDeviceSyncVault(updated, newPassword.trim()).catch(() => {});
         try {
           await apiFetch('/api/auth/restore-account', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: updated, password: newPassword.trim() }),
+            body: JSON.stringify({ user: updated, password: newPassword.trim(), forceCloudMerge: true, updatePasswordFromVault: true }),
           });
         } catch {}
         return {
@@ -1094,7 +1197,8 @@ export const api = {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to update user status');
     const safeStatus = (status === 'active' || status === 'rejected' ? status : 'pending') as 'active' | 'pending' | 'rejected';
-    void updateUserStatusInFirestore(userId, safeStatus, data.user).catch(() => {});
+    await updateUserStatusInFirestore(userId, safeStatus, data.user).catch(() => false);
+    if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     return data;
   },
 
@@ -1106,11 +1210,16 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to approve payout');
-    if (data.payout) void pushPayoutToCloud(data.payout).catch(() => {});
-    if (data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
-    }
+    await Promise.allSettled([
+      ...(data.payout ? [pushPayoutToCloud(data.payout)] : []),
+      ...(data.user
+        ? [
+            syncUserToFirestore(data.user, true),
+            pushDeviceSyncVault(data.user, data.user.password),
+          ]
+        : []),
+    ]);
+    if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     return data;
   },
 
@@ -1122,11 +1231,16 @@ export const api = {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to reject payout');
-    if (data.payout) void pushPayoutToCloud(data.payout).catch(() => {});
-    if (data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
-    }
+    await Promise.allSettled([
+      ...(data.payout ? [pushPayoutToCloud(data.payout)] : []),
+      ...(data.user
+        ? [
+            syncUserToFirestore(data.user, true),
+            pushDeviceSyncVault(data.user, data.user.password),
+          ]
+        : []),
+    ]);
+    if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     return data;
   },
 
@@ -1481,11 +1595,16 @@ export const api = {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to approve coin recharge');
     const order = data.order || data.recharge;
-    if (order) void pushCoinRechargeToCloud(order).catch(() => {});
-    if (data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
-    }
+    await Promise.allSettled([
+      ...(order ? [pushCoinRechargeToCloud(order)] : []),
+      ...(data.user
+        ? [
+            syncUserToFirestore(data.user, true),
+            pushDeviceSyncVault(data.user, data.user.password),
+          ]
+        : []),
+    ]);
+    if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     return data;
   },
 
@@ -1498,7 +1617,7 @@ export const api = {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Failed to reject coin recharge');
     const order = data.order || data.recharge;
-    if (order) void pushCoinRechargeToCloud(order).catch(() => {});
+    if (order) await pushCoinRechargeToCloud(order).catch(() => false);
     return data;
   },
 
@@ -2154,8 +2273,12 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      saveUserToLocalBackup(data.user, data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, data.user.password),
+        pushPublicSponsorToCloud(data.user),
+      ]);
     }
     return data;
   },
@@ -2541,12 +2664,17 @@ export const api = {
       body: JSON.stringify({ voucherCode, voucherPin, adminPassword }),
     });
     const data = await res.json();
-    if (data.success && data.redemption) {
-      void pushGiftCardToCloud(data.redemption).catch(() => {});
-    }
-    if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    if (data.success) {
+      await Promise.allSettled([
+        ...(data.redemption ? [pushGiftCardToCloud(data.redemption)] : []),
+        ...(data.user
+          ? [
+              syncUserToFirestore(data.user, true),
+              pushDeviceSyncVault(data.user, data.user.password),
+            ]
+          : []),
+      ]);
+      if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     }
     return data;
   },
@@ -2612,8 +2740,11 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      saveUserToLocalBackup(data.user, data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, data.user.password),
+      ]);
     }
     return data;
   },
@@ -2640,7 +2771,7 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.request) {
-      void pushPlanUpgradeToCloud(data.request).catch(() => {});
+      await pushPlanUpgradeToCloud(data.request).catch(() => false);
     }
     return data;
   },
@@ -2658,16 +2789,24 @@ export const api = {
     upgradeId: string,
     status: 'approved' | 'rejected',
     adminPassword: string
-  ): Promise<{ success: boolean; message: string; user?: UserProfile }> {
+  ): Promise<{ success: boolean; message: string; user?: UserProfile; upgrade?: PlanUpgradeRequest }> {
     const res = await apiFetch(`/api/admin/upgrades/${encodeURIComponent(upgradeId)}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminPassword }),
     });
     const data = await res.json();
-    if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+    if (data.success) {
+      await Promise.allSettled([
+        ...(data.upgrade ? [pushPlanUpgradeToCloud(data.upgrade)] : []),
+        ...(data.user
+          ? [
+              syncUserToFirestore(data.user, true),
+              pushDeviceSyncVault(data.user, data.user.password),
+            ]
+          : []),
+      ]);
+      if (data.user) saveUserToLocalBackup(data.user, data.user.password);
     }
     return data;
   },
@@ -2713,8 +2852,11 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      saveUserToLocalBackup(data.user, data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, data.user.password),
+      ]);
     }
     return data;
   },
@@ -2735,8 +2877,11 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      saveUserToLocalBackup(data.user, data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, data.user.password),
+      ]);
     }
     return data;
   },
@@ -2903,8 +3048,11 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, data.user.password).catch(() => {});
+      saveUserToLocalBackup(data.user, data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, data.user.password),
+      ]);
     }
     return data;
   },
@@ -2936,9 +3084,12 @@ export const api = {
     });
     const data = await res.json();
     if (data.success && data.user) {
-      void syncUserToFirestore(data.user, true).catch(() => {});
-      void pushDeviceSyncVault(data.user, payload.password || data.user.password).catch(() => {});
-      void pushPublicSponsorToCloud(data.user).catch(() => {});
+      saveUserToLocalBackup(data.user, payload.password || data.user.password);
+      await Promise.allSettled([
+        syncUserToFirestore(data.user, true),
+        pushDeviceSyncVault(data.user, payload.password || data.user.password),
+        pushPublicSponsorToCloud(data.user),
+      ]);
     }
     return data;
   },

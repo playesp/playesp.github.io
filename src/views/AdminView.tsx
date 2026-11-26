@@ -39,10 +39,13 @@ import {
   Phone,
   Mail,
   Gamepad2,
-  Briefcase
+  Briefcase,
+  Copy,
+  Check,
+  Link2
 } from 'lucide-react';
 import type { PlatformSettings, ServiceItem, UserProfile, PayoutRequest, CoinRechargeRequest, HomeSliderPhoto, PlanUpgradeRequest, GiftCardRedemption, ContactMessage, NotificationItem, LiveTimeMeta, AdminSession, UserSession } from '../types/index.ts';
-import { api } from '../services/api.ts';
+import { api, getConfiguredApiBaseUrl, setConfiguredApiBaseUrl, testLiveApiConnection } from '../services/api.ts';
 import { DigitalIdCard } from '../components/DigitalIdCard.tsx';
 import { showToast } from '../services/toast.ts';
 import { auth, ADMIN_GOOGLE_EMAIL, signInWithGoogle, syncAdminDatasetToFirestore, syncUserToFirestore, fetchAllCloudUsersForAdmin, fetchAllCloudUpgradesForAdmin, fetchAllCloudQueuesForAdmin, onFirebaseAuthChange, subscribeToAdminLiveUsers, subscribeToAdminLiveUpgrades, subscribeToAdminCloudQueues, subscribeToPlatformConfig, type AdminCloudQueuesBundle } from '../services/firebase.ts';
@@ -209,6 +212,15 @@ export const AdminView: React.FC<AdminViewProps> = ({
   >([]);
   const knownPendingBizIdsRef = useRef<Set<string>>(new Set());
   const livePendingSeededRef = useRef(false);
+  const knownUserIdsRef = useRef<Set<string>>(new Set());
+  const knownUsersSeededRef = useRef(false);
+  const knownUpgradeIdsRef = useRef<Set<string>>(new Set());
+  const knownUpgradesSeededRef = useRef(false);
+  const [domainAuthHelpHost, setDomainAuthHelpHost] = useState<string | null>(null);
+  const [copiedDomainHelp, setCopiedDomainHelp] = useState(false);
+  const [liveApiUrlInput, setLiveApiUrlInput] = useState<string>(() => getConfiguredApiBaseUrl());
+  const [liveApiTesting, setLiveApiTesting] = useState(false);
+  const [liveApiStatusMsg, setLiveApiStatusMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [adminControlCenterOpen, setAdminControlCenterOpen] = useState(false);
   const [totalControlSearch, setTotalControlSearch] = useState('');
   const [totalControlUser, setTotalControlUser] = useState<{
@@ -641,6 +653,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
           .forEach(u => knownPendingBizIdsRef.current.add(u.userId));
         livePendingSeededRef.current = true;
       }
+      if (!knownUsersSeededRef.current) {
+        mergedUsersList.forEach(u => {
+          if (u?.userId) knownUserIdsRef.current.add(u.userId.toLowerCase());
+        });
+        knownUsersSeededRef.current = true;
+      }
+      if (!knownUpgradesSeededRef.current) {
+        loadedUpgrades.forEach(upg => {
+          if (upg?.id) knownUpgradeIdsRef.current.add(String(upg.id).toLowerCase());
+        });
+        knownUpgradesSeededRef.current = true;
+      }
     } catch {
       showToast('एडमिन सुरक्षा सत्यापन विफल रहा।', 'error');
       onLogoutAdmin();
@@ -657,6 +681,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       if (!fbUser || fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
         fbUser = await signInWithGoogle();
       }
+      setDomainAuthHelpHost(null);
       setCloudConnectedEmail(fbUser.email || null);
       if (fbUser.email?.toLowerCase() !== ADMIN_GOOGLE_EMAIL) {
         showToast(`कृपया एडमिन ईमेल (${ADMIN_GOOGLE_EMAIL}) से Google साइन-इन करें।`, 'error');
@@ -770,8 +795,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
       const rawMsg = String(err?.message || '');
       const host = typeof window !== 'undefined' ? window.location.hostname : '';
       if (code === 'auth/unauthorized-domain' || rawMsg.includes('unauthorized-domain')) {
+        setDomainAuthHelpHost(host || 'playesp.github.io');
         showToast(
-          `⚠️ डोमेन "${host}" Firebase Authentication Authorized Domains में नहीं है। Firebase Console -> Authentication -> Settings -> Authorized domains में "${host}" जोड़ें।`,
+          `⚠️ डोमेन "${host}" Firebase Authentication Authorized Domains में नहीं है। नीचे दिए बॉक्स से Copy Domain करके Firebase Console में जोड़ें।`,
           'error',
           'Domain Authorization Required',
           8000
@@ -929,7 +955,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
     const syncSnapshotPayload = async (
       cloudUsers: any[],
       cloudUpgrades: any[],
-      meta?: { isInitial: boolean; newlyPendingBusiness: any[] }
+      meta?: { isInitial: boolean; newlyPendingBusiness: any[]; newlyRegisteredUsers?: any[] },
+      upgradeMeta?: { isInitial: boolean; newlySubmittedUpgrades: any[] }
     ) => {
       if (cancelled) return;
       if (cloudUsers.length === 0 && cloudUpgrades.length === 0) return;
@@ -952,14 +979,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
           api.getAdminOverview(adminPassword),
           api.getPlanUpgrades(adminPassword),
         ]);
+        const latestUpgradesList: PlanUpgradeRequest[] = upg?.success ? (upg.upgrades || []) : [];
         if (!cancelled) {
           if (ov?.success && ov.stats) setStats(ov.stats);
-          if (upg?.success) setPlanUpgrades(upg.upgrades || []);
+          if (upg?.success) setPlanUpgrades(latestUpgradesList);
         }
 
         const pendingBusinessList = res.users.filter(
           (u: UserProfile) => u.accountType !== 'gamer' && u.status === 'pending'
         );
+
+        const notifiedPendingIds = new Set<string>();
 
         if (meta?.isInitial && !livePendingSeededRef.current) {
           pendingBusinessList.forEach((u: UserProfile) => knownPendingBizIdsRef.current.add(u.userId));
@@ -972,6 +1002,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
             if (!raw || !raw.userId || raw.accountType === 'gamer' || raw.status !== 'pending') continue;
             if (knownPendingBizIdsRef.current.has(raw.userId)) continue;
             knownPendingBizIdsRef.current.add(raw.userId);
+            knownUserIdsRef.current.add(raw.userId.toLowerCase());
+            notifiedPendingIds.add(raw.userId.toLowerCase());
             const enriched = res.users.find((u: UserProfile) => u.userId === raw.userId) || raw;
             freshAlerts.push({
               userId: enriched.userId,
@@ -999,6 +1031,65 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 7000
               );
             });
+          }
+        }
+
+        // Notify Admin on ALL new user registrations (including Free Gaming users & active syncs)
+        if (meta?.isInitial && !knownUsersSeededRef.current) {
+          res.users.forEach((u: UserProfile) => {
+            if (u?.userId) knownUserIdsRef.current.add(u.userId.toLowerCase());
+          });
+          knownUsersSeededRef.current = true;
+        } else if (meta && !meta.isInitial && Array.isArray(meta.newlyRegisteredUsers)) {
+          for (const raw of meta.newlyRegisteredUsers) {
+            if (!raw?.userId) continue;
+            const uidLower = String(raw.userId).toLowerCase();
+            if (knownUserIdsRef.current.has(uidLower) || notifiedPendingIds.has(uidLower)) continue;
+            knownUserIdsRef.current.add(uidLower);
+            const enriched = res.users.find((u: UserProfile) => u.userId.toLowerCase() === uidLower) || raw;
+            if (enriched.accountType === 'gamer') {
+              showToast(
+                `🎮 नया Free Gaming रजिस्ट्रेशन: ${enriched.fullName} (${enriched.userId}) · ${enriched.registeredFromHost || 'Live Web'}`,
+                'success',
+                'New User Registered',
+                7000
+              );
+            } else {
+              showToast(
+                `🆕 नया सदस्य रजिस्ट्रेशन: ${enriched.fullName} (${enriched.userId}) · ${enriched.chosenServiceCode || 'ESP'} · ₹${enriched.joiningFee || 0}`,
+                'info',
+                'New User Registered',
+                7000
+              );
+            }
+          }
+        }
+
+        // Notify Admin on real-time Plan Upgrade Requests (cloud_plan_upgrades)
+        if (upgradeMeta?.isInitial && !knownUpgradesSeededRef.current) {
+          cloudUpgrades.forEach(upgItem => {
+            if (upgItem?.id) knownUpgradeIdsRef.current.add(String(upgItem.id).toLowerCase());
+          });
+          latestUpgradesList.forEach(upgItem => {
+            if (upgItem?.id) knownUpgradeIdsRef.current.add(String(upgItem.id).toLowerCase());
+          });
+          knownUpgradesSeededRef.current = true;
+        } else if (upgradeMeta && !upgradeMeta.isInitial) {
+          const upgradeCandidates =
+            upgradeMeta.newlySubmittedUpgrades.length > 0
+              ? upgradeMeta.newlySubmittedUpgrades
+              : cloudUpgrades.filter((u: any) => u?.status === 'pending');
+          for (const upgItem of upgradeCandidates) {
+            if (!upgItem?.id || upgItem.status !== 'pending') continue;
+            const upgKey = String(upgItem.id).toLowerCase();
+            if (knownUpgradeIdsRef.current.has(upgKey)) continue;
+            knownUpgradeIdsRef.current.add(upgKey);
+            showToast(
+              `🚀 नया Plan Upgrade अनुरोध: ${upgItem.userName || upgItem.userId} (${upgItem.fromServiceCode || 'PLAN'} ➔ ${upgItem.targetServiceCode} · ₹${upgItem.upgradeFee || 0}) · UTR: ${upgItem.paymentUtr || '—'}`,
+              'warning',
+              'New Plan Upgrade Request',
+              7000
+            );
           }
         }
       } catch {
@@ -1090,9 +1181,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
           },
         });
         unsubLiveUpgrades = subscribeToAdminLiveUpgrades({
-          onUpgradesUpdate: upgrades => {
+          onUpgradesUpdate: (upgrades, upgradeMeta) => {
             latestCloudUpgrades = upgrades;
-            void syncSnapshotPayload(latestCloudUsers, upgrades);
+            void syncSnapshotPayload(latestCloudUsers, upgrades, undefined, upgradeMeta);
           },
           onError: () => {
             if (!cancelled) setRealtimeStreamLive(false);
@@ -1328,7 +1419,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
         clanName: editingPlayerModal.clanName.trim(),
       });
       if (res?.success) {
-        showToast(res.message || 'प्लेयर डिटेल्स व पासवर्ड अपडेट हो गए!', 'success');
+        showToast(
+          isCloudAdminConnected
+            ? '✅ प्लेयर डिटेल्स व पासवर्ड Cloud व Local में सुरक्षित सेव हो गए!'
+            : '✅ प्लेयर डिटेल्स सेव हुए (सभी डिवाइस पर सिंक हेतु Sync Now दबाएं)',
+          'success'
+        );
         setEditingPlayerModal(null);
         await loadAdminData();
       } else {
@@ -1394,7 +1490,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
         clanName: totalControlUser.clanName.trim(),
       });
       if (res?.success) {
-        showToast(res.message || `⚙️ ${totalControlUser.fullName} का Total Control डेटा सेव हो गया!`, 'success');
+        showToast(
+          isCloudAdminConnected
+            ? `☁️ ${totalControlUser.fullName} का Total Control डेटा Cloud व Local में सुरक्षित सेव हो गया!`
+            : res.message || `⚙️ ${totalControlUser.fullName} का Total Control डेटा लोकल में सेव हो गया!`,
+          'success'
+        );
         if (res.user) {
           setUsers(prev => prev.map(item => (item.userId === res.user.userId ? { ...item, ...res.user } : item)));
         }
@@ -2077,6 +2178,41 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </span>
         </button>
       </div>
+
+      {domainAuthHelpHost && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-md p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs text-amber-950">
+          <div className="space-y-1 text-xs">
+            <p className="font-extrabold">
+              ⚠️ Domain Authorization Required ({domainAuthHelpHost})
+            </p>
+            <p className="text-[11px] leading-snug">
+              Google Cloud Sign-In चालू करने के लिए Firebase Console ➔ Authentication ➔ Settings ➔ <strong>Authorized domains</strong> में इस डोमेन को जोड़ें:
+            </p>
+            <div className="inline-flex items-center gap-2 bg-white border border-amber-300 rounded-xs px-2.5 py-1 mt-1">
+              <span className="font-mono font-bold text-[#212121]">{domainAuthHelpHost}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(domainAuthHelpHost);
+                  setCopiedDomainHelp(true);
+                  setTimeout(() => setCopiedDomainHelp(false), 2000);
+                }}
+                className="px-2 py-0.5 rounded-xs bg-[#2874f0] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                {copiedDomainHelp ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedDomainHelp ? 'Copied' : 'Copy Domain'}</span>
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDomainAuthHelpHost(null)}
+            className="px-3 py-1.5 rounded-sm bg-white border border-amber-300 text-amber-900 text-[11px] font-bold cursor-pointer self-start sm:self-center shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Admin Tabs */}
       <div className="bg-white border border-slate-200 rounded-md p-2 flex overflow-x-auto gap-1.5 text-xs font-bold no-scrollbar shadow-2xs">
@@ -5949,6 +6085,67 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${cloudSyncing ? 'animate-spin' : ''}`} />
                 <span>{cloudSyncing ? 'Syncing...' : 'Sync Now (Firestore)'}</span>
               </button>
+            </div>
+
+            {/* Live Backend API Bridge URL (Connect playesp.github.io directly to Live Server API) */}
+            <div className="bg-blue-50 border border-blue-200 rounded-sm p-3.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-[#212121]">
+                  <Link2 className="w-4 h-4 text-[#2874f0]" />
+                  <span>🌐 Live Backend API Bridge URL (Cross-Origin Sync)</span>
+                </div>
+                <span className="text-[10px] font-mono bg-white border border-blue-200 px-2 py-0.5 rounded-xs text-[#2874f0] font-bold">
+                  {getConfiguredApiBaseUrl() ? `Connected: ${getConfiguredApiBaseUrl()}` : `Same-Origin / Firestore Bridge (${typeof window !== 'undefined' ? window.location.hostname : 'web'})`}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600">
+                यदि आप GitHub Pages (playesp.github.io) और Live Server को एक ही रियल-टाइम Express API से जोड़ना चाहते हैं, तो नीचे अपना Live Server URL डालकर Test &amp; Save करें:
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="url"
+                  value={liveApiUrlInput}
+                  onChange={e => {
+                    setLiveApiUrlInput(e.target.value);
+                    setLiveApiStatusMsg(null);
+                  }}
+                  placeholder="https://your-live-server-url.run.app"
+                  className="flex-1 bg-white border border-slate-300 rounded-sm px-3 py-1.5 text-xs font-mono outline-none focus:border-[#2874f0]"
+                />
+                <button
+                  type="button"
+                  disabled={liveApiTesting}
+                  onClick={async () => {
+                    const cleaned = liveApiUrlInput.trim();
+                    if (!cleaned) {
+                      setConfiguredApiBaseUrl('');
+                      setLiveApiStatusMsg({ ok: true, text: '✅ Same-Origin / Firestore Cloud Mode पर रीसेट किया गया।' });
+                      showToast('Live API Override हटा दिया गया — Default Cloud Mode सक्रिय है।', 'info');
+                      await loadAdminData();
+                      return;
+                    }
+                    setLiveApiTesting(true);
+                    const result = await testLiveApiConnection(cleaned);
+                    setLiveApiTesting(false);
+                    if (result.ok) {
+                      setConfiguredApiBaseUrl(cleaned);
+                      setLiveApiStatusMsg({ ok: true, text: `✅ Live API Connected (${result.usersCount ?? 0} server users)` });
+                      showToast('🌐 Live Backend API सफलतापूर्वक कनेक्ट व सेव हो गया!', 'success');
+                      await loadAdminData();
+                    } else {
+                      setLiveApiStatusMsg({ ok: false, text: `❌ ${result.error || 'कनेक्शन विफल'}` });
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-sm bg-[#2874f0] hover:bg-[#1c62d6] text-white font-bold text-xs cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {liveApiTesting ? 'Testing...' : liveApiUrlInput.trim() ? 'Test & Save Live API' : 'Use Default Mode'}
+                </button>
+              </div>
+              {liveApiStatusMsg && (
+                <p className={`text-[11px] font-bold ${liveApiStatusMsg.ok ? 'text-[#388e3c]' : 'text-rose-600'}`}>
+                  {liveApiStatusMsg.text}
+                </p>
+              )}
             </div>
 
             {/* Quick Pick Any User for Instant Total Control */}

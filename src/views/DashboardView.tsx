@@ -752,7 +752,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       await syncUserToFirestore(user, false);
       showToast('☁️ प्रोफाइल व वॉलेट रिकॉर्ड सफलतापूर्वक Firestore Cloud पर सिंक हो गया!', 'success');
     } catch (err: any) {
-      showToast(err?.message || 'Cloud Sync के लिए Google सत्यापन पूरा करें।', 'error');
+      const code = String(err?.code || '');
+      const msg = String(err?.message || '');
+      const host = typeof window !== 'undefined' ? window.location.hostname : 'playesp.github.io';
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        showToast(
+          `⚠️ डोमेन "${host}" Firebase Authentication Authorized Domains में नहीं है। Admin इसे Firebase Console में जोड़ें — आपका अकाउंट लॉगिन व लोकल सिंक पहले से सुरक्षित है।`,
+          'warning',
+          'Domain Authorization Required',
+          7000
+        );
+      } else {
+        showToast(msg || 'Cloud Sync के लिए Google सत्यापन पूरा करें।', 'error');
+      }
     } finally {
       setIsSyncing(false);
     }

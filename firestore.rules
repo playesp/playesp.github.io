@@ -71,7 +71,7 @@ service cloud.firestore {
           'gender', 'location', 'friendsList', 'gamingId', 'personalRoomId',
           'roomAddress', 'isVipRoom', 'vipRoomLabel', 'todayActiveness', 'loginStreak', 'claimedDays',
           'lastDailyCheckInDate', 'workspaceState', 'registeredFromHost',
-          'swiAppLink', 'swiAppNote', 'verifiedAt', 'role', 'createdAt', 'updatedAt'
+          'swiAppLink', 'swiAppNote', 'verifiedAt', 'phoneLockKey', 'emailLockKey', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.authUid, 1, 128) &&
@@ -134,6 +134,8 @@ service cloud.firestore {
         (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
         (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
         (!('verifiedAt' in data) || isValidString(data.verifiedAt, 0, 64)) &&
+        (!('phoneLockKey' in data) || isValidShaKey(data.phoneLockKey)) &&
+        (!('emailLockKey' in data) || isValidShaKey(data.emailLockKey)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -146,7 +148,7 @@ service cloud.firestore {
           'paymentUtr', 'paymentScreenshot', 'status', 'accountType', 'balance', 'promoEarnings',
           'coins', 'charms', 'gameLevel', 'vipTier', 'vipTitle', 'frameType', 'personalRoomId',
           'roomAddress', 'isVipRoom', 'vipRoomLabel', 'registeredFromHost', 'swiAppLink',
-          'swiAppNote', 'verifiedAt', 'role', 'createdAt', 'updatedAt'
+          'swiAppNote', 'verifiedAt', 'phoneLockKey', 'emailLockKey', 'usernameLockKey', 'role', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.fullName, 1, 120) &&
@@ -187,6 +189,9 @@ service cloud.firestore {
         (!('swiAppLink' in data) || isValidString(data.swiAppLink, 0, 500)) &&
         (!('swiAppNote' in data) || isValidString(data.swiAppNote, 0, 500)) &&
         (!('verifiedAt' in data) || isValidString(data.verifiedAt, 0, 64)) &&
+        (!('phoneLockKey' in data) || isValidShaKey(data.phoneLockKey)) &&
+        (!('emailLockKey' in data) || isValidShaKey(data.emailLockKey)) &&
+        (!('usernameLockKey' in data) || data.usernameLockKey == '' || isValidShaKey(data.usernameLockKey)) &&
         (!('updatedAt' in data) || isValidString(data.updatedAt, 4, 64));
     }
 
@@ -685,11 +690,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 3b. Cross-Origin Registration Sync Intake (Write-Only Create, Admin-Only Read/Manage)
+    // 3b. Cross-Origin Registration Sync Intake (Database-Level Unique Mobile & Email Lock Enforcement)
     match /cloud_registrations/{regId} {
       allow get: if isAdmin() && isValidId(regId);
       allow list: if isAdmin();
-      allow create: if isValidId(regId) && isValidCloudRegistration(incoming()) && incoming().userId == regId;
+      allow create: if isValidId(regId) &&
+        isValidCloudRegistration(incoming()) &&
+        incoming().userId == regId &&
+        !exists(/databases/$(database)/documents/cloud_registrations/$(regId)) &&
+        'phoneLockKey' in incoming() &&
+        isValidShaKey(incoming().phoneLockKey) &&
+        'emailLockKey' in incoming() &&
+        isValidShaKey(incoming().emailLockKey) &&
+        (
+          isAdmin() || (
+            !exists(/databases/$(database)/documents/identity_locks/$(incoming().phoneLockKey)) &&
+            existsAfter(/databases/$(database)/documents/identity_locks/$(incoming().phoneLockKey)) &&
+            getAfter(/databases/$(database)/documents/identity_locks/$(incoming().phoneLockKey)).data.userId == regId &&
+            getAfter(/databases/$(database)/documents/identity_locks/$(incoming().phoneLockKey)).data.lockType == 'phone' &&
+            !exists(/databases/$(database)/documents/identity_locks/$(incoming().emailLockKey)) &&
+            existsAfter(/databases/$(database)/documents/identity_locks/$(incoming().emailLockKey)) &&
+            getAfter(/databases/$(database)/documents/identity_locks/$(incoming().emailLockKey)).data.userId == regId &&
+            getAfter(/databases/$(database)/documents/identity_locks/$(incoming().emailLockKey)).data.lockType == 'email'
+          )
+        );
       allow update: if isAdmin() && isValidId(regId) && isValidCloudRegistration(incoming());
       allow delete: if false;
     }

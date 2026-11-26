@@ -1637,6 +1637,26 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     return { success: true, user: newUser, sessionToken };
   }
 
+  if (path === '/api/health' && method === 'GET') {
+    return { success: true, ok: true, service: 'esp-static-fallback', usersCount: db.users.length };
+  }
+
+  if (path === '/api/auth/rollback-registration' && method === 'POST') {
+    const uid = String(body.userId || '').trim().toLowerCase();
+    const tok = String(body.sessionToken || '').trim();
+    const idx = db.users.findIndex(
+      u => u.userId.toLowerCase() === uid && Array.isArray(u.activeSessions) && u.activeSessions.some(s => s.token === tok)
+    );
+    if (idx !== -1) {
+      const removed = db.users[idx];
+      db.users.splice(idx, 1);
+      db.referrals = (db.referrals || []).filter(r => r.downlineUserId.toLowerCase() !== removed.userId.toLowerCase());
+      db.customVoiceRooms = (db.customVoiceRooms || []).filter(r => r.hostUserId.toLowerCase() !== removed.userId.toLowerCase());
+      saveDb(db);
+    }
+    return { success: true };
+  }
+
   if (path === '/api/auth/login' && method === 'POST') {
     const identifier = String(body.identifier || '').trim();
     const pass = String(body.password || '');
@@ -1648,7 +1668,7 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
         message: 'इस ID, मोबाइल नंबर या ईमेल से कोई खाता नहीं मिला। कृपया "Forget ID?" से अपनी ID खोजें।',
       };
     }
-    const user = candidates.find(u => isStaticPasswordMatch(u.password, pass) || pass === 'admin123');
+    const user = candidates.find(u => isStaticPasswordMatch(u.password, pass));
     if (!user) {
       return {
         success: false,
@@ -1820,50 +1840,75 @@ export function handleStaticApiRequest(urlStr: string, options: RequestInit = {}
     if (!existing) {
       existing = normalizeStaticUser({ ...backup });
       db.users.push(existing);
+      ensureStaticPersonalRoom(db, existing);
       saveDb(db);
-    } else if (body.forceCloudMerge) {
-      const inTime = Date.parse(String(backup.updatedAt || backup.createdAt || '')) || 0;
-      const curTime = Date.parse(String((existing as any).updatedAt || existing.lastLogin || existing.createdAt || '')) || 0;
-      const statusPromoted = existing.status === 'pending' && (backup.status === 'active' || backup.status === 'rejected');
-      if (inTime >= curTime || statusPromoted) {
-        if (backup.status === 'active' || backup.status === 'pending' || backup.status === 'rejected') {
-          existing.status = backup.status;
+    } else {
+      const isTrustedVaultPasswordUpdate = Boolean(
+        body.forceCloudMerge &&
+          body.updatePasswordFromVault &&
+          backup.vaultKey &&
+          backup.password &&
+          String(backup.password).trim() === String(body.password || '').trim()
+      );
+      if (
+        body.password !== undefined &&
+        !isTrustedVaultPasswordUpdate &&
+        String(existing.password || '').trim() !== String(body.password || '').trim()
+      ) {
+        return {
+          success: false,
+          code: 'PASSWORD_MISMATCH',
+          message: 'पासवर्ड मेल नहीं खा रहा (Password mismatch)। कृपया सही पासवर्ड दर्ज करें।',
+        };
+      }
+      if (body.forceCloudMerge) {
+        const inTime = Date.parse(String(backup.updatedAt || backup.createdAt || '')) || 0;
+        const curTime = Date.parse(String((existing as any).updatedAt || existing.lastLogin || existing.createdAt || '')) || 0;
+        const statusPromoted = existing.status === 'pending' && (backup.status === 'active' || backup.status === 'rejected');
+        if (inTime >= curTime || statusPromoted || isTrustedVaultPasswordUpdate) {
+          if (backup.status === 'active' || backup.status === 'pending' || backup.status === 'rejected') {
+            existing.status = backup.status;
+          }
+          if (typeof backup.balance === 'number' && Number.isFinite(backup.balance)) existing.balance = Math.max(0, backup.balance);
+          if (typeof backup.coins === 'number' && Number.isFinite(backup.coins)) existing.coins = Math.max(0, backup.coins);
+          if (typeof backup.totalEarnings === 'number' && Number.isFinite(backup.totalEarnings)) existing.totalEarnings = Math.max(0, backup.totalEarnings);
+          if (typeof backup.referralEarnings === 'number' && Number.isFinite(backup.referralEarnings)) existing.referralEarnings = Math.max(0, backup.referralEarnings);
+          if (typeof backup.promoEarnings === 'number' && Number.isFinite(backup.promoEarnings)) existing.promoEarnings = Math.max(0, backup.promoEarnings);
+          if (typeof backup.totalWithdrawn === 'number' && Number.isFinite(backup.totalWithdrawn)) existing.totalWithdrawn = Math.max(0, backup.totalWithdrawn);
+          if (typeof backup.charms === 'number' && Number.isFinite(backup.charms)) existing.charms = Math.max(0, backup.charms);
+          if (typeof backup.gameLevel === 'number' && Number.isFinite(backup.gameLevel)) existing.gameLevel = Math.max(1, backup.gameLevel);
+          if (typeof backup.gameXp === 'number' && Number.isFinite(backup.gameXp)) existing.gameXp = Math.max(0, backup.gameXp);
+          if (backup.vipTier) existing.vipTier = backup.vipTier;
+          if (backup.vipTitle !== undefined) existing.vipTitle = String(backup.vipTitle);
+          if (backup.frameType) existing.frameType = String(backup.frameType);
+          if (Array.isArray(backup.unlockedFrames) && backup.unlockedFrames.length > 0) existing.unlockedFrames = backup.unlockedFrames;
+          if (backup.chosenServiceCode) existing.chosenServiceCode = String(backup.chosenServiceCode);
+          if (backup.chosenServiceName) existing.chosenServiceName = String(backup.chosenServiceName);
+          if (typeof backup.joiningFee === 'number') existing.joiningFee = Math.max(0, backup.joiningFee);
+          if (backup.accountType === 'business' || backup.accountType === 'gamer') existing.accountType = backup.accountType;
+          if (backup.swiAppLink !== undefined) existing.swiAppLink = String(backup.swiAppLink || '');
+          if (backup.swiAppNote !== undefined) existing.swiAppNote = String(backup.swiAppNote || '');
+          if (typeof backup.isVipRoom === 'boolean') existing.isVipRoom = backup.isVipRoom;
+          if (backup.vipRoomLabel !== undefined) existing.vipRoomLabel = String(backup.vipRoomLabel || '');
+          if (backup.roomAddress && /^\d{3,10}$/.test(String(backup.roomAddress))) {
+            existing.roomAddress = String(backup.roomAddress);
+            existing.personalRoomId = String(backup.roomAddress);
+          }
+          if (backup.fullName) existing.fullName = String(backup.fullName);
+          if (backup.payoutUpiId !== undefined) existing.payoutUpiId = String(backup.payoutUpiId || '');
+          if (backup.paymentAddress !== undefined) existing.paymentAddress = String(backup.paymentAddress || '');
+          if (backup.clanName !== undefined) existing.clanName = String(backup.clanName || '');
+          if (isTrustedVaultPasswordUpdate || (body.updatePasswordFromVault && backup.password)) {
+            existing.password = String(backup.password).trim();
+          }
+          if (backup.workspaceState && typeof backup.workspaceState === 'object') {
+            existing.workspaceState = backup.workspaceState;
+          }
+          (existing as any).updatedAt = backup.updatedAt || new Date().toISOString();
+          normalizeStaticUser(existing);
+          ensureStaticPersonalRoom(db, existing);
+          saveDb(db);
         }
-        if (typeof backup.balance === 'number' && Number.isFinite(backup.balance)) existing.balance = Math.max(0, backup.balance);
-        if (typeof backup.coins === 'number' && Number.isFinite(backup.coins)) existing.coins = Math.max(0, backup.coins);
-        if (typeof backup.totalEarnings === 'number' && Number.isFinite(backup.totalEarnings)) existing.totalEarnings = Math.max(0, backup.totalEarnings);
-        if (typeof backup.referralEarnings === 'number' && Number.isFinite(backup.referralEarnings)) existing.referralEarnings = Math.max(0, backup.referralEarnings);
-        if (typeof backup.promoEarnings === 'number' && Number.isFinite(backup.promoEarnings)) existing.promoEarnings = Math.max(0, backup.promoEarnings);
-        if (typeof backup.totalWithdrawn === 'number' && Number.isFinite(backup.totalWithdrawn)) existing.totalWithdrawn = Math.max(0, backup.totalWithdrawn);
-        if (typeof backup.charms === 'number' && Number.isFinite(backup.charms)) existing.charms = Math.max(0, backup.charms);
-        if (typeof backup.gameLevel === 'number' && Number.isFinite(backup.gameLevel)) existing.gameLevel = Math.max(1, backup.gameLevel);
-        if (typeof backup.gameXp === 'number' && Number.isFinite(backup.gameXp)) existing.gameXp = Math.max(0, backup.gameXp);
-        if (backup.vipTier) existing.vipTier = backup.vipTier;
-        if (backup.vipTitle !== undefined) existing.vipTitle = String(backup.vipTitle);
-        if (backup.frameType) existing.frameType = String(backup.frameType);
-        if (Array.isArray(backup.unlockedFrames) && backup.unlockedFrames.length > 0) existing.unlockedFrames = backup.unlockedFrames;
-        if (backup.chosenServiceCode) existing.chosenServiceCode = String(backup.chosenServiceCode);
-        if (backup.chosenServiceName) existing.chosenServiceName = String(backup.chosenServiceName);
-        if (typeof backup.joiningFee === 'number') existing.joiningFee = Math.max(0, backup.joiningFee);
-        if (backup.accountType === 'business' || backup.accountType === 'gamer') existing.accountType = backup.accountType;
-        if (backup.swiAppLink !== undefined) existing.swiAppLink = String(backup.swiAppLink || '');
-        if (backup.swiAppNote !== undefined) existing.swiAppNote = String(backup.swiAppNote || '');
-        if (typeof backup.isVipRoom === 'boolean') existing.isVipRoom = backup.isVipRoom;
-        if (backup.vipRoomLabel !== undefined) existing.vipRoomLabel = String(backup.vipRoomLabel || '');
-        if (backup.roomAddress && /^\d{3,10}$/.test(String(backup.roomAddress))) {
-          existing.roomAddress = String(backup.roomAddress);
-          existing.personalRoomId = String(backup.roomAddress);
-        }
-        if (backup.fullName) existing.fullName = String(backup.fullName);
-        if (backup.payoutUpiId !== undefined) existing.payoutUpiId = String(backup.payoutUpiId || '');
-        if (backup.paymentAddress !== undefined) existing.paymentAddress = String(backup.paymentAddress || '');
-        if (backup.clanName !== undefined) existing.clanName = String(backup.clanName || '');
-        if (backup.workspaceState && typeof backup.workspaceState === 'object') {
-          existing.workspaceState = backup.workspaceState;
-        }
-        (existing as any).updatedAt = backup.updatedAt || new Date().toISOString();
-        normalizeStaticUser(existing);
-        saveDb(db);
       }
     }
     const resSess = createStaticUserSession(existing, body, body.preferredToken);

@@ -662,11 +662,7 @@ service cloud.firestore {
       allow update: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) && (
         (
           isAdmin() &&
-          incoming().userId == existing().userId &&
-          (!('sponsorId' in existing()) || existing().sponsorId == '' || incoming().sponsorId == existing().sponsorId) &&
-          (!('personalRoomId' in existing()) || existing().personalRoomId == '' || incoming().personalRoomId == existing().personalRoomId) &&
-          (!('roomAddress' in existing()) || existing().roomAddress == '' || incoming().roomAddress == existing().roomAddress) &&
-          (!('gamingId' in existing()) || existing().gamingId == '' || incoming().gamingId == existing().gamingId)
+          incoming().userId == existing().userId
         ) ||
         (
           existing().authUid == request.auth.uid &&
@@ -910,12 +906,8 @@ service cloud.firestore {
       allow create: if isVerified() && isValidId(payoutId) && isValidPayout(incoming()) && (
         (incoming().authUid == request.auth.uid && incoming().status == 'pending') || isAdmin()
       );
-      allow update: if isAdmin() && isValidId(payoutId) && isValidPayout(incoming()) && (
-        existing().status == 'pending' &&
-        incoming().authUid == existing().authUid &&
-        incoming().userId == existing().userId &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef'])
-      );
+      allow update: if isAdmin() && isValidId(payoutId) && isValidPayout(incoming()) &&
+        incoming().userId == existing().userId;
       allow delete: if false;
     }
 
@@ -926,14 +918,8 @@ service cloud.firestore {
       allow create: if isVerified() && isValidId(redemptionId) && isValidGiftCardRedemption(incoming()) && (
         (incoming().authUid == request.auth.uid && incoming().status == 'pending_fulfillment') || isAdmin()
       );
-      allow update: if isAdmin() && isValidId(redemptionId) && isValidGiftCardRedemption(incoming()) && (
-        existing().status == 'pending_fulfillment' &&
-        incoming().authUid == existing().authUid &&
-        incoming().userId == existing().userId &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'status', 'voucherCode', 'voucherPin', 'rejectionReason', 'fulfilledAt'
-        ])
-      );
+      allow update: if isAdmin() && isValidId(redemptionId) && isValidGiftCardRedemption(incoming()) &&
+        incoming().userId == existing().userId;
       allow delete: if false;
     }
 

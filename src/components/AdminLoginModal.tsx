@@ -192,9 +192,19 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 <span>{copiedHost ? 'Copied' : 'Copy Domain'}</span>
               </button>
             </div>
-            <p className="text-[10px] text-amber-800">
-              आप अभी भी नीचे Admin Master Password से Admin Panel तुरंत खोल सकते हैं।
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0338789155/authentication/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-amber-900 hover:bg-amber-950 text-white font-bold text-[10px]"
+              >
+                <span>Open Firebase Auth Settings ↗</span>
+              </a>
+              <span className="text-[10px] text-amber-800">
+                या नीचे Master Password से खोलें
+              </span>
+            </div>
           </div>
         )}
 

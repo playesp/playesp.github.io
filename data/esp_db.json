@@ -44,7 +44,7 @@
       "role": "admin",
       "createdAt": "2024-03-01T00:00:00.000Z",
       "coins": 0,
-      "charms": 20,
+      "charms": 0,
       "gameLevel": 1,
       "gameXp": 0,
       "vipTier": "none",
@@ -123,7 +123,8 @@
       "claimedGrowthTaskIds": [],
       "username": "santoshkumar01",
       "maxDevices": 4,
-      "registeredFromHost": "playesp.github.io"
+      "registeredFromHost": "playesp.github.io",
+      "updatedAt": "2026-11-24T07:58:06.291Z"
     },
     {
       "id": "usr-rahul",
@@ -1934,7 +1935,7 @@
           "os": "Windows PC",
           "ipAddress": "2001:4490:4021:bcf2:8c24:b280:6232:3cd4",
           "loginTime": "2026-11-26T08:33:38.314Z",
-          "lastActive": "2026-11-26T08:38:28.820Z",
+          "lastActive": "2026-11-26T08:56:08.850Z",
           "lastTab": "gaming-room"
         },
         {
@@ -2001,7 +2002,7 @@
       "totalGamesLost": 0,
       "totalCoinsWon": 0,
       "totalCoinsSpent": 2188,
-      "totalOnlineMinutes": 24,
+      "totalOnlineMinutes": 32,
       "isOnline": true,
       "ownedRelationshipTokens": [],
       "activeRelationships": [
@@ -2030,8 +2031,8 @@
       "claimedGrowthTaskIds": [],
       "claimedFamilyTaskIds": [],
       "maxDevices": 4,
-      "lastSessionStart": "2026-11-26T08:33:40.058Z",
-      "lastActiveTime": "2026-11-26T08:38:10.058Z",
+      "lastSessionStart": "2026-11-26T08:48:57.863Z",
+      "lastActiveTime": "2026-11-26T08:55:53.876Z",
       "workspaceState": {
         "lastTab": "gaming-room",
         "lastGamingSubTab": "clan_friends",
@@ -2045,7 +2046,7 @@
       "swiAppNote": "",
       "isVipRoom": false,
       "vipRoomLabel": "",
-      "updatedAt": "2026-11-26T08:33:47.297Z"
+      "updatedAt": "2026-11-26T08:56:10.041Z"
     },
     {
       "id": "usr-1795525738012",
@@ -2074,7 +2075,7 @@
       "referralEarnings": 0,
       "promoEarnings": 0,
       "totalWithdrawn": 0,
-      "coins": 39000000,
+      "coins": 0,
       "charms": 0,
       "gameLevel": 1,
       "gameXp": 0,
@@ -2093,8 +2094,8 @@
       "claimedTaskIds": [],
       "claimedChestMilestones": [],
       "tasksCompletedCount": 0,
-      "roomAddress": "10017",
-      "personalRoomId": "10017",
+      "roomAddress": "10020",
+      "personalRoomId": "10020",
       "followedRooms": [],
       "houseName": "House of Rainakshika",
       "clanName": "Royal Warriors ESP",
@@ -2165,7 +2166,8 @@
       "claimedActivenessChests": [],
       "claimedGrowthTaskIds": [],
       "claimedFamilyTaskIds": [],
-      "maxDevices": 4
+      "maxDevices": 4,
+      "updatedAt": "2026-11-24T13:08:58.044Z"
     }
   ],
   "referrals": [
@@ -5775,6 +5777,19 @@
   ],
   "activitySessions": [
     {
+      "id": "SES-1795682487487-857",
+      "userId": "ESPGTRA01",
+      "userName": "RAINAKSH",
+      "sessionStart": "2026-11-26T08:48:57.863Z",
+      "lastHeartbeat": "2026-11-26T08:55:53.876Z",
+      "durationMinutes": 7,
+      "deviceType": "desktop",
+      "deviceName": "Windows Desktop (Chrome)",
+      "browser": "Chrome",
+      "os": "Windows",
+      "status": "online"
+    },
+    {
       "id": "SES-1795682020058-154",
       "userId": "ESPGTRA01",
       "userName": "RAINAKSH",
@@ -6243,7 +6258,7 @@
       "hostName": "SANTOSH KUMAR",
       "hostAvatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SantoshKumarESP",
       "hostLevel": 1,
-      "hostCharms": 20,
+      "hostCharms": 0,
       "createdAt": "2026-11-19T02:52:21.456Z",
       "seats": [
         {
@@ -7994,8 +8009,8 @@
       "title": "Rainakshika kumari's Voice Room",
       "topic": "Welcome to Rainakshika kumari's Personal Fixed Voice Room",
       "category": "gaming",
-      "roomAddress": "10017",
-      "roomNumber": "10017",
+      "roomAddress": "10020",
+      "roomNumber": "10020",
       "isPersonalFixed": true,
       "isVipRoom": false,
       "vipRoomLabel": "",
@@ -8827,6 +8842,17 @@
   ],
   "directMessages": [],
   "adminSessions": [
+    {
+      "sessionId": "admsess_1795682934536_2wru22",
+      "token": "esp_adm_1795682654181_jge9er0n",
+      "deviceType": "desktop",
+      "deviceName": "Windows PC - Google Chrome",
+      "browser": "Google Chrome",
+      "os": "Windows PC",
+      "ipAddress": "2001:4490:4021:bcf2:8c24:b280:6232:3cd4",
+      "loginTime": "2026-11-26T08:48:54.536Z",
+      "lastActive": "2026-11-26T08:55:58.908Z"
+    },
     {
       "sessionId": "admsess_1795615912007_pbnpek",
       "token": "esp_adm_1795615912007_bckkv9g8",

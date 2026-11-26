@@ -58,9 +58,18 @@ import {
   pushReferralToCloud,
 } from './firebase.ts';
 
+function safeGetStorageItem(key: string): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function getConfiguredApiBaseUrl(): string {
   return (
-    (typeof window !== 'undefined' ? localStorage.getItem('esp_api_base_url') : '') ||
+    safeGetStorageItem('esp_api_base_url') ||
     (import.meta as any).env?.VITE_API_BASE_URL ||
     ''
   )
@@ -80,12 +89,16 @@ export function setConfiguredApiBaseUrl(url: string): string {
   const cleaned = String(url || '').trim().replace(/\/+$/, '');
   API_BASE_URL = cleaned;
   if (typeof window !== 'undefined') {
-    if (cleaned) {
-      localStorage.setItem('esp_api_base_url', cleaned);
-      staticModeDetected = false;
-    } else {
-      localStorage.removeItem('esp_api_base_url');
-      staticModeDetected = window.location.hostname.endsWith('.github.io');
+    try {
+      if (cleaned) {
+        window.localStorage.setItem('esp_api_base_url', cleaned);
+        staticModeDetected = false;
+      } else {
+        window.localStorage.removeItem('esp_api_base_url');
+        staticModeDetected = window.location.hostname.endsWith('.github.io');
+      }
+    } catch {
+      staticModeDetected = !cleaned && window.location.hostname.endsWith('.github.io');
     }
   }
   return cleaned;
@@ -405,43 +418,51 @@ export const api = {
   },
 
   getStoredSessionToken(): string {
-    return localStorage.getItem(SESSION_TOKEN_KEY) || '';
+    return safeGetStorageItem(SESSION_TOKEN_KEY);
   },
 
   setStoredUser(user: UserProfile | null, sessionToken?: string) {
-    if (user) {
-      localStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
-      saveUserToLocalBackup(user);
-      if (sessionToken) {
-        localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+    try {
+      if (user) {
+        localStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+        saveUserToLocalBackup(user);
+        if (sessionToken) {
+          localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+        }
+      } else {
+        localStorage.removeItem(SESSION_USER_KEY);
+        localStorage.removeItem(SESSION_TOKEN_KEY);
       }
-    } else {
-      localStorage.removeItem(SESSION_USER_KEY);
-      localStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch {
+      // ignore restricted storage
     }
   },
 
   getStoredAdmin(): boolean {
-    return localStorage.getItem(SESSION_ADMIN_KEY) === 'true';
+    return safeGetStorageItem(SESSION_ADMIN_KEY) === 'true';
   },
 
   getStoredAdminPass(): string {
-    return localStorage.getItem(ADMIN_PASS_KEY) || '';
+    return safeGetStorageItem(ADMIN_PASS_KEY);
   },
 
   getStoredAdminToken(): string {
-    return localStorage.getItem(ADMIN_SESSION_TOKEN_KEY) || '';
+    return safeGetStorageItem(ADMIN_SESSION_TOKEN_KEY);
   },
 
   setStoredAdmin(isAdmin: boolean, password = '', adminToken?: string) {
-    if (isAdmin) {
-      localStorage.setItem(SESSION_ADMIN_KEY, 'true');
-      if (password) localStorage.setItem(ADMIN_PASS_KEY, password);
-      if (adminToken) localStorage.setItem(ADMIN_SESSION_TOKEN_KEY, adminToken);
-    } else {
-      localStorage.removeItem(SESSION_ADMIN_KEY);
-      localStorage.removeItem(ADMIN_PASS_KEY);
-      localStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+    try {
+      if (isAdmin) {
+        localStorage.setItem(SESSION_ADMIN_KEY, 'true');
+        if (password) localStorage.setItem(ADMIN_PASS_KEY, password);
+        if (adminToken) localStorage.setItem(ADMIN_SESSION_TOKEN_KEY, adminToken);
+      } else {
+        localStorage.removeItem(SESSION_ADMIN_KEY);
+        localStorage.removeItem(ADMIN_PASS_KEY);
+        localStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+      }
+    } catch {
+      // ignore restricted storage
     }
   },
 

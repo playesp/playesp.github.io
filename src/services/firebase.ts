@@ -144,6 +144,16 @@ function safeAvatarForFirestore(avatar: unknown): string {
   return trimmed;
 }
 
+function safeUsernameForFirestore(raw: unknown): string {
+  const clean = String(raw || '')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 24);
+  return clean.length >= 3 ? clean : '';
+}
+
 export async function compressDataUrlForFirestore(
   rawUrl: unknown,
   maxChars = 220000
@@ -346,7 +356,7 @@ function buildValidatedUserDoc(
       : ['default_dark'],
     roomTheme: clampString(userData.roomTheme, 64) || 'default_dark',
     clanName: clampString(userData.clanName, 100),
-    username: clampString(String(userData.username || '').replace(/^@+/, '').toLowerCase(), 24),
+    username: safeUsernameForFirestore(userData.username),
     avatar: safeAvatarForFirestore(userData.avatar),
     coverPhoto: safeAvatarForFirestore(userData.coverPhoto),
     bio: clampString(userData.bio, 240),
@@ -416,7 +426,7 @@ function buildCloudRegistrationDoc(
     id: clampString(userData.id, 128) || safeUserId,
     userId: safeUserId,
     gamingId: clampString(userData.gamingId || `GM-${safeUserId}`, 64),
-    username: clampString(String(userData.username || '').replace(/^@+/, '').toLowerCase(), 24),
+    username: safeUsernameForFirestore(userData.username),
     fullName: clampString(userData.fullName, 120) || 'ESP Member',
     phone,
     email,
@@ -759,7 +769,7 @@ export async function pushDeviceSyncVault(userData: any, passwordOverride?: stri
   const roomNum = clampString(userData.personalRoomId || userData.roomAddress, 24);
   const phone10 = normalizePhone10(userData.phone || '') || clampString(userData.phone, 24);
   const emailClean = clampString(String(userData.email || '').toLowerCase(), 150);
-  const cleanUsername = clampString(String(userData.username || '').replace(/^@+/, '').toLowerCase(), 24);
+  const cleanUsername = safeUsernameForFirestore(userData.username);
 
   const canonicalPayload = {
     vaultKey: primaryVaultKey,
@@ -1297,9 +1307,10 @@ export async function updateUserStatusInFirestore(
       computeIdentityLockKeys(merged),
     ]);
     await registerIdentityLocksInCloud(merged);
-    await setDoc(doc(db, 'users', safeUserId), buildValidatedUserDoc(merged, fbUser!.uid, compressedShot, lockKeys));
+    const targetAuthUid = clampString(merged.authUid, 128) || fbUser!.uid;
+    await setDoc(doc(db, 'users', safeUserId), buildValidatedUserDoc(merged, targetAuthUid, compressedShot, lockKeys));
     await setDoc(doc(db, 'cloud_registrations', safeUserId), buildCloudRegistrationDoc(merged, undefined, compressedShot, lockKeys));
-    await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(merged, fbUser!.uid));
+    await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(merged, targetAuthUid));
     return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `users/${userId}`);
@@ -1867,7 +1878,7 @@ function buildPublicProfileDoc(userData: any, authUid: string) {
   return {
     userId: safeUserId,
     authUid: clampString(authUid, 128),
-    username: clampString(String(userData.username || '').replace(/^@+/, '').toLowerCase(), 24),
+    username: safeUsernameForFirestore(userData.username),
     fullName: clampString(userData.fullName, 120) || 'ESP Member',
     avatar: safeAvatarForFirestore(userData.avatar),
     coverPhoto: safeAvatarForFirestore(userData.coverPhoto),
@@ -2065,9 +2076,10 @@ export async function syncAdminDatasetToFirestore(dataset: {
         computeIdentityLockKeys(u),
       ]);
       await registerIdentityLocksInCloud(u);
-      const validated = buildValidatedUserDoc(u, fbUser.uid, compressedShot, lockKeys);
+      const targetAuthUid = clampString(u.authUid, 128) || fbUser.uid;
+      const validated = buildValidatedUserDoc(u, targetAuthUid, compressedShot, lockKeys);
       await setDoc(doc(db, 'users', safeUserId), validated);
-      await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(u, fbUser.uid));
+      await setDoc(doc(db, 'public_profiles', safeUserId), buildPublicProfileDoc(u, targetAuthUid));
       await setDoc(
         doc(db, 'cloud_registrations', safeUserId),
         buildCloudRegistrationDoc(u, undefined, compressedShot, lockKeys)

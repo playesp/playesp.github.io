@@ -2188,20 +2188,30 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <p className="text-[11px] leading-snug">
               Google Cloud Sign-In चालू करने के लिए Firebase Console ➔ Authentication ➔ Settings ➔ <strong>Authorized domains</strong> में इस डोमेन को जोड़ें:
             </p>
-            <div className="inline-flex items-center gap-2 bg-white border border-amber-300 rounded-xs px-2.5 py-1 mt-1">
-              <span className="font-mono font-bold text-[#212121]">{domainAuthHelpHost}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(domainAuthHelpHost);
-                  setCopiedDomainHelp(true);
-                  setTimeout(() => setCopiedDomainHelp(false), 2000);
-                }}
-                className="px-2 py-0.5 rounded-xs bg-[#2874f0] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <div className="inline-flex items-center gap-2 bg-white border border-amber-300 rounded-xs px-2.5 py-1">
+                <span className="font-mono font-bold text-[#212121]">{domainAuthHelpHost}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(domainAuthHelpHost);
+                    setCopiedDomainHelp(true);
+                    setTimeout(() => setCopiedDomainHelp(false), 2000);
+                  }}
+                  className="px-2 py-0.5 rounded-xs bg-[#2874f0] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedDomainHelp ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedDomainHelp ? 'Copied' : 'Copy Domain'}</span>
+                </button>
+              </div>
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0338789155/authentication/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-amber-900 hover:bg-amber-950 text-white text-[10px] font-bold"
               >
-                {copiedDomainHelp ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedDomainHelp ? 'Copied' : 'Copy Domain'}</span>
-              </button>
+                <span>Open Firebase Auth Settings ↗</span>
+              </a>
             </div>
           </div>
           <button
